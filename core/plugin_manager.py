@@ -2,7 +2,7 @@ import importlib
 import inspect
 import pkgutil
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from .plugin_interface import PluginInterface
 
 
@@ -24,7 +24,7 @@ class PluginManager:
 
     def scan_plugins(self, plugin_path: str) -> List[str]:
         """
-        扫描插件目录，返回插件ID列表
+        扫描插件目录，返回插件ID列表（按优先级排序）
         
         Args:
             plugin_path: 插件目录路径
@@ -36,14 +36,55 @@ class PluginManager:
         if not plugin_dir.exists():
             self._core.logger.warning(f"Plugin directory not found: {plugin_path}")
             return []
-        discovered = []
+        
+        # 扫描插件并收集优先级信息
+        plugin_info: List[Tuple[int, str]] = []  # (priority, plugin_id)
+        
         for item in plugin_dir.iterdir():
             if item.is_dir() and not item.name.startswith('_'):
                 plugin_id = self._discover_plugin(item)
                 if plugin_id:
                     self._plugin_dirs[plugin_id] = item
-                    discovered.append(plugin_id)
-        return discovered
+                    
+                    # 获取插件优先级
+                    priority = self._get_plugin_priority(plugin_id)
+                    plugin_info.append((priority, plugin_id))
+        
+        # 按优先级排序（数字越小越靠前）
+        plugin_info.sort(key=lambda x: x[0])
+        
+        # 返回排序后的插件ID列表
+        return [plugin_id for _, plugin_id in plugin_info]
+    
+    def _get_plugin_priority(self, plugin_id: str) -> int:
+        """
+        获取插件优先级
+        
+        Args:
+            plugin_id: 插件ID
+            
+        Returns:
+            优先级数值（默认999）
+        """
+        try:
+            plugin_dir = self._plugin_dirs.get(plugin_id)
+            if not plugin_dir:
+                return 999
+            
+            module_name = f"plugins.{plugin_dir.name}"
+            module = importlib.import_module(module_name)
+            
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if (issubclass(obj, PluginInterface) and 
+                    obj is not PluginInterface and
+                    obj.__module__ == module.__name__):
+                    # 获取 PLUGIN_PRIORITY 属性，默认为 999
+                    priority = getattr(obj, "PLUGIN_PRIORITY", 999)
+                    return int(priority)
+        except Exception as e:
+            self._core.logger.warning(f"Failed to get priority for {plugin_id}: {e}")
+        
+        return 999
 
     def _resolve_plugin_id(self, plugin_class) -> str:
         plugin_id = getattr(plugin_class, "PLUGIN_ID", "")
@@ -205,9 +246,10 @@ class PluginManager:
     def scan_builtin_plugins(self) -> List[str]:
         """
         扫描内置插件（打包后使用）
-        从已导入的 plugins 子模块中发现插件
+        从已导入的 plugins 子模块中发现插件（按优先级排序）
         """
-        discovered = []
+        plugin_info: List[Tuple[int, str]] = []  # (priority, plugin_id)
+        
         try:
             import plugins as plugins_pkg
             for finder, name, ispkg in pkgutil.iter_modules(plugins_pkg.__path__):
@@ -223,10 +265,18 @@ class PluginManager:
                                 if not plugin_id:
                                     continue
                                 self._plugin_dirs[plugin_id] = Path(name)
-                                discovered.append(plugin_id)
-                                self._core.logger.info(f"Discovered builtin plugin: {plugin_id}")
+                                
+                                # 获取优先级
+                                priority = getattr(obj, "PLUGIN_PRIORITY", 999)
+                                plugin_info.append((priority, plugin_id))
+                                self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
                     except Exception as e:
                         self._core.logger.error(f"Failed to scan builtin plugin {name}: {e}")
         except Exception as e:
             self._core.logger.error(f"Failed to scan builtin plugins: {e}")
-        return discovered
+        
+        # 按优先级排序
+        plugin_info.sort(key=lambda x: x[0])
+        
+        # 返回排序后的插件ID列表
+        return [plugin_id for _, plugin_id in plugin_info]

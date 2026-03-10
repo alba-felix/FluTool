@@ -349,8 +349,75 @@ class BookmarkWidget(QWidget):
         for cat in categories:
             btn = PushButton(cat['name'], self)
             btn.clicked.connect(partial(self._show_category, cat))
+            btn.setContextMenuPolicy(Qt.CustomContextMenu)
+            btn.customContextMenuRequested.connect(partial(self._show_category_menu, cat))
             self.category_layout.insertWidget(self.category_layout.count() - 2, btn)
             self._category_buttons.append(btn)
+    
+    def _show_category_menu(self, category: dict, pos) -> None:
+        """显示分类右键菜单"""
+        from PyQt5.QtGui import QCursor
+        
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WA_DeleteOnClose)
+        
+        edit_action = QAction("编辑分类", self)
+        edit_action.triggered.connect(partial(self._edit_category, category))
+        menu.addAction(edit_action)
+        
+        delete_action = QAction("删除分类", self)
+        delete_action.triggered.connect(partial(self._delete_category, category))
+        menu.addAction(delete_action)
+        
+        menu.exec_(QCursor.pos())
+    
+    def _edit_category(self, category: dict) -> None:
+        """编辑分类"""
+        dialog = InputDialog("编辑分类", "请输入新的分类名称", category['name'], self)
+        if dialog.exec():
+            new_name = dialog.get_text()
+            if new_name and new_name != category['name']:
+                existing_names = [btn.text() for btn in self._category_buttons]
+                if new_name not in existing_names:
+                    self.db.update_category(self.PLUGIN_ID, category['id'], new_name)
+                    self._load_categories()
+                    InfoBar.success(
+                        title="修改成功",
+                        content=f"分类已重命名为 {new_name}",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+                else:
+                    InfoBar.warning(
+                        title="警告",
+                        content="该分类名称已存在！",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+    
+    def _delete_category(self, category: dict) -> None:
+        """删除分类"""
+        box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的书签将移至\"全部\"分类。", self)
+        if box.exec():
+            self.db.delete_category(self.PLUGIN_ID, category['id'])
+            self._load_categories()
+            if self._current_category_id == category['id']:
+                self._show_all()
+            InfoBar.success(
+                title="删除成功",
+                content=f"已删除分类 {category['name']}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
     
     def _load_bookmarks(self) -> None:
         """加载书签列表"""
@@ -791,6 +858,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "bookmark"
     PLUGIN_NAME = "网站书签"
     PLUGIN_ICON = FIF.TAG
+    PLUGIN_PRIORITY = 1
 
     def initialize(self, core) -> None:
         self.core = core

@@ -102,6 +102,21 @@ class DatabaseManager:
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
                 );
                 
+                CREATE TABLE IF NOT EXISTS app_launcher (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plugin_id TEXT NOT NULL,
+                    category_id INTEGER,
+                    name TEXT NOT NULL,
+                    icon_path TEXT DEFAULT '',
+                    target_path TEXT NOT NULL,
+                    arguments TEXT DEFAULT '',
+                    notes TEXT DEFAULT '',
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+                );
+                
                 CREATE INDEX IF NOT EXISTS idx_bookmarks_plugin_id ON bookmarks(plugin_id);
                 CREATE INDEX IF NOT EXISTS idx_bookmarks_category_id ON bookmarks(category_id);
                 CREATE INDEX IF NOT EXISTS idx_categories_plugin_id ON categories(plugin_id);
@@ -109,6 +124,8 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_commands_category_id ON commands(category_id);
                 CREATE INDEX IF NOT EXISTS idx_passwords_plugin_id ON passwords(plugin_id);
                 CREATE INDEX IF NOT EXISTS idx_passwords_category_id ON passwords(category_id);
+                CREATE INDEX IF NOT EXISTS idx_app_launcher_plugin_id ON app_launcher(plugin_id);
+                CREATE INDEX IF NOT EXISTS idx_app_launcher_category_id ON app_launcher(category_id);
             ''')
             conn.commit()
     
@@ -213,6 +230,16 @@ class DatabaseManager:
             cursor = conn.execute(
                 "DELETE FROM bookmarks WHERE plugin_id = ? AND id = ?",
                 (plugin_id, bookmark_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def update_category(self, plugin_id: str, category_id: int, name: str) -> bool:
+        """更新分类名称"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE categories SET name = ? WHERE plugin_id = ? AND id = ?",
+                (name, plugin_id, category_id)
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -484,4 +511,124 @@ class DatabaseManager:
                         sort_order=cmd_order
                     )
                     count += 1
+        return count
+    
+    # ==================== App Launcher methods ====================
+    
+    def add_app(self, plugin_id: str, name: str, target_path: str,
+                category_name: str = None, category_id: int = None,
+                icon_path: str = '', arguments: str = '',
+                notes: str = '', sort_order: int = 0) -> int:
+        """添加应用"""
+        with self.get_connection() as conn:
+            if category_id is None and category_name:
+                cursor = conn.execute(
+                    "SELECT id FROM categories WHERE plugin_id = ? AND name = ?",
+                    (plugin_id, category_name)
+                )
+                row = cursor.fetchone()
+                if row:
+                    category_id = row['id']
+            cursor = conn.execute(
+                "INSERT INTO app_launcher (plugin_id, category_id, name, icon_path, target_path, arguments, notes, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (plugin_id, category_id, name, icon_path, target_path, arguments, notes, sort_order)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def app_exists(self, plugin_id: str, name: str, target_path: str) -> bool:
+        """检查应用是否已存在"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM app_launcher WHERE plugin_id = ? AND name = ? AND target_path = ?",
+                (plugin_id, name, target_path)
+            )
+            return cursor.fetchone() is not None
+    
+    def get_apps(self, plugin_id: str, category_id: int = None) -> List[Dict[str, Any]]:
+        """获取应用列表"""
+        with self.get_connection() as conn:
+            if category_id:
+                cursor = conn.execute(
+                    """SELECT a.*, c.name as category_name 
+                       FROM app_launcher a 
+                       LEFT JOIN categories c ON a.category_id = c.id 
+                       WHERE a.plugin_id = ? AND a.category_id = ?
+                       ORDER BY a.sort_order, a.id""",
+                    (plugin_id, category_id)
+                )
+            else:
+                cursor = conn.execute(
+                    """SELECT a.*, c.name as category_name 
+                       FROM app_launcher a 
+                       LEFT JOIN categories c ON a.category_id = c.id 
+                       WHERE a.plugin_id = ?
+                       ORDER BY a.sort_order, a.id""",
+                    (plugin_id,)
+                )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_app(self, plugin_id: str, app_id: int, **kwargs) -> bool:
+        """更新应用"""
+        allowed_fields = {'name', 'icon_path', 'target_path', 'arguments', 'notes', 'category_id', 'sort_order'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
+        values = list(updates.values()) + [plugin_id, app_id]
+        with self.get_connection() as conn:
+            conn.execute(
+                f"UPDATE app_launcher SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE plugin_id = ? AND id = ?",
+                values
+            )
+            conn.commit()
+            return True
+    
+    def delete_app(self, plugin_id: str, app_id: int) -> bool:
+        """删除应用"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM app_launcher WHERE plugin_id = ? AND id = ?",
+                (plugin_id, app_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def search_apps(self, plugin_id: str, keyword: str) -> List[Dict[str, Any]]:
+        """搜索应用"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """SELECT a.*, c.name as category_name 
+                   FROM app_launcher a 
+                   LEFT JOIN categories c ON a.category_id = c.id 
+                   WHERE a.plugin_id = ? AND (a.name LIKE ? OR a.target_path LIKE ? OR a.notes LIKE ?)
+                   ORDER BY a.sort_order, a.id""",
+                (plugin_id, f'%{keyword}%', f'%{keyword}%', f'%{keyword}%')
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def import_apps_from_json(self, plugin_id: str, json_path: str) -> int:
+        """从 JSON 文件导入应用数据"""
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        count = 0
+        for cat_order, category in enumerate(data.get('categories', [])):
+            cat_name = category.get('name', '未命名分类')
+            self.add_category(plugin_id, cat_name, cat_order)
+            for app_order, app in enumerate(category.get('apps', [])):
+                name = app.get('name', '')
+                target_path = app.get('target_path', '')
+                if self.app_exists(plugin_id, name, target_path):
+                    continue
+                self.add_app(
+                    plugin_id=plugin_id,
+                    name=name,
+                    target_path=target_path,
+                    category_name=cat_name,
+                    icon_path=app.get('icon_path', ''),
+                    arguments=app.get('arguments', ''),
+                    notes=app.get('notes', ''),
+                    sort_order=app_order
+                )
+                count += 1
         return count

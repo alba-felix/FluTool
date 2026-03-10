@@ -673,6 +673,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "password"
     PLUGIN_NAME = "密码管理"
     PLUGIN_ICON = FIF.FINGERPRINT
+    PLUGIN_PRIORITY = 3
     
     def initialize(self, core) -> None:
         self.core = core
