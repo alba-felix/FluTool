@@ -22,7 +22,7 @@ from qfluentwidgets import (
     TransparentToolButton, BodyLabel, IconWidget, CaptionLabel,
     MessageBox, MessageBoxBase, SubtitleLabel, setCustomStyleSheet,
     StyleSheetBase, Theme, qconfig, isDarkTheme, PrimaryPushButton,
-    ScrollArea
+    ScrollArea, SmoothScrollArea
 )
 
 from core.plugin_interface import PluginInterface
@@ -697,11 +697,64 @@ class AppLauncherWidget(QWidget):
         self.db = DatabaseManager()
         self.category_tabs = {}  # 缓存标签页
         self._init_paths()
+        self._init_scroll_buttons()
         self._setup_ui()
         self._apply_styles()
         
         # 监听主题变化
         qconfig.themeChanged.connect(self._on_theme_changed)
+    
+    def _init_scroll_buttons(self):
+        """初始化滚动按钮"""
+        self._up_btn = PushButton("", self)
+        self._up_btn.setIcon(FIF.CARE_UP_SOLID)
+        self._up_btn.setFixedSize(48, 24)
+        self._up_btn.setCursor(Qt.PointingHandCursor)
+        self._up_btn.hide()
+        self._up_btn.clicked.connect(self._scroll_up)
+        
+        self._down_btn = PushButton("", self)
+        self._down_btn.setIcon(FIF.CARE_DOWN_SOLID)
+        self._down_btn.setFixedSize(48, 24)
+        self._down_btn.setCursor(Qt.PointingHandCursor)
+        self._down_btn.hide()
+        self._down_btn.clicked.connect(self._scroll_down)
+    
+    def _scroll_up(self):
+        current_tab = self.tab_widget.currentWidget()
+        if current_tab and isinstance(current_tab, QScrollArea):
+            bar = current_tab.verticalScrollBar()
+            bar.setValue(bar.value() - 100)
+    
+    def _scroll_down(self):
+        current_tab = self.tab_widget.currentWidget()
+        if current_tab and isinstance(current_tab, QScrollArea):
+            bar = current_tab.verticalScrollBar()
+            bar.setValue(bar.value() + 100)
+    
+    def _check_scroll_buttons(self):
+        """检查并更新滚动按钮显示"""
+        current_tab = self.tab_widget.currentWidget()
+        if not current_tab or not isinstance(current_tab, QScrollArea):
+            self._up_btn.hide()
+            self._down_btn.hide()
+            return
+        
+        scroll_area = current_tab
+        widget_height = scroll_area.widget().height() if scroll_area.widget() else 0
+        viewport_height = scroll_area.viewport().height()
+        
+        if widget_height > viewport_height:
+            bar = scroll_area.verticalScrollBar()
+            self._up_btn.setVisible(bar.value() > 0)
+            self._down_btn.setVisible(bar.value() < bar.maximum())
+        else:
+            self._up_btn.hide()
+            self._down_btn.hide()
+    
+    def _on_tab_changed(self, index):
+        """标签页切换时检查滚动按钮"""
+        self._check_scroll_buttons()
     
     def _init_paths(self):
         """初始化路径"""
@@ -714,12 +767,13 @@ class AppLauncherWidget(QWidget):
         self.setObjectName("appLauncherWidget")
         
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(16)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
         # 搜索区域
         search_layout = QHBoxLayout()
         search_layout.setSpacing(10)
+        search_layout.setContentsMargins(20, 20, 20, 10)
         
         self.search_input = LineEdit(self)
         self.search_input.setPlaceholderText("搜索应用...")
@@ -737,7 +791,13 @@ class AppLauncherWidget(QWidget):
         
         search_layout.addWidget(self.search_input, 1)
         search_layout.addWidget(scan_btn)
-        main_layout.addLayout(search_layout)
+        
+        # 向上滚动按钮
+        self._up_btn_container = QWidget()
+        up_layout = QHBoxLayout(self._up_btn_container)
+        up_layout.setContentsMargins(0, 0, 0, 0)
+        up_layout.addStretch()
+        up_layout.addWidget(self._up_btn)
         
         # 标签页
         self.tab_widget = QTabWidget()
@@ -749,7 +809,21 @@ class AppLauncherWidget(QWidget):
         custom_tab_bar.category_context_menu_requested.connect(self._show_category_menu)
         self.tab_widget.setTabBar(custom_tab_bar)
         
+        # 向下滚动按钮
+        self._down_btn_container = QWidget()
+        down_layout = QHBoxLayout(self._down_btn_container)
+        down_layout.setContentsMargins(0, 0, 0, 0)
+        down_layout.addStretch()
+        down_layout.addWidget(self._down_btn)
+        
+        # 添加到主布局
+        main_layout.addLayout(search_layout)
+        main_layout.addWidget(self._up_btn_container)
         main_layout.addWidget(self.tab_widget, 1)
+        main_layout.addWidget(self._down_btn_container)
+        
+        # 连接标签页切换信号
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
     
     def _apply_styles(self):
         """应用样式"""

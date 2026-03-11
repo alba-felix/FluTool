@@ -12,7 +12,7 @@ from qfluentwidgets import (
     StrongBodyLabel, BodyLabel, CaptionLabel,
     LineEdit, PushButton, ComboBox,
     FluentIcon as FIF, InfoBar, InfoBarPosition,
-    CardWidget, SubtitleLabel, IconWidget
+    CardWidget, SubtitleLabel, IconWidget, SmoothScrollArea
 )
 from core.plugin_interface import PluginInterface
 
@@ -25,14 +25,78 @@ class TimeConverterWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
+        self._init_scroll_buttons()
         self._setup_ui()
         self._init_timer()
     
+    def _init_scroll_buttons(self):
+        """初始化滚动按钮"""
+        self._up_btn = PushButton("", self)
+        self._up_btn.setIcon(FIF.CARE_UP_SOLID)
+        self._up_btn.setFixedSize(48, 24)
+        self._up_btn.setCursor(Qt.PointingHandCursor)
+        self._up_btn.hide()
+        self._up_btn.clicked.connect(self._scroll_up)
+        
+        self._down_btn = PushButton("", self)
+        self._down_btn.setIcon(FIF.CARE_DOWN_SOLID)
+        self._down_btn.setFixedSize(48, 24)
+        self._down_btn.setCursor(Qt.PointingHandCursor)
+        self._down_btn.hide()
+        self._down_btn.clicked.connect(self._scroll_down)
+    
+    def _scroll_up(self):
+        bar = self._scroll_area.verticalScrollBar()
+        bar.setValue(bar.value() - 100)
+    
+    def _scroll_down(self):
+        bar = self._scroll_area.verticalScrollBar()
+        bar.setValue(bar.value() + 100)
+    
+    def _check_scroll_buttons(self):
+        """检查并更新滚动按钮显示"""
+        if not hasattr(self, '_scroll_area'):
+            return
+        widget_height = self._scroll_widget.height()
+        viewport_height = self._scroll_area.viewport().height()
+        
+        if widget_height > viewport_height:
+            bar = self._scroll_area.verticalScrollBar()
+            self._up_btn.setVisible(bar.value() > 0)
+            self._down_btn.setVisible(bar.value() < bar.maximum())
+        else:
+            self._up_btn.hide()
+            self._down_btn.hide()
+    
     def _setup_ui(self):
         """构建界面"""
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(16)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        # 外层使用 QVBoxLayout 包含滚动区域和按钮
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setSpacing(0)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 向上滚动按钮
+        outer_layout.addWidget(self._up_btn)
+        
+        # 滚动区域
+        self._scroll_area = SmoothScrollArea(self)
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        
+        # 滚动内容widget
+        self._scroll_widget = QWidget()
+        self._scroll_widget.setStyleSheet("background: transparent;")
+        self._scroll_layout = QVBoxLayout(self._scroll_widget)
+        self._scroll_layout.setSpacing(16)
+        self._scroll_layout.setContentsMargins(20, 20, 20, 20)
+        
+        self._scroll_area.setWidget(self._scroll_widget)
+        outer_layout.addWidget(self._scroll_area, 1)
+        
+        # 向下滚动按钮
+        outer_layout.addWidget(self._down_btn)
         
         # === 当前时间显示卡片 ===
         current_card = CardWidget(self)
@@ -90,7 +154,7 @@ class TimeConverterWidget(QWidget):
         timestamp_row.addWidget(self.copy_timestamp_btn)
         current_layout.addLayout(timestamp_row)
         
-        main_layout.addWidget(current_card)
+        self._scroll_layout.addWidget(current_card)
         
         # === 时间转换卡片 ===
         convert_card = CardWidget(self)
@@ -229,10 +293,10 @@ class TimeConverterWidget(QWidget):
         
         convert_layout.addLayout(format_row)
         
-        main_layout.addWidget(convert_card)
+        self._scroll_layout.addWidget(convert_card)
         
         # 底部提示
-        main_layout.addStretch(1)
+        self._scroll_layout.addStretch(1)
         
         tip_row = QHBoxLayout()
         tip_icon = IconWidget(FIF.INFO, self)
@@ -242,7 +306,7 @@ class TimeConverterWidget(QWidget):
         tip_row.addWidget(tip_icon)
         tip_row.addWidget(tip_label)
         tip_row.addStretch()
-        main_layout.addLayout(tip_row)
+        self._scroll_layout.addLayout(tip_row)
     
     def _init_timer(self):
         """初始化定时器，每秒更新当前时间"""
@@ -250,6 +314,11 @@ class TimeConverterWidget(QWidget):
         self.timer.timeout.connect(self._update_current_time)
         self.timer.start(1000)
         self._update_current_time()
+    
+    def resizeEvent(self, e):
+        """窗口大小改变时检查滚动按钮"""
+        super().resizeEvent(e)
+        self._check_scroll_buttons()
     
     def _update_current_time(self):
         """更新当前时间和时间戳"""

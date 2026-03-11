@@ -21,6 +21,7 @@ class CustomFluentIcon(FluentIconBase, Enum):
     """
     SYSTEM = "sys"
     PICTURE = "picture"
+    ENV = "env"
     
     def path(self, theme=Theme.AUTO) -> str:
         """获取图标路径"""

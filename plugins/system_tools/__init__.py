@@ -6,11 +6,12 @@ import os
 import subprocess
 from typing import List, Tuple
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QApplication
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
-    InfoBar, InfoBarPosition, CardWidget, StrongBodyLabel
+    InfoBar, InfoBarPosition, CardWidget, StrongBodyLabel,
+    SmoothScrollArea
 )
 from core.plugin_interface import PluginInterface
 from ui.custom_icon import CustomFluentIcon
@@ -72,13 +73,95 @@ class SystemToolsWidget(QWidget):
         super().__init__(parent)
         self.core = core
         self.buttons = []
+        self._init_scroll_buttons()
         self._setup_ui()
+    
+    def _init_scroll_buttons(self):
+        """初始化滚动按钮"""
+        self._up_btn = PushButton("", self)
+        self._up_btn.setIcon(FIF.CARE_UP_SOLID)
+        self._up_btn.setFixedSize(48, 24)
+        self._up_btn.setCursor(Qt.PointingHandCursor)
+        self._up_btn.hide()
+        self._up_btn.clicked.connect(self._scroll_up)
+        
+        self._down_btn = PushButton("", self)
+        self._down_btn.setIcon(FIF.CARE_DOWN_SOLID)
+        self._down_btn.setFixedSize(48, 24)
+        self._down_btn.setCursor(Qt.PointingHandCursor)
+        self._down_btn.hide()
+        self._down_btn.clicked.connect(self._scroll_down)
+    
+    def _scroll_up(self):
+        if hasattr(self, '_scroll_area'):
+            bar = self._scroll_area.verticalScrollBar()
+            bar.setValue(bar.value() - 100)
+    
+    def _scroll_down(self):
+        if hasattr(self, '_scroll_area'):
+            bar = self._scroll_area.verticalScrollBar()
+            bar.setValue(bar.value() + 100)
+    
+    def _check_scroll_buttons(self):
+        """检查并更新滚动按钮显示"""
+        if not hasattr(self, '_scroll_area'):
+            return
+        widget_height = self._scroll_widget.height()
+        viewport_height = self._scroll_area.viewport().height()
+        
+        if widget_height > viewport_height:
+            bar = self._scroll_area.verticalScrollBar()
+            self._up_btn.setVisible(bar.value() > 0)
+            self._down_btn.setVisible(bar.value() < bar.maximum())
+        else:
+            self._up_btn.hide()
+            self._down_btn.hide()
+    
+    def resizeEvent(self, e):
+        """窗口大小改变时检查滚动按钮"""
+        super().resizeEvent(e)
+        self._check_scroll_buttons()
     
     def _setup_ui(self):
         """构建界面"""
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(16)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 向上滚动按钮
+        up_container = QWidget()
+        up_layout = QHBoxLayout(up_container)
+        up_layout.setContentsMargins(0, 0, 0, 0)
+        up_layout.addStretch()
+        up_layout.addWidget(self._up_btn)
+        
+        # 滚动区域
+        self._scroll_area = SmoothScrollArea(self)
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        
+        # 滚动内容widget
+        self._scroll_widget = QWidget()
+        self._scroll_widget.setStyleSheet("background: transparent;")
+        self._scroll_layout = QVBoxLayout(self._scroll_widget)
+        self._scroll_layout.setSpacing(16)
+        self._scroll_layout.setContentsMargins(20, 20, 20, 20)
+        
+        self._scroll_area.setWidget(self._scroll_widget)
+        
+        # 向下滚动按钮
+        down_container = QWidget()
+        down_layout = QHBoxLayout(down_container)
+        down_layout.setContentsMargins(0, 0, 0, 0)
+        down_layout.addStretch()
+        down_layout.addWidget(self._down_btn)
+        
+        # 添加到主布局
+        main_layout.addWidget(up_container)
+        main_layout.addWidget(self._scroll_area, 1)
+        main_layout.addWidget(down_container)
         
         # === 搜索区域 ===
         search_card = CardWidget(self)
@@ -93,7 +176,7 @@ class SystemToolsWidget(QWidget):
         search_layout.addWidget(StrongBodyLabel("搜索:"))
         search_layout.addWidget(self.search_input, 1)
         
-        main_layout.addWidget(search_card)
+        self._scroll_layout.addWidget(search_card)
         
         # === 工具按钮区域 ===
         tools_card = CardWidget(self)
@@ -154,10 +237,10 @@ class SystemToolsWidget(QWidget):
             self.button_grid.addWidget(btn, row, col)
         
         tools_layout.addLayout(self.button_grid)
-        main_layout.addWidget(tools_card)
+        self._scroll_layout.addWidget(tools_card)
         
         # 底部提示
-        main_layout.addStretch(1)
+        self._scroll_layout.addStretch(1)
     
     def _open_tool(self, command: str, admin: bool, name: str):
         """打开系统工具"""

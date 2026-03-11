@@ -141,16 +141,15 @@ class SettingsInterface(ScrollArea):
                 f"{self.core.config.window_width.value}x{self.core.config.window_height.value}"
             )
 
-    def _on_nav_expanded_changed(self, checked: bool) -> None:
+    def _on_nav_expanded_changed(self, checked: bool):
         """导航栏展开配置改变"""
         main_window = self._get_main_window()
         if hasattr(main_window, 'navigationInterface'):
             try:
-                panel = main_window.navigationInterface.panel
                 if checked:
-                    panel.expand()
+                    main_window.navigationInterface.expand()
                 else:
-                    panel.collapse()
+                    main_window.navigationInterface.collapse()
                 self.core.logger.info(f"Navigation expanded changed to: {checked}")
             except Exception as e:
                 self.core.logger.error(f"Failed to change navigation expanded: {e}")
