@@ -14,14 +14,35 @@ class CustomFluentIcon(FluentIconBase, Enum):
     """自定义 Fluent 图标
     
     图标文件命名规则:
-    - 深色主题: {name}_dark.svg
-    - 浅色主题: {name}_light.svg
+    - 深色主题：{name}_dark.svg
+    - 浅色主题：{name}_light.svg
     
     如果只有 dark 版本，则两个主题都使用 dark 版本
     """
     SYSTEM = "sys"
     PICTURE = "picture"
     ENV = "env"
+    NOTEBOOK = "notebook"
+    NOTEBOOK_LIST = "notebook_list"
+    NOTEBOOK_FORMAT = "notebook_format"  # 有序列表图标
+    ISLIST = "islist"
+    TIME = "time"
+    DIFFER = 'differ'
+    REGEDIT = "regedit"
+    DEVICE = "device"
+    DISK = "disk"
+    SERVICES = "services"
+    TASK = "task"
+    CONTROL_PANEL = "control_panel"
+    SYSCONFIG = "sys_config"
+    DESK = "desk"
+    RECYCLE_BIN = "recycle_bin"
+    CMD = "cmd"
+    POWERSHELL = "powershell"
+    WINVIEW = "winview"
+    COMPUTER = "computer"
+    NETFW = "netfw"
+    
     
     def path(self, theme=Theme.AUTO) -> str:
         """获取图标路径"""

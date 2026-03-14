@@ -13,8 +13,8 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, CardWidget, StrongBodyLabel,
     SmoothScrollArea
 )
-from core.plugin_interface import PluginInterface
-from ui.custom_icon import CustomFluentIcon
+from core import PluginInterface
+from ui import CustomFluentIcon as CFIF
 
 
 class SystemTools:
@@ -190,25 +190,25 @@ class SystemToolsWidget(QWidget):
         
         # 定义工具列表 (名称, 命令, 图标, 是否管理员, 关键词)
         tools = [
-            ("注册表编辑器", "regedit", FIF.SETTING, True, ["注册表", "regedit", "registry"]),
-            ("设备管理器", "devmgmt.msc", FIF.APPLICATION, True, ["设备", "devmgmt", "硬件"]),
-            ("磁盘管理", "diskmgmt.msc", FIF.SAVE, True, ["磁盘", "diskmgmt", "分区"]),
-            ("服务管理", "services.msc", FIF.SETTING, True, ["服务", "services", "管理"]),
+            ("注册表编辑器", "regedit", CFIF.REGEDIT, True, ["注册表", "regedit", "registry"]),
+            ("设备管理器", "devmgmt.msc", CFIF.DEVICE, True, ["设备", "devmgmt", "硬件"]),
+            ("磁盘管理", "diskmgmt.msc", CFIF.DISK, True, ["磁盘", "diskmgmt", "分区"]),
+            ("服务管理", "services.msc", CFIF.SERVICES, True, ["服务", "services", "管理"]),
             
-            ("环境变量", "rundll32 sysdm.cpl,EditEnvironmentVariables", FIF.EDIT, False, ["环境变量", "environment", "变量"]),
-            ("任务管理器", "taskmgr", FIF.CALENDAR, False, ["任务", "taskmgr", "管理器"]),
-            ("控制面板", "control", FIF.MENU, False, ["控制面板", "control", "设置"]),
-            ("命令提示符", "cmd", FIF.COMMAND_PROMPT, True, ["命令", "cmd", "控制台"]),
+            ("环境变量", "rundll32 sysdm.cpl,EditEnvironmentVariables", CFIF.ENV, False, ["环境变量", "environment", "变量"]),
+            ("任务管理器", "taskmgr", CFIF.TASK, False, ["任务", "taskmgr", "管理器"]),
+            ("控制面板", "control", CFIF.CONTROL_PANEL, False, ["控制面板", "control", "设置"]),
+            ("命令提示符", "cmd", CFIF.CMD, True, ["命令", "cmd", "控制台"]),
             
-            ("PowerShell", "powershell", FIF.CODE, True, ["powershell", "脚本", "命令"]),
+            ("PowerShell", "powershell", CFIF.POWERSHELL, True, ["powershell", "脚本", "命令"]),
             ("网络连接", "ncpa.cpl", FIF.GLOBE, True, ["网络", "ncpa", "连接"]),
-            ("防火墙", "wf.msc", FIF.CERTIFICATE, True, ["防火墙", "firewall", "安全"]),
-            ("计算机管理", "compmgmt.msc", FIF.APPLICATION, True, ["计算机", "compmgmt", "管理"]),
+            ("防火墙", "wf.msc", CFIF.NETFW, True, ["防火墙", "firewall", "安全"]),
+            ("计算机管理", "compmgmt.msc", CFIF.COMPUTER, True, ["计算机", "compmgmt", "管理"]),
             
-            ("系统配置", "msconfig", FIF.SETTING, True, ["系统配置", "msconfig", "启动"]),
+            ("系统配置", "msconfig", CFIF.SYSCONFIG, True, ["系统配置", "msconfig", "启动"]),
             ("磁盘清理", "cleanmgr", FIF.DELETE, False, ["磁盘清理", "cleanmgr", "清理"]),
-            ("事件查看器", "eventvwr", FIF.INFO, True, ["事件", "eventvwr", "日志"]),
-            ("远程桌面", "mstsc", FIF.VIDEO, False, ["远程桌面", "mstsc", "远程"]),
+            ("事件查看器", "eventvwr", CFIF.WINVIEW, True, ["事件", "eventvwr", "日志"]),
+            ("远程桌面", "mstsc", CFIF.DESK, False, ["远程桌面", "mstsc", "远程"]),
             
             ("系统信息", "msinfo32", FIF.INFO, False, ["系统信息", "msinfo32", "信息"]),
             ("性能监视器", "perfmon", FIF.STOP_WATCH, True, ["性能", "perfmon", "监视"]),
@@ -218,7 +218,7 @@ class SystemToolsWidget(QWidget):
             ("程序和功能", "appwiz.cpl", FIF.FOLDER, True, ["程序", "appwiz", "卸载"]),
             ("系统属性", "sysdm.cpl", FIF.SETTING, True, ["系统属性", "sysdm", "属性"]),
             ("Windows功能", "optionalfeatures", FIF.ADD, True, ["windows功能", "功能", "features"]),
-            ("回收站", "explorer shell:RecycleBinFolder", FIF.DELETE, False, ["回收站", "recycle", "垃圾桶"]),
+            ("回收站", "explorer shell:RecycleBinFolder", CFIF.RECYCLE_BIN, False, ["回收站", "recycle", "垃圾桶"]),
         ]
         
         # 创建按钮
@@ -312,7 +312,7 @@ class Plugin(PluginInterface):
     
     PLUGIN_ID = "system_tools"
     PLUGIN_NAME = "系统工具"
-    PLUGIN_ICON = CustomFluentIcon.SYSTEM
+    PLUGIN_ICON = CFIF.SYSTEM
     PLUGIN_PRIORITY = 5
     
     def initialize(self, core) -> None:

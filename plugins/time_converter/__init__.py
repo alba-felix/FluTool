@@ -14,7 +14,8 @@ from qfluentwidgets import (
     FluentIcon as FIF, InfoBar, InfoBarPosition,
     CardWidget, SubtitleLabel, IconWidget, SmoothScrollArea
 )
-from core.plugin_interface import PluginInterface
+from core import PluginInterface
+from ui.custom_icon import CustomFluentIcon
 
 
 class TimeConverterWidget(QWidget):
@@ -223,11 +224,11 @@ class TimeConverterWidget(QWidget):
         control_row.addStretch()
         
         # 转换按钮
-        self.down_btn = PushButton("⬇ 时间戳 → 时间", self)
+        self.down_btn = PushButton("时间戳 → 时间", self)
         self.down_btn.setIcon(FIF.DOWN)
         self.down_btn.clicked.connect(self._convert_timestamp_to_datetime)
         
-        self.up_btn = PushButton("⬆ 时间 → 时间戳", self)
+        self.up_btn = PushButton("时间 → 时间戳", self)
         self.up_btn.setIcon(FIF.UP)
         self.up_btn.clicked.connect(self._convert_datetime_to_timestamp)
         
@@ -440,7 +441,7 @@ class Plugin(PluginInterface):
     
     PLUGIN_ID = "time_converter"
     PLUGIN_NAME = "时间转换"
-    PLUGIN_ICON = FIF.DATE_TIME
+    PLUGIN_ICON = CustomFluentIcon.TIME
     PLUGIN_PRIORITY = 4
     
     def initialize(self, core) -> None:

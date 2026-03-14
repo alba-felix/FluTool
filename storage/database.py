@@ -117,6 +117,34 @@ class DatabaseManager:
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
                 );
                 
+                CREATE TABLE IF NOT EXISTS notebook (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plugin_id TEXT NOT NULL,
+                    category_id INTEGER,
+                    title TEXT NOT NULL,
+                    content TEXT DEFAULT '',
+                    note_type TEXT DEFAULT 'markdown',
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+                );
+                
+                CREATE TABLE IF NOT EXISTS color_palette (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plugin_id TEXT NOT NULL,
+                    category_id INTEGER,
+                    name TEXT NOT NULL,
+                    color_hex TEXT NOT NULL,
+                    color_rgb TEXT NOT NULL,
+                    color_argb TEXT DEFAULT '',
+                    notes TEXT DEFAULT '',
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+                );
+                
                 CREATE INDEX IF NOT EXISTS idx_bookmarks_plugin_id ON bookmarks(plugin_id);
                 CREATE INDEX IF NOT EXISTS idx_bookmarks_category_id ON bookmarks(category_id);
                 CREATE INDEX IF NOT EXISTS idx_categories_plugin_id ON categories(plugin_id);
@@ -126,6 +154,10 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_passwords_category_id ON passwords(category_id);
                 CREATE INDEX IF NOT EXISTS idx_app_launcher_plugin_id ON app_launcher(plugin_id);
                 CREATE INDEX IF NOT EXISTS idx_app_launcher_category_id ON app_launcher(category_id);
+                CREATE INDEX IF NOT EXISTS idx_notebook_plugin_id ON notebook(plugin_id);
+                CREATE INDEX IF NOT EXISTS idx_notebook_category_id ON notebook(category_id);
+                CREATE INDEX IF NOT EXISTS idx_color_palette_plugin_id ON color_palette(plugin_id);
+                CREATE INDEX IF NOT EXISTS idx_color_palette_category_id ON color_palette(category_id);
             ''')
             conn.commit()
     
@@ -632,3 +664,94 @@ class DatabaseManager:
                 )
                 count += 1
         return count
+    
+    def add_color(self, plugin_id: str, name: str, color_hex: str, color_rgb: str,
+                  category_name: str = None, category_id: int = None,
+                  color_argb: str = '', notes: str = '', sort_order: int = 0) -> int:
+        """添加颜色"""
+        with self.get_connection() as conn:
+            if category_id is None and category_name:
+                cursor = conn.execute(
+                    "SELECT id FROM categories WHERE plugin_id = ? AND name = ?",
+                    (plugin_id, category_name)
+                )
+                row = cursor.fetchone()
+                if row:
+                    category_id = row['id']
+            cursor = conn.execute(
+                "INSERT INTO color_palette (plugin_id, category_id, name, color_hex, color_rgb, color_argb, notes, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (plugin_id, category_id, name, color_hex, color_rgb, color_argb, notes, sort_order)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def color_exists(self, plugin_id: str, color_hex: str) -> bool:
+        """检查颜色是否已存在"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM color_palette WHERE plugin_id = ? AND color_hex = ?",
+                (plugin_id, color_hex)
+            )
+            return cursor.fetchone() is not None
+    
+    def get_colors(self, plugin_id: str, category_id: int = None) -> List[Dict[str, Any]]:
+        """获取颜色列表"""
+        with self.get_connection() as conn:
+            if category_id:
+                cursor = conn.execute(
+                    """SELECT c.*, cat.name as category_name 
+                       FROM color_palette c 
+                       LEFT JOIN categories cat ON c.category_id = cat.id 
+                       WHERE c.plugin_id = ? AND c.category_id = ?
+                       ORDER BY c.sort_order, c.id""",
+                    (plugin_id, category_id)
+                )
+            else:
+                cursor = conn.execute(
+                    """SELECT c.*, cat.name as category_name 
+                       FROM color_palette c 
+                       LEFT JOIN categories cat ON c.category_id = cat.id 
+                       WHERE c.plugin_id = ?
+                       ORDER BY c.sort_order, c.id""",
+                    (plugin_id,)
+                )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_color(self, plugin_id: str, color_id: int, **kwargs) -> bool:
+        """更新颜色"""
+        allowed_fields = {'name', 'color_hex', 'color_rgb', 'color_argb', 'notes', 'category_id', 'sort_order'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
+        values = list(updates.values()) + [plugin_id, color_id]
+        with self.get_connection() as conn:
+            conn.execute(
+                f"UPDATE color_palette SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE plugin_id = ? AND id = ?",
+                values
+            )
+            conn.commit()
+            return True
+    
+    def delete_color(self, plugin_id: str, color_id: int) -> bool:
+        """删除颜色"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM color_palette WHERE plugin_id = ? AND id = ?",
+                (plugin_id, color_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def search_colors(self, plugin_id: str, keyword: str) -> List[Dict[str, Any]]:
+        """搜索颜色"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """SELECT c.*, cat.name as category_name 
+                   FROM color_palette c 
+                   LEFT JOIN categories cat ON c.category_id = cat.id 
+                   WHERE c.plugin_id = ? AND (c.name LIKE ? OR c.color_hex LIKE ? OR c.color_rgb LIKE ? OR c.notes LIKE ?)
+                   ORDER BY c.sort_order, c.id""",
+                (plugin_id, f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%')
+            )
+            return [dict(row) for row in cursor.fetchall()]

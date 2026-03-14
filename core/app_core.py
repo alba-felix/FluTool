@@ -8,7 +8,7 @@ from .log import LogManager
 from .config import AppConfig
 from .utils import get_app_data_path, get_resource_path
 from qfluentwidgets import qconfig
-from storage.database import DatabaseManager
+from storage import DatabaseManager
 
 
 def init_app_data() -> None:

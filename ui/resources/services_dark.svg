@@ -1,0 +1,68 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景渐变 - 沿用你喜欢的深色风格 -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E3F66"/>
+      <stop offset="1" stop-color="#0F2A44"/>
+    </linearGradient>
+    <filter id="shadow" x="-0.02" y="-0.02" width="1.04" height="1.04">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- 底板 -->
+  <rect width="256" height="256" rx="48" fill="url(#bgGrad)" filter="url(#shadow)"/>
+
+  <!-- ===== 两个啮合的小齿轮 ===== -->
+  <g transform="translate(128, 128) scale(1)">
+
+    <!-- 左齿轮 (主齿轮) -->
+    <g transform="translate(-42, -8)">
+      <!-- 齿轮外圈齿 -->
+      <circle cx="0" cy="0" r="36" fill="#E0E0E0" stroke="#6B6B6B" stroke-width="3"/>
+      <!-- 8个外齿 -->
+      <g fill="#C0C0C0" stroke="#6B6B6B" stroke-width="2">
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(0)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(45)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(90)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(135)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(180)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(225)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(270)"/>
+        <rect x="-8" y="-52" width="16" height="20" rx="4" transform="rotate(315)"/>
+      </g>
+      <!-- 中心圆孔 -->
+      <circle cx="0" cy="0" r="14" fill="#4A4A4A" stroke="#2A2A2A" stroke-width="2"/>
+      <circle cx="0" cy="0" r="6" fill="#2A2A2A"/>
+      <!-- 内圈装饰 -->
+      <circle cx="0" cy="0" r="22" fill="none" stroke="#8A8A8A" stroke-width="1.5" stroke-dasharray="3 3"/>
+    </g>
+
+    <!-- 右齿轮 (稍小，表示啮合) -->
+    <g transform="translate(38, 12)">
+      <!-- 齿轮外圈齿 -->
+      <circle cx="0" cy="0" r="30" fill="#D8D8D8" stroke="#6B6B6B" stroke-width="3"/>
+      <!-- 8个外齿 -->
+      <g fill="#B8B8B8" stroke="#6B6B6B" stroke-width="1.8">
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(0)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(45)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(90)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(135)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(180)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(225)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(270)"/>
+        <rect x="-7" y="-44" width="14" height="18" rx="3.5" transform="rotate(315)"/>
+      </g>
+      <!-- 中心圆孔 -->
+      <circle cx="0" cy="0" r="12" fill="#4A4A4A" stroke="#2A2A2A" stroke-width="2"/>
+      <circle cx="0" cy="0" r="5" fill="#2A2A2A"/>
+    </g>
+
+    <!-- 啮合指示：两齿轮之间的连接线，表示联动 -->
+    <line x1="-20" y1="6" x2="18" y2="22" stroke="#FFD966" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <line x1="-14" y1="-2" x2="24" y2="14" stroke="#FFD966" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  </g>
+
+  <!-- 底部文字：services.msc (可选，可删除) -->
+  <text x="128" y="208" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#E0E0E0" text-anchor="middle" font-weight="500">services.msc</text>
+</svg>

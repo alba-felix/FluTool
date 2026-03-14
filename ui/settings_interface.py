@@ -10,7 +10,7 @@ from qfluentwidgets import (
     setCustomStyleSheet, PushSettingCard, MessageBox,
     InfoBar, InfoBarPosition
 )
-from core.utils import get_app_data_path
+from core import get_app_data_path
 
 
 class SettingsInterface(ScrollArea):

@@ -20,8 +20,8 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, setCustomStyleSheet, isDarkTheme, qconfig,
     TransparentToolButton, CaptionLabel, SubtitleLabel, BodyLabel, ScrollArea
 )
-from core.plugin_interface import PluginInterface
-from ui.custom_icon import CustomFluentIcon
+from core import PluginInterface
+from ui import CustomFluentIcon
 
 
 class ImagePreviewWidget(QWidget):

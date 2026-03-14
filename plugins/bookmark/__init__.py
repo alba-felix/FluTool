@@ -16,8 +16,8 @@ from qfluentwidgets import (
     setCustomStyleSheet, isDarkTheme, qconfig, IndeterminateProgressBar,
     MessageBoxBase, SubtitleLabel, MessageBox
 )
-from core.plugin_interface import PluginInterface
-from storage.database import DatabaseManager
+from core import PluginInterface
+from storage import DatabaseManager
 from functools import partial
 
 

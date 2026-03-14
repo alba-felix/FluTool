@@ -18,8 +18,8 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, isDarkTheme, qconfig,
     TransparentToolButton, SubtitleLabel, ScrollArea
 )
-from core.plugin_interface import PluginInterface
-from ui.custom_icon import CustomFluentIcon
+from core import PluginInterface
+from ui import CustomFluentIcon
 
 
 class EnvVarTableWidget(QWidget):

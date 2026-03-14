@@ -18,7 +18,7 @@ from qfluentwidgets import (
     setCustomStyleSheet, isDarkTheme, qconfig, TextEdit,
     MessageBox, TransparentToolButton, CaptionLabel
 )
-from core.plugin_interface import PluginInterface
+from core import PluginInterface
 
 
 class ClipboardWidget(QWidget):

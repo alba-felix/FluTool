@@ -13,8 +13,8 @@ from qfluentwidgets import (
     setCustomStyleSheet, isDarkTheme, qconfig, MessageBoxBase,
     SubtitleLabel, ComboBox, CaptionLabel, MessageBox
 )
-from core.plugin_interface import PluginInterface
-from storage.database import DatabaseManager
+from core import PluginInterface
+from storage import DatabaseManager
 from functools import partial
 
 

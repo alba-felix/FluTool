@@ -1,0 +1,64 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景渐变（统一风格） -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E3F66"/>
+      <stop offset="1" stop-color="#0F2A44"/>
+    </linearGradient>
+    <filter id="shadow" x="-0.02" y="-0.02" width="1.04" height="1.04">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- 底板 -->
+  <rect width="256" height="256" rx="48" fill="url(#bgGrad)" filter="url(#shadow)"/>
+
+  <!-- 主窗口（控制面板界面） -->
+  <rect x="32" y="32" width="192" height="160" rx="16" fill="white" stroke="#2B5797" stroke-width="2"/>
+
+  <!-- 标题栏（控制面板的标题区域） -->
+  <rect x="32" y="32" width="192" height="28" rx="16 16 0 0" fill="#2B5797"/>
+  <!-- 窗口控制按钮（红黄绿小圆点） -->
+  <circle cx="56" cy="46" r="6" fill="#FF5F56"/>
+  <circle cx="84" cy="46" r="6" fill="#FFBD2E"/>
+  <circle cx="112" cy="46" r="6" fill="#27C93F"/>
+  <!-- 标题文字“控制面板”缩写 -->
+  <text x="140" y="53" font-family="Segoe UI, Arial, sans-serif" font-size="12" fill="white" font-weight="bold">Control Panel</text>
+
+  <!-- 内部小图标网格（模拟控制面板中的各个设置项） -->
+  <!-- 第一行：电脑、齿轮 -->
+  <!-- 电脑图标（系统） -->
+  <g transform="translate(60, 80)">
+    <rect x="0" y="0" width="34" height="24" rx="4" fill="#E0E0E0" stroke="#6B6B6B" stroke-width="1.5"/>
+    <rect x="4" y="4" width="26" height="16" rx="2" fill="#F5F5F5" stroke="#6B6B6B" stroke-width="1"/>
+    <circle cx="17" cy="24" r="4" fill="#6B6B6B"/>
+  </g>
+  <!-- 齿轮图标（设置） -->
+  <g transform="translate(122, 80)">
+    <circle cx="17" cy="12" r="10" fill="#E0E0E0" stroke="#6B6B6B" stroke-width="2"/>
+    <!-- 齿轮外齿（简化，画四个小矩形） -->
+    <rect x="13" y="-2" width="8" height="8" rx="2" fill="#6B6B6B" transform="rotate(0,17,12)"/>
+    <rect x="13" y="18" width="8" height="8" rx="2" fill="#6B6B6B" transform="rotate(0,17,12)"/>
+    <rect x="-2" y="8" width="8" height="8" rx="2" fill="#6B6B6B" transform="rotate(0,17,12)"/>
+    <rect x="28" y="8" width="8" height="8" rx="2" fill="#6B6B6B" transform="rotate(0,17,12)"/>
+    <circle cx="17" cy="12" r="5" fill="#F5F5F5" stroke="#6B6B6B" stroke-width="1"/>
+  </g>
+
+  <!-- 第二行：文件夹、网络 -->
+  <!-- 文件夹图标（文件历史） -->
+  <g transform="translate(60, 128)">
+    <rect x="0" y="4" width="34" height="24" rx="4" fill="#FFD966" stroke="#8B5A2B" stroke-width="1.5"/>
+    <rect x="4" y="0" width="10" height="8" rx="2" fill="#FFD966" stroke="#8B5A2B" stroke-width="1.2"/>
+    <line x1="8" y1="12" x2="26" y2="12" stroke="#8B5A2B" stroke-width="1.2"/>
+    <line x1="8" y1="18" x2="26" y2="18" stroke="#8B5A2B" stroke-width="1.2"/>
+  </g>
+  <!-- 网络图标（地球 + 信号波纹） -->
+  <g transform="translate(122, 128)">
+    <circle cx="17" cy="16" r="8" fill="#E0E0E0" stroke="#6B6B6B" stroke-width="1.5"/>
+    <path d="M17 8 Q22 12 22 16 Q22 20 17 24 Q12 20 12 16 Q12 12 17 8" fill="none" stroke="#6B6B6B" stroke-width="1.2"/>
+    <circle cx="17" cy="16" r="2" fill="#6B6B6B"/>
+  </g>
+
+  <!-- 底部文字：control panel（可选） -->
+  <text x="128" y="214" font-family="Segoe UI, Arial, sans-serif" font-size="14" fill="#E0E0E0" text-anchor="middle" font-weight="500">Control Panel</text>
+</svg>

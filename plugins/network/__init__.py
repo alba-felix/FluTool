@@ -18,7 +18,7 @@ from qfluentwidgets import (
     TransparentToolButton, StrongBodyLabel, SubtitleLabel,
     BodyLabel, CardWidget, TextEdit, ScrollArea
 )
-from core.plugin_interface import PluginInterface
+from core import PluginInterface
 
 
 class CommandThread(QThread):

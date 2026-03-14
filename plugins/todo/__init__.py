@@ -18,7 +18,7 @@ from qfluentwidgets import (
     MessageBoxBase, TransparentToolButton, CaptionLabel, ComboBox,
     TextEdit, CheckBox, SubtitleLabel, BodyLabel
 )
-from core.plugin_interface import PluginInterface
+from core import PluginInterface
 
 
 class AddTodoDialog(MessageBoxBase):

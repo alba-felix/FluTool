@@ -25,8 +25,8 @@ from qfluentwidgets import (
     ScrollArea, SmoothScrollArea
 )
 
-from core.plugin_interface import PluginInterface
-from storage.database import DatabaseManager
+from core import PluginInterface
+from storage import DatabaseManager
 
 
 CARD_WIDTH = 120

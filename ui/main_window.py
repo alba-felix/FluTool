@@ -16,7 +16,7 @@ from qfluentwidgets.window.stacked_widget import StackedWidget
 from qframelesswindow import FramelessMainWindow, StandardTitleBar
 from .settings_interface import SettingsInterface
 from .more_menu import MoreMenu
-from core.utils import get_resource_path
+from core import get_resource_path
 
 
 class ScrollableNavButton(NavigationWidget):
@@ -571,27 +571,72 @@ class PushFluentWindow(FramelessMainWindow):
 
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(tray_icon)
-        self.tray_icon.setToolTip("FluTool")
+        self.tray_icon.setToolTip("FluTool - 多功能工具箱")
 
-        tray_menu = QMenu(self)
+        self._tray_menu = QMenu()
+        self._tray_menu.setStyleSheet("""
+            QMenu {
+                background-color: #f5f5f5;
+                border: 1px solid #ccc;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 24px 6px 12px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #e0e0e0;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #ccc;
+                margin: 4px 8px;
+            }
+        """)
 
-        show_action = QAction("显示主窗口", self)
+        show_action = QAction("显示主窗口", self._tray_menu)
         show_action.triggered.connect(self.show_and_activate)
-        tray_menu.addAction(show_action)
+        self._tray_menu.addAction(show_action)
 
-        tray_menu.addSeparator()
+        self._tray_menu.addSeparator()
 
-        quit_action = QAction("退出", self)
+        color_picker_action = QAction("屏幕取色", self._tray_menu)
+        color_picker_action.triggered.connect(self._start_screen_color_picker)
+        self._tray_menu.addAction(color_picker_action)
+
+        self._tray_menu.addSeparator()
+
+        quit_action = QAction("退出程序", self._tray_menu)
         quit_action.triggered.connect(self._on_real_close)
-        tray_menu.addAction(quit_action)
+        self._tray_menu.addAction(quit_action)
 
-        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.setContextMenu(self._tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.messageClicked.connect(self.show_and_activate)
         self.tray_icon.show()
 
+    def _start_screen_color_picker(self):
+        """从托盘启动屏幕取色"""
+        plugin = self.core.plugin_manager.get_plugin("color_palette")
+        if plugin:
+            if plugin._widget is None:
+                plugin.get_widget()
+            if plugin._widget:
+                plugin._widget.start_color_picker()
+                return
+        
+        self.tray_icon.showMessage(
+            "FluTool",
+            "调色板插件未加载，请先启动程序",
+            QSystemTrayIcon.Warning,
+            2000
+        )
+
     def _on_tray_activated(self, reason) -> None:
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+        if reason == QSystemTrayIcon.Trigger:
             self.show_and_activate()
+        elif reason == QSystemTrayIcon.MiddleClick:
+            self._start_screen_color_picker()
 
     def show_and_activate(self) -> None:
         self.show()
@@ -911,7 +956,7 @@ class MainWindow(PushFluentWindow):
         self.hide()
         self.tray_icon.showMessage(
             "FluTool",
-            "程序已最小化到系统托盘",
+            "程序已最小化到系统托盘\n单击托盘图标恢复窗口",
             QSystemTrayIcon.Information,
             2000
         )
@@ -921,6 +966,9 @@ class MainWindow(PushFluentWindow):
             if self._plugin_initialized[plugin_id]:
                 plugin = self.core.plugin_manager.get_plugin(plugin_id)
                 if plugin:
-                    plugin.shutdown()
+                    try:
+                        plugin.shutdown()
+                    except Exception as e:
+                        self.core.logger.error(f"Plugin shutdown error: {e}")
         self.tray_icon.hide()
         super().close()

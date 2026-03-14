@@ -20,10 +20,10 @@ from qfluentwidgets import (
     MessageBox
 )
 
-from core.plugin_interface import PluginInterface
-from storage.database import DatabaseManager
-from utils.crypto_utils import CharCryptoTool
-from core.utils import get_app_data_path
+from core import PluginInterface
+from storage import DatabaseManager
+from utils import CharCryptoTool
+from core import get_app_data_path
 
 
 class InputDialog(MessageBoxBase):
@@ -287,7 +287,7 @@ class PasswordWidget(QWidget):
                     last_time_str = self.config['Password']['last_password_time']
                     try:
                         last_time = datetime.datetime.strptime(last_time_str, '%Y-%m-%d %H:%M:%S')
-                        if (datetime.datetime.now() - last_time).days < 1:
+                        if (datetime.datetime.now() - last_time).days < 8:
                             self.is_decrypted = True
                     except:
                         pass
