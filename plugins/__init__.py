@@ -1,14 +1,15 @@
 from . import app_launcher
 from . import bookmark
 from . import clipboard
+from . import color_palette
 from . import command
 from . import environment
+from . import folder_tree
 from . import image_assistant
 from . import network
 from . import notebook
 from . import password
 from . import system_tools
+from . import text_compare
 from . import time_converter
 from . import todo
-
-
