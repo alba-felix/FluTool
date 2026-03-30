@@ -1,3 +1,0 @@
-<svg class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" width="64" height="64">
-  <path d="M192 128h640c35.3 0 64 28.7 64 64v640c0 35.3-28.7 64-64 64H192c-35.3 0-64-28.7-64-64V192c0-35.3 28.7-64 64-64z m64 128v512h512V256H256z m128 128h256v64H384V384z m0 192h256v64H384V576z m0 192h256v64H384V768z" fill="#333333"/>
-</svg>

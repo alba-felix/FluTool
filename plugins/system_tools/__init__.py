@@ -219,6 +219,7 @@ class SystemToolsWidget(QWidget):
             ("系统属性", "sysdm.cpl", FIF.SETTING, True, ["系统属性", "sysdm", "属性"]),
             ("Windows功能", "optionalfeatures", FIF.ADD, True, ["windows功能", "功能", "features"]),
             ("回收站", "explorer shell:RecycleBinFolder", CFIF.RECYCLE_BIN, False, ["回收站", "recycle", "垃圾桶"]),
+            ("组策略", "gpedit.msc", CFIF.GROUP_POLICY, True, ["组策略", "gpedit", "策略", "gpo"]),
         ]
         
         # 创建按钮
@@ -229,6 +230,7 @@ class SystemToolsWidget(QWidget):
             btn.setProperty("command", command)
             btn.setProperty("admin", admin)
             btn.setProperty("keywords", keywords)
+            btn.setToolTip(command)
             btn.clicked.connect(lambda checked, c=command, a=admin, n=name: self._open_tool(c, a, n))
             
             self.buttons.append(btn)

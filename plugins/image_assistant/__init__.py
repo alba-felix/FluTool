@@ -20,7 +20,7 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, setCustomStyleSheet, isDarkTheme, qconfig,
     TransparentToolButton, CaptionLabel, SubtitleLabel, BodyLabel, ScrollArea
 )
-from core import PluginInterface
+from core import PluginInterface, get_app_data_path
 from ui import CustomFluentIcon
 
 
@@ -306,8 +306,7 @@ class ImageAssistantWidget(QWidget):
     
     def _init_paths(self):
         """初始化路径"""
-        base_dir = Path(__file__).parent.parent.parent
-        self.data_dir = base_dir / "data" / "img"
+        self.data_dir = get_app_data_path("data/img")
         self.data_dir.mkdir(parents=True, exist_ok=True)
     
     def _setup_ui(self):
@@ -771,7 +770,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "image_assistant"
     PLUGIN_NAME = "图片助手"
     PLUGIN_ICON = CustomFluentIcon.PICTURE
-    PLUGIN_PRIORITY = 8
+    PLUGIN_PRIORITY = 9
     
     def initialize(self, core) -> None:
         """初始化插件"""

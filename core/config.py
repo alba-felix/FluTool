@@ -11,6 +11,9 @@ class AppConfig(QConfig):
     auto_save = ConfigItem(
         "General", "AutoSave", True, BoolValidator()
     )
+    efficiency_mode = ConfigItem(
+        "General", "EfficiencyMode", False, BoolValidator()
+    )
     window_width = RangeConfigItem(
         "Window", "Width", 1000, RangeValidator(600, 2000)
     )
@@ -19,4 +22,10 @@ class AppConfig(QConfig):
     )
     nav_expanded = ConfigItem(
         "Navigation", "Expanded", False, BoolValidator()
+    )
+    auto_backup_enabled = ConfigItem(
+        "Backup", "AutoBackupEnabled", False, BoolValidator()
+    )
+    auto_backup_path = ConfigItem(
+        "Backup", "AutoBackupPath", "", None
     )

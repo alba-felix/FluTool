@@ -1,6 +1,11 @@
 {
+    "Backup": {
+        "AutoBackupEnabled": false,
+        "AutoBackupPath": "H:/Data/Fultool_bak"
+    },
     "General": {
-        "AutoSave": true
+        "AutoSave": true,
+        "EfficiencyMode": false
     },
     "QFluentWidgets": {
         "FontFamilies": [
@@ -15,7 +20,7 @@
         "Expanded": false
     },
     "Window": {
-        "Height": 735,
-        "Width": 1106
+        "Height": 936,
+        "Width": 1391
     }
 }

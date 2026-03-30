@@ -326,8 +326,6 @@ class NotebookWidget(QWidget):
         self._toolbar.export_note_signal.connect(self._export_note)
         self._toolbar.font_changed.connect(self._change_font)
         self._toolbar.font_size_changed.connect(self._change_font_size)
-        # 编辑器快捷键
-        self._editor.enter_pressed.connect(self._on_enter_pressed)
         self._editor.alt_enter_pressed.connect(self._on_alt_enter_pressed)
         self._editor.save_signal.connect(self._save_note)
     
@@ -352,58 +350,66 @@ class NotebookWidget(QWidget):
         self._toolbar.set_note_type('markdown')
     
     def _save_note(self):
-        """保存笔记"""
+        """保存笔记
+
+        第一次保存：弹出对话框输入标题
+        后续保存：直接覆盖保存
+        """
         from qfluentwidgets import MessageBoxBase, LineEdit
         from PyQt5.QtWidgets import QVBoxLayout
         from datetime import datetime
-        
-        # 弹出命名对话框
-        dialog = MessageBoxBase(self)
-        dialog.setWindowTitle("保存笔记")
-        
-        name_layout = QVBoxLayout()
-        name_layout.setSpacing(8)
-        self._save_name_edit = LineEdit()
-        self._save_name_edit.setPlaceholderText("输入笔记名称（留空则使用当前时间）")
-        # 如果有当前笔记，使用当前标题
+
+        content = self._editor.get_content()
+        note_type = self._toolbar.get_note_type()
+
+        # 如果已有笔记ID，直接覆盖保存
         if self._current_note_id:
             notes = self.db.get_notes(self.PLUGIN_ID)
+            current_title = ""
             for note in notes:
                 if note['id'] == self._current_note_id:
-                    self._save_name_edit.setText(note['title'])
+                    current_title = note['title']
                     break
+
+            self.db.update_note(
+                self.PLUGIN_ID,
+                self._current_note_id,
+                content=content,
+                note_type=note_type
+            )
+            InfoBar.success("保存成功", f"笔记 '{current_title}' 已更新", parent=self)
+            self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+            self.note_saved.emit()
+            return
+
+        # 第一次保存，弹出对话框
+        dialog = MessageBoxBase(self)
+        dialog.setWindowTitle("保存笔记")
+
+        name_layout = QVBoxLayout()
+        name_layout.setSpacing(12)
+        self._save_name_edit = LineEdit()
+        self._save_name_edit.setPlaceholderText("输入笔记名称（留空则使用当前时间）")
         name_layout.addWidget(self._save_name_edit)
-        
+
         dialog.viewLayout.addLayout(name_layout)
-        
+        dialog.widget.setMinimumWidth(450)
+
         if dialog.exec():
             title = self._save_name_edit.text().strip()
             # 如果标题为空，使用当前时间作为标题
             if not title:
                 title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            content = self._editor.get_content()
-            note_type = self._toolbar.get_note_type()
-            
-            if self._current_note_id:
-                self.db.update_note(
-                    self.PLUGIN_ID,
-                    self._current_note_id,
-                    title=title,
-                    content=content,
-                    note_type=note_type
-                )
-                InfoBar.success("保存成功", f"笔记 '{title}' 已保存", parent=self)
-            else:
-                note_id = self.db.add_note(
-                    self.PLUGIN_ID,
-                    title=title,
-                    content=content,
-                    note_type=note_type
-                )
-                self._current_note_id = note_id
-                InfoBar.success("创建成功", f"笔记 '{title}' 已创建", parent=self)
-            
+
+            note_id = self.db.add_note(
+                self.PLUGIN_ID,
+                title=title,
+                content=content,
+                note_type=note_type
+            )
+            self._current_note_id = note_id
+            InfoBar.success("创建成功", f"笔记 '{title}' 已创建", parent=self)
+
             self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
             self.note_saved.emit()
     
@@ -541,15 +547,9 @@ class NotebookWidget(QWidget):
         """更改字体大小"""
         self._editor.set_font_size(size)
     
-    def _on_enter_pressed(self):
-        """处理 Enter 键 - 添加到列表"""
-        # 自动保存当前笔记
-        self._save_note()
-    
     def _on_alt_enter_pressed(self):
-        """处理 Alt+Enter 键 - 换行"""
-        # 不做特殊处理，已经在编辑器中插入了换行符
-        pass
+        """处理 Alt+Enter 键 - 弹出保存对话框"""
+        self._save_note()
 
 
 class Plugin(PluginInterface):
@@ -558,7 +558,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "notebook"
     PLUGIN_NAME = "随手记"
     PLUGIN_ICON = CFIF.NOTEBOOK
-    PLUGIN_PRIORITY = 12
+    PLUGIN_PRIORITY = 6
     
     def initialize(self, core) -> None:
         """初始化插件"""

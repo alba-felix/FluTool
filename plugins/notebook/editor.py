@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit
 from PyQt5.QtGui import QColor, QKeyEvent, QPainter
 from qfluentwidgets import isDarkTheme, qconfig
 
+from .highlighter import NotebookHighlighter
+
 
 class LineNumberArea(QWidget):
     """行号显示区域"""
@@ -171,11 +173,13 @@ class CustomTextEdit(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.line_number_area = LineNumberArea(self)
-        
+
         self.blockCountChanged.connect(self.update_line_number_area_width)
         self.updateRequest.connect(self.update_line_number_area)
-        
+
         self.update_line_number_area_width()
+
+        self.highlighter = NotebookHighlighter(self.document())
     
     def line_number_area_width(self):
         """计算行号区域宽度"""
@@ -215,16 +219,14 @@ class CustomTextEdit(QPlainTextEdit):
                 self.save_signal.emit()
                 event.accept()
                 return
-        
+
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             if event.modifiers() == Qt.AltModifier:
                 self.alt_enter_pressed.emit()
-                self.insertPlainText('\n')
                 event.accept()
                 return
             else:
-                self.enter_pressed.emit()
-                event.accept()
+                super().keyPressEvent(event)
                 return
-        
+
         super().keyPressEvent(event)

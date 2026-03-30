@@ -15,6 +15,7 @@ pyinstaller --noconfirm --onedir --windowed ^
       --hidden-import "PyQt5.sip" ^
       --hidden-import "PyQt5.QtXml" ^
       --hidden-import "PyQt5.QtSvg" ^
+      --hidden-import "PyQt5.QtNetwork" ^
       --hidden-import "requests" ^
       --hidden-import "qframelesswindow" ^
       --hidden-import "charset_normalizer" ^

@@ -46,35 +46,39 @@ class NotebookSidebar(QWidget):
         self._note_list = QListWidget()
         self._note_list.setFrameShape(QListWidget.NoFrame)
         
-        # 根据主题设置颜色
+        # 固定标题颜色为蓝色，不随主题变化
+        text_color = "#0078d4"
+        
+        # 根据主题设置其他颜色
         if isDarkTheme():
-            text_color = "#e6e6e6"
             hover_bg = "rgba(255, 255, 255, 0.08)"
             selected_bg = "rgba(0, 120, 215, 0.15)"
         else:
-            text_color = "#333333"
             hover_bg = "rgba(0, 0, 0, 0.04)"
             selected_bg = "rgba(0, 120, 215, 0.08)"
         
-        self._note_list.setStyleSheet(f"""
-            QListWidget {{
+        # 修复 f-string 语法错误，转义 CSS 花括号
+        style_sheet = """
+            QListWidget {
                 background: transparent;
                 border: none;
                 outline: none;
-            }}
-            QListWidget::item {{
-                height: 32px;  /* 减小高度 */
+            }
+            QListWidget::item {
+                height: 32px;
                 border-radius: 4px;
-                padding: 4px 8px;  /* 减小内边距 */
-                color: {text_color};
-            }}
-            QListWidget::item:hover {{
-                background: {hover_bg};
-            }}
-            QListWidget::item:selected {{
-                background: {selected_bg};
-            }}
-        """)
+                padding: 4px 8px;
+                color: %s;
+            }
+            QListWidget::item:hover {
+                background: %s;
+            }
+            QListWidget::item:selected {
+                background: %s;
+                color: #0078d4;
+            }
+        """ % (text_color, hover_bg, selected_bg)
+        self._note_list.setStyleSheet(style_sheet)
         self._note_list.itemClicked.connect(self._on_note_selected)
         layout.addWidget(self._note_list)
 

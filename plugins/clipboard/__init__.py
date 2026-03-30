@@ -18,7 +18,7 @@ from qfluentwidgets import (
     setCustomStyleSheet, isDarkTheme, qconfig, TextEdit,
     MessageBox, TransparentToolButton, CaptionLabel
 )
-from core import PluginInterface
+from core import PluginInterface, get_app_data_path
 
 
 class ClipboardWidget(QWidget):
@@ -40,8 +40,7 @@ class ClipboardWidget(QWidget):
     
     def _init_paths(self):
         """初始化路径"""
-        base_dir = Path(__file__).parent.parent.parent
-        self.data_dir = base_dir / "data"
+        self.data_dir = get_app_data_path("data")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.json_file = self.data_dir / "clipboard.json"
     

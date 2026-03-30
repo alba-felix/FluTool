@@ -19,6 +19,7 @@ from qfluentwidgets import (
 from core import PluginInterface
 from storage import DatabaseManager
 from functools import partial
+from ui.custom_icon import CustomFluentIcon
 
 
 def get_app_data_path(relative_path: str) -> Path:
@@ -857,7 +858,7 @@ class Plugin(PluginInterface):
     """书签插件"""
     PLUGIN_ID = "bookmark"
     PLUGIN_NAME = "网站书签"
-    PLUGIN_ICON = FIF.TAG
+    PLUGIN_ICON = CustomFluentIcon.BOOKMARK_TAG
     PLUGIN_PRIORITY = 1
 
     def initialize(self, core) -> None:

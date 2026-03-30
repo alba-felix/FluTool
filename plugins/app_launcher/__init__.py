@@ -25,7 +25,7 @@ from qfluentwidgets import (
     ScrollArea, SmoothScrollArea
 )
 
-from core import PluginInterface
+from core import PluginInterface, get_app_data_path
 from storage import DatabaseManager
 
 
@@ -298,6 +298,7 @@ class InputDialog(MessageBoxBase):
         self.input_edit.setText(default_text)
         self.input_edit.setPlaceholderText(label)
         self.input_edit.setClearButtonEnabled(True)
+        self.input_edit.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.input_edit)
         
         self.yesButton.setText("确定")
@@ -358,8 +359,7 @@ class AppCard(CardWidget):
         
         icon_path = self.app_data.get('icon_path', '')
         if icon_path:
-            base_dir = Path(__file__).parent.parent.parent
-            abs_icon_path = base_dir / icon_path
+            abs_icon_path = get_app_data_path(icon_path)
             if abs_icon_path.exists():
                 pixmap = QPixmap(str(abs_icon_path))
                 if not pixmap.isNull():
@@ -758,8 +758,7 @@ class AppLauncherWidget(QWidget):
     
     def _init_paths(self):
         """初始化路径"""
-        base_dir = Path(__file__).parent.parent.parent
-        self.icon_dir = base_dir / "data" / "app_icons"
+        self.icon_dir = get_app_data_path("data/app_icons")
         self.icon_dir.mkdir(parents=True, exist_ok=True)
     
     def _setup_ui(self):
@@ -1009,8 +1008,7 @@ class AppLauncherWidget(QWidget):
             for app in apps:
                 icon_path = app.get('icon_path', '')
                 if icon_path:
-                    base_dir = Path(__file__).parent.parent.parent
-                    abs_icon_path = base_dir / icon_path
+                    abs_icon_path = get_app_data_path(icon_path)
                     if abs_icon_path.exists():
                         try:
                             abs_icon_path.unlink()
@@ -1152,11 +1150,9 @@ class AppLauncherWidget(QWidget):
         if box.exec():
             app_id = app_data.get('id')
             if app_id is not None:
-                # 删除图标文件
                 icon_path = app_data.get('icon_path', '')
                 if icon_path:
-                    base_dir = Path(__file__).parent.parent.parent
-                    abs_icon_path = base_dir / icon_path
+                    abs_icon_path = get_app_data_path(icon_path)
                     if abs_icon_path.exists():
                         try:
                             abs_icon_path.unlink()
@@ -1216,7 +1212,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "app_launcher"
     PLUGIN_NAME = "应用启动"
     PLUGIN_ICON = FIF.APPLICATION
-    PLUGIN_PRIORITY = 6
+    PLUGIN_PRIORITY = 12
     
     def initialize(self, core) -> None:
         """初始化插件"""

@@ -7,6 +7,8 @@ from .event_bus import EventBus
 from .log import LogManager
 from .config import AppConfig
 from .utils import get_app_data_path, get_resource_path
+from .backup_manager import BackupManager
+from .efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
 from qfluentwidgets import qconfig
 from storage import DatabaseManager
 
@@ -15,7 +17,7 @@ def init_app_data() -> None:
     """
     初始化应用数据目录
     
-    打包后首次运行时，将 data 和 config 从 MEIPASS 复制到 exe 所在目录
+    打包后首次运行时，将 data 和 config 从 MEIPASS 复制到 %LOCALAPPDATA%\\FluTool 目录
     """
     if not getattr(sys, 'frozen', False):
         return
@@ -23,15 +25,40 @@ def init_app_data() -> None:
     data_dir = get_app_data_path("data")
     config_dir = get_app_data_path("config")
     
+    src_data = get_resource_path("data")
+    src_config = get_resource_path("config")
+    
+    print(f"[init_app_data] data_dir: {data_dir}")
+    print(f"[init_app_data] src_data: {src_data}")
+    print(f"[init_app_data] src_data exists: {src_data.exists()}")
+    
     if not data_dir.exists():
-        src_data = get_resource_path("data")
         if src_data.exists():
+            print(f"[init_app_data] Copying data directory...")
             shutil.copytree(src_data, data_dir)
+            print(f"[init_app_data] Data directory copied to: {data_dir}")
+        else:
+            print(f"[init_app_data] Source data directory not found!")
+            data_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        if src_data.exists():
+            for item in src_data.rglob('*'):
+                if item.is_file():
+                    rel_path = item.relative_to(src_data)
+                    dst_item = data_dir / rel_path
+                    if not dst_item.exists():
+                        dst_item.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(item, dst_item)
+                        print(f"[init_app_data] Copied: {rel_path}")
     
     if not config_dir.exists():
-        src_config = get_resource_path("config")
         if src_config.exists():
+            print(f"[init_app_data] Copying config directory...")
             shutil.copytree(src_config, config_dir)
+            print(f"[init_app_data] Config directory copied to: {config_dir}")
+        else:
+            print(f"[init_app_data] Source config directory not found!")
+            config_dir.mkdir(parents=True, exist_ok=True)
 
 
 class AppCore:
@@ -57,6 +84,7 @@ class AppCore:
         self._plugin_manager: Optional[PluginManager] = None
         self._config: Optional[AppConfig] = None
         self._config_path: Optional[Path] = None
+        self._backup_manager: Optional[BackupManager] = None
 
     def initialize(self, config_path: str = None) -> None:
         """
@@ -76,8 +104,19 @@ class AppCore:
         qconfig.load(str(self._config_path), self._config)
         
         db_path = get_app_data_path("data/data.db")
+        print(f"[AppCore] db_path: {db_path}")
+        print(f"[AppCore] db_path exists: {db_path.exists()}")
         db_path.parent.mkdir(parents=True, exist_ok=True)
         DatabaseManager().initialize(str(db_path))
+        print(f"[AppCore] Database initialized")
+        
+        self._backup_manager = BackupManager(self)
+        if self._config.auto_backup_enabled.value and self._config.auto_backup_path.value:
+            self._backup_manager.check_and_backup()
+        
+        if self._config.efficiency_mode.value and is_efficiency_mode_supported():
+            set_process_efficiency_mode(True)
+            self._logger.info("Efficiency mode enabled")
         
         self._logger.info("AppCore initialized")
 
@@ -108,3 +147,7 @@ class AppCore:
     @property
     def logger(self) -> LogManager:
         return self._logger
+
+    @property
+    def backup_manager(self) -> BackupManager:
+        return self._backup_manager

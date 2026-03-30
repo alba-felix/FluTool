@@ -1,4 +1,5 @@
 import os
+import sys
 import zipfile
 import shutil
 from pathlib import Path
@@ -8,9 +9,10 @@ from qfluentwidgets import (
     ScrollArea, SettingCardGroup, SwitchSettingCard,
     RangeSettingCard, FluentIcon as FIF,
     setCustomStyleSheet, PushSettingCard, MessageBox,
-    InfoBar, InfoBarPosition
+    InfoBar, InfoBarPosition, FolderListSettingCard
 )
 from core import get_app_data_path
+from core.efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
 
 
 class SettingsInterface(ScrollArea):
@@ -58,6 +60,17 @@ class SettingsInterface(ScrollArea):
         )
         self.autoSaveCard.checkedChanged.connect(self._on_auto_save_changed)
         self.generalGroup.addSettingCard(self.autoSaveCard)
+        
+        if is_efficiency_mode_supported():
+            self.efficiencyModeCard = SwitchSettingCard(
+                FIF.SPEED_OFF,
+                "效能模式",
+                "降低 CPU 占用，延长电池续航（需重启生效）",
+                configItem=self.core.config.efficiency_mode
+            )
+            self.efficiencyModeCard.checkedChanged.connect(self._on_efficiency_mode_changed)
+            self.generalGroup.addSettingCard(self.efficiencyModeCard)
+        
         self.vBoxLayout.addWidget(self.generalGroup)
 
     def _create_window_group(self) -> None:
@@ -95,10 +108,29 @@ class SettingsInterface(ScrollArea):
         """创建数据管理设置组"""
         self.dataGroup = SettingCardGroup("数据管理", self.view)
         
+        self.autoBackupCard = SwitchSettingCard(
+            FIF.SYNC,
+            "启动备份",
+            "每次启动应用时自动备份数据到指定目录（每天一次）",
+            configItem=self.core.config.auto_backup_enabled
+        )
+        self.autoBackupCard.checkedChanged.connect(self._on_auto_backup_changed)
+        self.dataGroup.addSettingCard(self.autoBackupCard)
+        
+        self.backupPathCard = PushSettingCard(
+            "选择目录",
+            FIF.FOLDER,
+            "备份路径",
+            self._get_backup_path_display(),
+            parent=self.view
+        )
+        self.backupPathCard.clicked.connect(self._select_backup_path)
+        self.dataGroup.addSettingCard(self.backupPathCard)
+        
         self.backupCard = PushSettingCard(
             "备份数据",
             FIF.ZIP_FOLDER,
-            "数据备份",
+            "手动备份",
             "将 data 文件夹打包为 zip 文件",
             parent=self.view
         )
@@ -116,6 +148,13 @@ class SettingsInterface(ScrollArea):
         self.dataGroup.addSettingCard(self.loadCard)
         
         self.vBoxLayout.addWidget(self.dataGroup)
+    
+    def _get_backup_path_display(self) -> str:
+        """获取备份路径显示文本"""
+        path = self.core.config.auto_backup_path.value
+        if path:
+            return path
+        return "未设置备份路径"
 
     def _get_main_window(self):
         """获取主窗口"""
@@ -127,6 +166,71 @@ class SettingsInterface(ScrollArea):
     def _on_auto_save_changed(self, checked: bool) -> None:
         """自动保存配置改变"""
         self.core.logger.info(f"Auto save changed to: {checked}")
+    
+    def _on_efficiency_mode_changed(self, checked: bool) -> None:
+        """效能模式配置改变"""
+        if checked:
+            if set_process_efficiency_mode(True, self.core.logger):
+                self.core.logger.info("Efficiency mode enabled")
+                InfoBar.success(
+                    title="效能模式已启用",
+                    content="降低 CPU 占用，延长电池续航",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+            else:
+                self.efficiencyModeCard.setChecked(False)
+                InfoBar.error(
+                    title="启用失败",
+                    content="无法启用效能模式",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+        else:
+            set_process_efficiency_mode(False, self.core.logger)
+            self.core.logger.info("Efficiency mode disabled")
+    
+    def _on_auto_backup_changed(self, checked: bool) -> None:
+        """启动备份配置改变"""
+        if checked:
+            backup_path = self.core.config.auto_backup_path.value
+            if not backup_path:
+                InfoBar.warning(
+                    title="请设置备份路径",
+                    content="启用启动备份前，请先选择备份目录",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                self.autoBackupCard.setChecked(False)
+                return
+            self.core.logger.info("Startup backup enabled")
+        else:
+            self.core.logger.info("Startup backup disabled")
+    
+    def _select_backup_path(self) -> None:
+        """选择备份路径"""
+        current_path = self.core.config.auto_backup_path.value or ""
+        
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "选择备份目录",
+            current_path,
+            QFileDialog.ShowDirsOnly
+        )
+        
+        if folder_path:
+            self.core.config.auto_backup_path.value = folder_path
+            self.backupPathCard.setContent(folder_path)
+            self.core.logger.info(f"Backup path set to: {folder_path}")
 
     def _on_window_size_changed(self) -> None:
         """窗口大小配置改变"""

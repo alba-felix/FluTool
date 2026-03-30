@@ -251,8 +251,8 @@ class ColorPaletteWidget(QWidget):
         self.pick_timer = None
         self.pick_button = None
         
-        self.initUI()
-        self.setupStyle()
+        self.init_ui()
+        self.setup_style()
         self.load_colors()
         qconfig.themeChanged.connect(self.on_theme_changed)
 
@@ -260,7 +260,7 @@ class ColorPaletteWidget(QWidget):
         """主题变化时更新样式"""
         self.setupStyle()
 
-    def initUI(self):
+    def init_ui(self):
         """初始化界面"""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -298,7 +298,7 @@ class ColorPaletteWidget(QWidget):
 
         main_layout.addWidget(self._scroll_area)
 
-    def setupStyle(self):
+    def setup_style(self):
         """设置样式（支持主题）"""
         dark = isDarkTheme()
         
@@ -1188,7 +1188,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "color_palette"
     PLUGIN_NAME = "调色板"
     PLUGIN_ICON = FIF.PALETTE
-    PLUGIN_PRIORITY = 13
+    PLUGIN_PRIORITY = 10
 
     def initialize(self, core) -> None:
         """初始化插件"""

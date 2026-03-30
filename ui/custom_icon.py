@@ -42,6 +42,8 @@ class CustomFluentIcon(FluentIconBase, Enum):
     WINVIEW = "winview"
     COMPUTER = "computer"
     NETFW = "netfw"
+    GROUP_POLICY = "group_policy"
+    BOOKMARK_TAG = "bookmark_tag"  # 书签插件橙色标签图标
     
     
     def path(self, theme=Theme.AUTO) -> str:

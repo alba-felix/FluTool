@@ -25,6 +25,14 @@ from storage import DatabaseManager
 from utils import CharCryptoTool
 from core import get_app_data_path
 
+# 尝试导入定时密码功能，失败时优雅处理
+try:
+    from .time_lock import TimeLockDialog
+    HAS_TIME_LOCK = True
+except ImportError:
+    TimeLockDialog = None
+    HAS_TIME_LOCK = False
+
 
 class InputDialog(MessageBoxBase):
     """Fluent 风格输入对话框"""
@@ -70,16 +78,19 @@ class SetMasterPasswordDialog(MessageBoxBase):
             self.old_password_edit = LineEdit(self)
             self.old_password_edit.setEchoMode(LineEdit.Password)
             self.old_password_edit.setPlaceholderText("请输入当前主密码")
+            self.old_password_edit.returnPressed.connect(lambda: self.yesButton.click())
             form.addRow("当前密码:", self.old_password_edit)
         
         self.new_password_edit = LineEdit(self)
         self.new_password_edit.setEchoMode(LineEdit.Password)
         self.new_password_edit.setPlaceholderText("请输入新密码")
+        self.new_password_edit.returnPressed.connect(lambda: self.yesButton.click())
         form.addRow("新密码:", self.new_password_edit)
         
         self.confirm_password_edit = LineEdit(self)
         self.confirm_password_edit.setEchoMode(LineEdit.Password)
         self.confirm_password_edit.setPlaceholderText("请再次输入新密码")
+        self.confirm_password_edit.returnPressed.connect(lambda: self.yesButton.click())
         form.addRow("确认密码:", self.confirm_password_edit)
         
         self.viewLayout.addLayout(form)
@@ -132,19 +143,23 @@ class AddPasswordDialog(MessageBoxBase):
         
         self.platform_edit = LineEdit(self)
         self.platform_edit.setPlaceholderText("平台/网站名称")
+        self.platform_edit.returnPressed.connect(lambda: self.yesButton.click())
         form.addRow("平台/网站:", self.platform_edit)
         
         self.username_edit = LineEdit(self)
         self.username_edit.setPlaceholderText("用户名")
+        self.username_edit.returnPressed.connect(lambda: self.yesButton.click())
         form.addRow("用户名:", self.username_edit)
         
         self.password_edit = LineEdit(self)
         self.password_edit.setEchoMode(LineEdit.Password)
         self.password_edit.setPlaceholderText("密码")
+        self.password_edit.returnPressed.connect(lambda: self.yesButton.click())
         form.addRow("密码:", self.password_edit)
         
         self.email_edit = LineEdit(self)
         self.email_edit.setPlaceholderText("邮箱/手机号")
+        self.email_edit.returnPressed.connect(lambda: self.yesButton.click())
         form.addRow("邮箱/手机号:", self.email_edit)
         
         self.notes_edit = TextEdit(self)
@@ -207,7 +222,15 @@ class PasswordWidget(QWidget):
         
         # 顶部控制栏
         top_layout = QHBoxLayout()
-        
+
+        # 只在导入成功时添加定时密码按钮
+        if HAS_TIME_LOCK:
+            self.time_lock_btn = PushButton("定时密码", self)
+            self.time_lock_btn.setIcon(FIF.HISTORY)
+            self.time_lock_btn.setToolTip("设置定时查看的密码")
+            self.time_lock_btn.clicked.connect(self._open_time_lock)
+            top_layout.addWidget(self.time_lock_btn)
+
         self.add_btn = PushButton("添加密码", self)
         self.add_btn.setIcon(FIF.ADD)
         self.add_btn.clicked.connect(self._add_password)
@@ -247,7 +270,7 @@ class PasswordWidget(QWidget):
         
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
-        self.tree.itemDoubleClicked.connect(self._view_password)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         
         self._apply_tree_style()
         qconfig.themeChangedFinished.connect(self._apply_tree_style)
@@ -409,6 +432,12 @@ class PasswordWidget(QWidget):
         
         self.tree.setAlternatingRowColors(True)
     
+    def _open_time_lock(self):
+        """打开定时密码锁对话框"""
+        if HAS_TIME_LOCK:
+            dialog = TimeLockDialog(self)
+            dialog.exec()
+
     def _add_category(self):
         """添加分类"""
         dialog = InputDialog("添加分类", "请输入分类名称", parent=self)
@@ -462,6 +491,50 @@ class PasswordWidget(QWidget):
                 orient=Qt.Horizontal, isClosable=True,
                 position=InfoBarPosition.TOP, duration=2000, parent=self
             )
+    
+    def _on_item_double_clicked(self, item, column):
+        """双击项目时根据列复制对应内容"""
+        if not item.parent():
+            return
+        
+        if not self.is_decrypted:
+            MessageBox("未解密", "请先点击'解密'按钮并输入口令！", self).exec()
+            return
+        
+        platform = item.text(0)
+        username = item.text(1)
+        encrypted_pwd = item.data(1, Qt.UserRole)
+        email = item.text(3)
+        
+        password = ""
+        if encrypted_pwd and encrypted_pwd.startswith("encrypted:"):
+            try:
+                password = self.crypto_tool.shift_decrypt(
+                    encrypted_pwd.replace("encrypted:", ""), self.encryption_key
+                )
+            except Exception:
+                pass
+        
+        copy_map = {
+            0: (platform, "平台/网站"),
+            1: (username, "用户名"),
+            2: (password, "密码"),
+            3: (email, "邮箱/手机号"),
+        }
+        
+        if column in copy_map:
+            value, label = copy_map[column]
+            if value:
+                QApplication.clipboard().setText(value)
+                InfoBar.success(
+                    title="已复制",
+                    content=f"{label}已复制到剪贴板",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
     
     def _view_password(self, item):
         """查看密码"""

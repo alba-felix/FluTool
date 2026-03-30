@@ -1,17 +1,19 @@
+import os
 from typing import Optional, Dict, Any, List
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QMenu, QAction,
-    QFormLayout, QHeaderView, QApplication, QLabel
+    QMenu, QAction, QFormLayout, QHeaderView, QApplication,
+    QLabel, QSplitter, QFileDialog
 )
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtCore import QProcess
 from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit, TextEdit,
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     ProgressBar, TransparentToolButton, SingleDirectionScrollArea,
     setCustomStyleSheet, isDarkTheme, qconfig, MessageBoxBase,
-    SubtitleLabel, ComboBox, CaptionLabel, MessageBox
+    SubtitleLabel, ComboBox, CaptionLabel, MessageBox, PlainTextEdit
 )
 from core import PluginInterface
 from storage import DatabaseManager
@@ -43,43 +45,44 @@ class InputDialog(MessageBoxBase):
         return self.input_edit.text().strip()
 
 
-class CommandDialog(MessageBoxBase):
-    """命令添加/编辑对话框"""
+class ScriptDialog(MessageBoxBase):
+    """脚本添加/编辑对话框"""
     
-    def __init__(self, parent=None, command_name: str = "", 
-                 command_content: str = "", sub_title: str = "",
-                 categories: List[str] = None, current_category: str = ""):
+    SCRIPT_TYPES = ['bat', 'cmd', 'ps1', 'py']
+    
+    def __init__(self, parent=None, script_name: str = "", 
+                 script_content: str = "", script_type: str = "bat",
+                 description: str = "", categories: List[str] = None,
+                 current_category: str = ""):
         super().__init__(parent)
         self.categories = categories or []
         self.current_category = current_category
         
-        self.titleLabel = SubtitleLabel('添加/编辑命令', self)
+        self.titleLabel = SubtitleLabel('添加/编辑脚本', self)
         self.viewLayout.addWidget(self.titleLabel)
         
         formLayout = QFormLayout()
         
         self.name_input = LineEdit(self)
-        self.name_input.setText(command_name)
-        self.name_input.setPlaceholderText("请输入命令名称")
+        self.name_input.setText(script_name)
+        self.name_input.setPlaceholderText("请输入脚本名称")
         self.name_input.setClearButtonEnabled(True)
         self.name_input.returnPressed.connect(lambda: self.yesButton.click())
-        formLayout.addRow("命令名称:", self.name_input)
+        formLayout.addRow("脚本名称:", self.name_input)
         
-        self.sub_title_input = LineEdit(self)
-        self.sub_title_input.setText(sub_title)
-        self.sub_title_input.setPlaceholderText("可选")
-        self.sub_title_input.setClearButtonEnabled(True)
-        self.sub_title_input.returnPressed.connect(lambda: self.yesButton.click())
-        formLayout.addRow("次标题:", self.sub_title_input)
+        self.type_combo = ComboBox(self)
+        self.type_combo.addItems(self.SCRIPT_TYPES)
+        if script_type in self.SCRIPT_TYPES:
+            index = self.SCRIPT_TYPES.index(script_type)
+            self.type_combo.setCurrentIndex(index)
+        formLayout.addRow("脚本类型:", self.type_combo)
         
-        self.content_input = TextEdit(self)
-        self.content_input.setPlainText(command_content)
-        self.content_input.setPlaceholderText("请输入命令内容")
-        self.content_input.setFixedHeight(150)
-        self.content_input.setFixedWidth(400)
-        self.content_input.setLineWrapMode(TextEdit.NoWrap)
-        self.content_input.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        formLayout.addRow("命令内容:", self.content_input)
+        self.desc_input = LineEdit(self)
+        self.desc_input.setText(description)
+        self.desc_input.setPlaceholderText("可选")
+        self.desc_input.setClearButtonEnabled(True)
+        self.desc_input.returnPressed.connect(lambda: self.yesButton.click())
+        formLayout.addRow("描述:", self.desc_input)
         
         if self.categories:
             self.category_combo = ComboBox(self)
@@ -98,27 +101,23 @@ class CommandDialog(MessageBoxBase):
         self.widget.setMinimumWidth(450)
     
     def validate(self) -> bool:
-        """验证表单数据"""
         if not self.name_input.text().strip():
-            return False
-        if not self.content_input.toPlainText().strip():
             return False
         return True
     
-    def get_command_data(self) -> Dict[str, str]:
-        """获取输入的命令数据"""
+    def get_script_data(self) -> Dict[str, str]:
         data = {
             "name": self.name_input.text().strip(),
-            "sub_title": self.sub_title_input.text().strip(),
-            "content": self.content_input.toPlainText()
+            "script_type": self.type_combo.currentText(),
+            "description": self.desc_input.text().strip()
         }
         if hasattr(self, 'category_combo'):
             data["category"] = self.category_combo.currentText()
         return data
 
 
-class CommandLoader(QThread):
-    """异步命令加载器"""
+class ScriptLoader(QThread):
+    """异步脚本加载器"""
     
     load_finished = pyqtSignal(list)
     load_progress = pyqtSignal(int)
@@ -130,26 +129,126 @@ class CommandLoader(QThread):
         self.plugin_id = plugin_id
     
     def run(self):
-        """异步加载命令数据"""
         try:
             self.load_progress.emit(10)
             self.load_progress.emit(30)
             
-            commands = self.db.get_commands(self.plugin_id)
+            scripts = self.db.get_scripts(self.plugin_id)
             self.load_progress.emit(60)
             
-            categories = self.db.get_categories(self.plugin_id)
             self.load_progress.emit(100)
             
-            self.load_finished.emit(commands)
+            self.load_finished.emit(scripts)
         except Exception as e:
-            self.load_error.emit(f"加载命令数据时出错: {e}")
+            self.load_error.emit(f"加载脚本数据时出错: {e}")
 
 
-class CommandWidget(QWidget):
-    """命令管理界面"""
+class ScriptEditor(QWidget):
+    """脚本编辑器"""
     
-    PLUGIN_ID = "command"
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._setup_ui()
+        self._current_script_id: Optional[int] = None
+        self._current_script_type: str = "bat"
+    
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(10, 5, 10, 5)
+        
+        self.type_label = CaptionLabel("类型: bat", self)
+        top_layout.addWidget(self.type_label)
+        
+        top_layout.addStretch()
+        
+        self.save_btn = PushButton("保存", self)
+        self.save_btn.setIcon(FIF.SAVE)
+        self.save_btn.setEnabled(False)
+        top_layout.addWidget(self.save_btn)
+        
+        self.run_btn = PushButton("运行", self)
+        self.run_btn.setIcon(FIF.PLAY)
+        self.run_btn.setEnabled(False)
+        top_layout.addWidget(self.run_btn)
+        
+        layout.addLayout(top_layout)
+        
+        self.editor = PlainTextEdit(self)
+        self.editor.setFont(QFont("Consolas", 10))
+        self.editor.setPlaceholderText("在此编写脚本...")
+        self.editor.setLineWrapMode(PlainTextEdit.NoWrap)
+        self.editor.textChanged.connect(self._on_text_changed)
+        
+        layout.addWidget(self.editor)
+        
+        self.output_label = CaptionLabel("输出:", self)
+        layout.addWidget(self.output_label)
+        
+        self.output = PlainTextEdit(self)
+        self.output.setReadOnly(True)
+        self.output.setFont(QFont("Consolas", 9))
+        self.output.setMaximumHeight(150)
+        self.output.setPlaceholderText("脚本输出将显示在这里...")
+        layout.addWidget(self.output)
+        
+        self._apply_editor_style()
+        qconfig.themeChangedFinished.connect(self._apply_editor_style)
+    
+    def _apply_editor_style(self) -> None:
+        if isDarkTheme():
+            self.editor.setStyleSheet(
+                "PlainTextEdit { background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; }"
+            )
+            self.output.setStyleSheet(
+                "PlainTextEdit { background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; }"
+            )
+        else:
+            self.editor.setStyleSheet(
+                "PlainTextEdit { background-color: #ffffff; color: #1e1e1e; border: 1px solid #e0e0e0; }"
+            )
+            self.output.setStyleSheet(
+                "PlainTextEdit { background-color: #f5f5f5; color: #1e1e1e; border: 1px solid #e0e0e0; }"
+            )
+    
+    def _on_text_changed(self) -> None:
+        if self._current_script_id:
+            self.save_btn.setEnabled(True)
+    
+    def load_script(self, script: Dict[str, Any]) -> None:
+        self._current_script_id = script.get('id')
+        self._current_script_type = script.get('script_type', 'bat')
+        self.editor.setPlainText(script.get('content', ''))
+        self.type_label.setText(f"类型: {self._current_script_type}")
+        self.save_btn.setEnabled(False)
+        self.run_btn.setEnabled(True)
+    
+    def clear(self) -> None:
+        self._current_script_id = None
+        self._current_script_type = "bat"
+        self.editor.clear()
+        self.output.clear()
+        self.type_label.setText("类型: bat")
+        self.save_btn.setEnabled(False)
+        self.run_btn.setEnabled(False)
+    
+    def get_content(self) -> str:
+        return self.editor.toPlainText()
+    
+    def get_script_id(self) -> Optional[int]:
+        return self._current_script_id
+    
+    def get_script_type(self) -> str:
+        return self._current_script_type
+
+
+class ScriptWidget(QWidget):
+    """脚本管理界面"""
+    
+    PLUGIN_ID = "script_manager"
     
     def __init__(self, core, parent=None):
         super().__init__(parent)
@@ -159,12 +258,12 @@ class CommandWidget(QWidget):
         self._current_category_name = "全部"
         self._category_buttons: List[PushButton] = []
         self._is_loading = False
-        self._commands_cache: List[Dict[str, Any]] = []
-        self._loader: Optional[CommandLoader] = None
+        self._scripts_cache: List[Dict[str, Any]] = []
+        self._loader: Optional[ScriptLoader] = None
+        self._process: Optional[QProcess] = None
         self._setup_ui()
     
     def _setup_ui(self) -> None:
-        """构建界面"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -224,59 +323,52 @@ class CommandWidget(QWidget):
         top_layout.setContentsMargins(10, 5, 10, 5)
         top_layout.setSpacing(10)
         
-        self.add_btn = PushButton("添加命令", self)
+        self.add_btn = PushButton("添加脚本", self)
         self.add_btn.setIcon(FIF.ADD)
-        self.add_btn.clicked.connect(self._add_command)
+        self.add_btn.clicked.connect(self._add_script)
         top_layout.addWidget(self.add_btn)
         
         self.search_edit = LineEdit(self)
-        self.search_edit.setPlaceholderText("搜索命令...")
+        self.search_edit.setPlaceholderText("搜索脚本...")
         self.search_edit.setClearButtonEnabled(True)
-        self.search_edit.textChanged.connect(self._search_commands)
+        self.search_edit.textChanged.connect(self._search_scripts)
         top_layout.addWidget(self.search_edit)
         layout.addLayout(top_layout)
         
-        tip_layout = QHBoxLayout()
-        tip_layout.setContentsMargins(10, 0, 10, 5)
-        self.tip_label = QLabel("提示: 双击命令复制到剪贴板")
-        self.tip_label.setObjectName("tipLabel")
-        setCustomStyleSheet(
-            self.tip_label,
-            "QLabel { color: gray; font-size: 9pt; }",
-            "QLabel { color: #888; font-size: 9pt; }"
-        )
-        tip_layout.addWidget(self.tip_label)
-        layout.addLayout(tip_layout)
+        splitter = QSplitter(Qt.Horizontal, self)
         
-        self.tree = TreeWidget(self)
-        self.tree.setHeaderLabels(["序号", "名称", "次标题", "分类", "命令内容"])
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.tree = TreeWidget(left_widget)
+        self.tree.setHeaderLabels(["序号", "名称", "类型", "分类", "描述"])
         self.tree.header().setSectionResizeMode(QHeaderView.Interactive)
         self.tree.setColumnWidth(0, 50)
         self.tree.setColumnWidth(1, 150)
-        self.tree.setColumnWidth(2, 100)
+        self.tree.setColumnWidth(2, 60)
         self.tree.setColumnWidth(3, 100)
         self.tree.setColumnHidden(0, True)
         self._apply_header_style()
         qconfig.themeChangedFinished.connect(self._apply_header_style)
-        self.tree.itemDoubleClicked.connect(self._copy_command)
+        self.tree.itemClicked.connect(self._on_script_selected)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self.tree)
+        left_layout.addWidget(self.tree)
         
-        self.copy_label = QLabel("已复制到剪贴板", self)
-        self.copy_label.setObjectName("copyLabel")
-        setCustomStyleSheet(
-            self.copy_label,
-            "QLabel { background-color: rgba(0, 120, 212, 200); color: white; padding: 8px 16px; border-radius: 4px; font-size: 12px; }",
-            "QLabel { background-color: rgba(0, 120, 212, 200); color: white; padding: 8px 16px; border-radius: 4px; font-size: 12px; }"
-        )
-        self.copy_label.setAlignment(Qt.AlignCenter)
-        self.copy_label.hide()
+        splitter.addWidget(left_widget)
+        
+        self.editor = ScriptEditor(self)
+        self.editor.save_btn.clicked.connect(self._save_current_script)
+        self.editor.run_btn.clicked.connect(self._run_current_script)
+        splitter.addWidget(self.editor)
+        
+        splitter.setSizes([300, 500])
+        layout.addWidget(splitter)
         
         self._set_ui_enabled(False)
-
+    
     def _apply_header_style(self) -> None:
-        """应用树形列表样式，包括表头和交替行颜色"""
         if not hasattr(self, "tree"):
             return
         
@@ -303,16 +395,15 @@ class CommandWidget(QWidget):
             )
         
         self.tree.setAlternatingRowColors(True)
-
+    
     def load_data(self) -> None:
-        """加载命令数据"""
         if self._loader and self._loader.isRunning():
             return
         
         self._is_loading = True
         self.progress_bar.setVisible(True)
         
-        self._loader = CommandLoader(self.db, self.PLUGIN_ID)
+        self._loader = ScriptLoader(self.db, self.PLUGIN_ID)
         self._loader.load_finished.connect(self._on_load_finished)
         self._loader.load_progress.connect(self._on_load_progress)
         self._loader.load_error.connect(self._on_load_error)
@@ -320,31 +411,27 @@ class CommandWidget(QWidget):
         self._loader.start()
     
     def _on_loader_finished(self) -> None:
-        """线程完成后的清理"""
         if self._loader:
             self._loader.deleteLater()
             self._loader = None
     
     def _on_load_progress(self, progress: int) -> None:
-        """加载进度更新"""
         self.progress_bar.setValue(progress)
     
-    def _on_load_finished(self, commands: List[Dict[str, Any]]) -> None:
-        """数据加载完成"""
-        self._commands_cache = commands
+    def _on_load_finished(self, scripts: List[Dict[str, Any]]) -> None:
+        self._scripts_cache = scripts
         self._is_loading = False
         self.progress_bar.setVisible(False)
         self._set_ui_enabled(True)
         self._load_categories()
-        self._load_commands()
+        self._load_scripts()
     
     def _on_load_error(self, error_message: str) -> None:
-        """加载错误处理"""
         self._is_loading = False
         self.progress_bar.setVisible(False)
         self._set_ui_enabled(True)
         self._load_categories()
-        self._load_commands()
+        self._load_scripts()
         InfoBar.error(
             title="加载错误",
             content=error_message,
@@ -356,7 +443,6 @@ class CommandWidget(QWidget):
         )
     
     def _set_ui_enabled(self, enabled: bool) -> None:
-        """设置UI组件的启用状态"""
         self.add_btn.setEnabled(enabled)
         self.add_category_btn.setEnabled(enabled)
         self.search_edit.setEnabled(enabled)
@@ -366,7 +452,6 @@ class CommandWidget(QWidget):
             btn.setEnabled(enabled)
     
     def _load_categories(self) -> None:
-        """加载分类按钮"""
         for btn in self._category_buttons:
             btn.deleteLater()
         self._category_buttons.clear()
@@ -383,7 +468,6 @@ class CommandWidget(QWidget):
             self._category_buttons.append(btn)
     
     def _show_category_menu(self, category: dict, pos) -> None:
-        """显示分类右键菜单"""
         from PyQt5.QtGui import QCursor
         
         menu = QMenu(self)
@@ -400,7 +484,6 @@ class CommandWidget(QWidget):
         menu.exec_(QCursor.pos())
     
     def _edit_category(self, category: dict) -> None:
-        """编辑分类"""
         dialog = InputDialog("编辑分类", "请输入新的分类名称", category['name'], self)
         if dialog.exec():
             new_name = dialog.get_text()
@@ -432,8 +515,7 @@ class CommandWidget(QWidget):
                     )
     
     def _delete_category(self, category: dict) -> None:
-        """删除分类"""
-        box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的命令将移至\"全部\"分类。", self)
+        box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的脚本将移至\"全部\"分类。", self)
         if box.exec():
             self.db.delete_category(self.PLUGIN_ID, category['id'])
             self._load_categories()
@@ -449,110 +531,93 @@ class CommandWidget(QWidget):
                 parent=self
             )
     
-    def _load_commands(self) -> None:
-        """加载命令列表"""
+    def _load_scripts(self) -> None:
         self.tree.clear()
-        commands = self.db.get_commands(self.PLUGIN_ID, self._current_category_id)
+        scripts = self.db.get_scripts(self.PLUGIN_ID, self._current_category_id)
         
-        for idx, cmd in enumerate(commands, 1):
+        for idx, script in enumerate(scripts, 1):
             item = QTreeWidgetItem(self.tree)
             item.setText(0, str(idx))
-            item.setText(1, cmd['name'])
-            item.setText(2, cmd.get('sub_title', ''))
-            item.setText(3, cmd.get('category_name', ''))
-            item.setText(4, cmd['content'])
-            item.setData(0, Qt.UserRole, cmd['id'])
-            item.setForeground(3, QColor("#0078d4"))
+            item.setText(1, script['name'])
+            item.setText(2, script.get('script_type', 'bat'))
+            item.setText(3, script.get('category_name', ''))
+            item.setText(4, script.get('description', ''))
+            item.setData(0, Qt.UserRole, script['id'])
+            item.setForeground(2, QColor("#0078d4"))
     
     def _show_all(self) -> None:
-        """显示全部命令"""
         self._current_category_id = None
         self._current_category_name = "全部"
-        self._load_commands()
+        self._load_scripts()
     
     def _show_category(self, category: Dict[str, Any]) -> None:
-        """显示指定分类的命令"""
         self._current_category_id = category['id']
         self._current_category_name = category['name']
-        self._load_commands()
+        self._load_scripts()
     
-    def _search_commands(self, text: str) -> None:
-        """搜索命令"""
+    def _search_scripts(self, text: str) -> None:
         if self._is_loading:
             return
         
         if not text.strip():
-            self._load_commands()
+            self._load_scripts()
             return
         
         self.tree.clear()
-        results = self.db.search_commands(self.PLUGIN_ID, text)
+        results = self.db.search_scripts(self.PLUGIN_ID, text)
         
-        for idx, cmd in enumerate(results, 1):
+        for idx, script in enumerate(results, 1):
             item = QTreeWidgetItem(self.tree)
             item.setText(0, str(idx))
-            item.setText(1, cmd['name'])
-            item.setText(2, cmd.get('sub_title', ''))
-            item.setText(3, cmd.get('category_name', ''))
-            item.setText(4, cmd['content'])
-            item.setData(0, Qt.UserRole, cmd['id'])
-            item.setForeground(3, QColor("#0078d4"))
+            item.setText(1, script['name'])
+            item.setText(2, script.get('script_type', 'bat'))
+            item.setText(3, script.get('category_name', ''))
+            item.setText(4, script.get('description', ''))
+            item.setData(0, Qt.UserRole, script['id'])
+            item.setForeground(2, QColor("#0078d4"))
     
-    def _copy_command(self, item: QTreeWidgetItem) -> None:
-        """复制命令内容到剪贴板"""
-        content = item.text(4)
-        if content:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(content)
-            
-            self.copy_label.move(
-                self.width() - self.copy_label.width() - 20, 60
-            )
-            self.copy_label.show()
-            self.copy_label.raise_()
-            
-            QTimer.singleShot(2000, self.copy_label.hide)
-            
-            InfoBar.success(
-                title="复制成功",
-                content="命令已复制到剪贴板",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=1500,
-                parent=self
-            )
+    def _on_script_selected(self, item: QTreeWidgetItem) -> None:
+        script_id = item.data(0, Qt.UserRole)
+        scripts = [s for s in self._scripts_cache if s['id'] == script_id]
+        if scripts:
+            self.editor.load_script(scripts[0])
     
-    def _add_command(self) -> None:
-        """添加新命令"""
+    def _add_script(self) -> None:
         categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
         current_cat = self._current_category_name if self._current_category_name != "全部" else ""
         
-        dialog = CommandDialog(
+        dialog = ScriptDialog(
             self, 
             categories=categories, 
             current_category=current_cat
         )
         
         if dialog.exec():
-            data = dialog.get_command_data()
+            data = dialog.get_script_data()
             
             category_name = data.get("category", current_cat) or None
             
-            self.db.add_command(
+            script_id = self.db.add_script(
                 plugin_id=self.PLUGIN_ID,
                 name=data["name"],
-                content=data["content"],
+                content="",
+                script_type=data["script_type"],
                 category_name=category_name,
-                sub_title=data["sub_title"]
+                description=data["description"]
             )
             
+            self._scripts_cache = self.db.get_scripts(self.PLUGIN_ID)
             self._load_categories()
-            self._load_commands()
+            self._load_scripts()
+            
+            for script in self._scripts_cache:
+                if script['id'] == script_id:
+                    self.editor.load_script(script)
+                    break
             
             InfoBar.success(
                 title="添加成功",
-                content=f"已添加命令 {data['name']}",
+                content=f"已添加脚本 {data['name']}",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -561,7 +626,6 @@ class CommandWidget(QWidget):
             )
     
     def _add_category(self) -> None:
-        """添加分类"""
         dialog = InputDialog("添加分类", "请输入分类名称", parent=self)
         if dialog.exec():
             name = dialog.get_text()
@@ -582,7 +646,6 @@ class CommandWidget(QWidget):
             )
     
     def _show_context_menu(self, pos) -> None:
-        """显示右键菜单"""
         item = self.tree.itemAt(pos)
         if not item:
             return
@@ -590,42 +653,35 @@ class CommandWidget(QWidget):
         menu = QMenu(self)
         menu.setAttribute(Qt.WA_DeleteOnClose)
         
-        copy_action = QAction("复制命令内容", self)
-        copy_action.triggered.connect(partial(self._copy_command, item))
-        menu.addAction(copy_action)
-        
-        menu.addSeparator()
-        
-        edit_action = QAction("编辑", self)
-        edit_action.triggered.connect(partial(self._edit_command, item))
+        edit_action = QAction("编辑信息", self)
+        edit_action.triggered.connect(partial(self._edit_script_info, item))
         menu.addAction(edit_action)
         
         delete_action = QAction("删除", self)
-        delete_action.triggered.connect(partial(self._delete_command, item))
+        delete_action.triggered.connect(partial(self._delete_script, item))
         menu.addAction(delete_action)
         
         menu.exec_(self.tree.viewport().mapToGlobal(pos))
     
-    def _edit_command(self, item: QTreeWidgetItem) -> None:
-        """编辑命令"""
-        cmd_id = item.data(0, Qt.UserRole)
+    def _edit_script_info(self, item: QTreeWidgetItem) -> None:
+        script_id = item.data(0, Qt.UserRole)
         old_name = item.text(1)
-        old_sub_title = item.text(2)
-        old_content = item.text(4)
+        old_type = item.text(2)
         old_category = item.text(3)
+        old_desc = item.text(4)
         
         categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
         
-        dialog = CommandDialog(
+        dialog = ScriptDialog(
             self,
-            command_name=old_name,
-            command_content=old_content,
-            sub_title=old_sub_title,
+            script_name=old_name,
+            script_type=old_type,
+            description=old_desc,
             categories=categories,
             current_category=old_category
         )
         if dialog.exec():
-            data = dialog.get_command_data()
+            data = dialog.get_script_data()
             
             new_category = data.get("category", old_category)
             category_id = None
@@ -636,18 +692,19 @@ class CommandWidget(QWidget):
                         category_id = cat['id']
                         break
             
-            self.db.update_command(
-                self.PLUGIN_ID, cmd_id,
+            self.db.update_script(
+                self.PLUGIN_ID, script_id,
                 name=data["name"],
-                content=data["content"],
-                sub_title=data["sub_title"],
+                script_type=data["script_type"],
+                description=data["description"],
                 category_id=category_id
             )
-            self._load_commands()
+            self._scripts_cache = self.db.get_scripts(self.PLUGIN_ID)
+            self._load_scripts()
             
             InfoBar.success(
                 title="编辑成功",
-                content=f"已更新命令 {data['name']}",
+                content=f"已更新脚本 {data['name']}",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -655,45 +712,188 @@ class CommandWidget(QWidget):
                 parent=self
             )
     
-    def _delete_command(self, item: QTreeWidgetItem) -> None:
-        """删除命令"""
-        cmd_id = item.data(0, Qt.UserRole)
+    def _delete_script(self, item: QTreeWidgetItem) -> None:
+        script_id = item.data(0, Qt.UserRole)
         name = item.text(1)
         
-        if MessageBox("确认删除", f"确定要删除命令 '{name}' 吗？", self).exec():
-            self.db.delete_command(self.PLUGIN_ID, cmd_id)
-            self._load_commands()
+        if MessageBox("确认删除", f"确定要删除脚本 '{name}' 吗？", self).exec():
+            self.db.delete_script(self.PLUGIN_ID, script_id)
+            self._scripts_cache = self.db.get_scripts(self.PLUGIN_ID)
+            self._load_scripts()
+            
+            if self.editor.get_script_id() == script_id:
+                self.editor.clear()
             
             InfoBar.success(
                 title="删除成功",
-                content=f"已删除命令 {name}",
+                content=f"已删除脚本 {name}",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=2000,
                 parent=self
             )
+    
+    def _save_current_script(self) -> None:
+        script_id = self.editor.get_script_id()
+        if not script_id:
+            return
+        
+        content = self.editor.get_content()
+        self.db.update_script(self.PLUGIN_ID, script_id, content=content)
+        self.editor.save_btn.setEnabled(False)
+        
+        for i, script in enumerate(self._scripts_cache):
+            if script['id'] == script_id:
+                self._scripts_cache[i]['content'] = content
+                break
+        
+        InfoBar.success(
+            title="保存成功",
+            content="脚本已保存",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=1500,
+            parent=self
+        )
+    
+    def _run_current_script(self) -> None:
+        script_type = self.editor.get_script_type()
+        content = self.editor.get_content()
+        
+        if not content.strip():
+            InfoBar.warning(
+                title="脚本为空",
+                content="请先编写脚本内容",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return
+        
+        import tempfile
+        import os
+        
+        suffix_map = {
+            'bat': '.bat',
+            'cmd': '.cmd',
+            'ps1': '.ps1',
+            'py': '.py'
+        }
+        
+        suffix = suffix_map.get(script_type, '.bat')
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False, encoding='utf-8') as f:
+            f.write(content)
+            temp_path = f.name
+        
+        self.editor.output.clear()
+        self.editor.output.appendPlainText(f"运行脚本: {temp_path}\n")
+        
+        self._process = QProcess(self)
+        self._process.setProcessChannelMode(QProcess.MergedChannels)
+        self._process.readyReadStandardOutput.connect(self._on_process_output)
+        self._process.readyReadStandardError.connect(self._on_process_error)
+        self._process.finished.connect(self._on_process_finished)
+        
+        if script_type == 'ps1':
+            self._process.start('powershell', ['-ExecutionPolicy', 'Bypass', '-File', temp_path])
+        elif script_type == 'py':
+            self._process.start('python', [temp_path])
+        else:
+            self._process.start('cmd', ['/c', temp_path])
+        
+        self._temp_file = temp_path
+    
+    def _on_process_output(self) -> None:
+        data = self._process.readAllStandardOutput().data()
+        try:
+            text = data.decode('gbk', errors='replace')
+        except Exception:
+            text = data.decode('utf-8', errors='replace')
+        self.editor.output.appendPlainText(text)
+    
+    def _on_process_error(self) -> None:
+        data = self._process.readAllStandardError().data()
+        try:
+            text = data.decode('gbk', errors='replace')
+        except Exception:
+            text = data.decode('utf-8', errors='replace')
+        self.editor.output.appendPlainText(f"[错误] {text}")
+    
+    def _on_process_finished(self, exit_code: int, exit_status: int) -> None:
+        self.editor.output.appendPlainText(f"\n进程结束，退出码: {exit_code}")
+        
+        if hasattr(self, '_temp_file') and os.path.exists(self._temp_file):
+            try:
+                os.unlink(self._temp_file)
+            except Exception:
+                pass
 
 
 class Plugin(PluginInterface):
-    """命令管理插件"""
-    PLUGIN_ID = "command"
-    PLUGIN_NAME = "命令管理"
-    PLUGIN_ICON = FIF.COMMAND_PROMPT
-    PLUGIN_PRIORITY = 2
+    """脚本管理插件"""
+    PLUGIN_ID = "script_manager"
+    PLUGIN_NAME = "脚本管理"
+    PLUGIN_ICON = FIF.CODE
+    PLUGIN_PRIORITY = 11
+    
+    TEST_SCRIPTS = [
+        {
+            "name": "BAT 测试脚本",
+            "script_type": "bat",
+            "content": "@echo off\nchcp 65001 >nul\necho ================================\necho    BAT 脚本测试\necho ================================\necho.\necho 当前目录: %cd%\necho 当前时间: %date% %time%\necho.\necho 系统信息:\nver\necho.\necho 环境变量 PATH:\necho %PATH:;=&echo %\necho.\necho 测试完成!\npause",
+            "description": "Windows 批处理脚本测试"
+        },
+        {
+            "name": "CMD 测试脚本",
+            "script_type": "cmd",
+            "content": "@echo off\necho ================================\necho    CMD 脚本测试\necho ================================\necho.\necho 用户名: %USERNAME%\necho 计算机名: %COMPUTERNAME%\necho 用户目录: %USERPROFILE%\necho.\necho 目录列表:\ndir /b\npause",
+            "description": "CMD 命令脚本测试"
+        },
+        {
+            "name": "PowerShell 测试脚本",
+            "script_type": "ps1",
+            "content": "Write-Host \"================================\"\nWrite-Host \"   PowerShell 脚本测试\" -ForegroundColor Cyan\nWrite-Host \"================================\"\nWrite-Host \"\"\nWrite-Host \"系统信息:\" -ForegroundColor Yellow\nWrite-Host \"  PowerShell 版本: $($PSVersionTable.PSVersion)\"\nWrite-Host \"  操作系统: $(Get-CimInstance Win32_OperatingSystem | Select-Object -ExpandProperty Caption)\"\nWrite-Host \"  当前用户: $env:USERNAME\"\nWrite-Host \"  计算机名: $env:COMPUTERNAME\"\nWrite-Host \"\"\nWrite-Host \"当前目录内容:\" -ForegroundColor Yellow\nGet-ChildItem -Name | ForEach-Object { Write-Host \"  $_\" }\nWrite-Host \"\"\nWrite-Host \"测试完成!\" -ForegroundColor Green",
+            "description": "PowerShell 脚本测试"
+        },
+        {
+            "name": "Python 测试脚本",
+            "script_type": "py",
+            "content": "# -*- coding: utf-8 -*-\nimport sys\nimport os\nimport platform\n\nprint(\"=\" * 40)\nprint(\"   Python 脚本测试\")\nprint(\"=\" * 40)\nprint()\nprint(\"Python 信息:\")\nprint(f\"  版本: {sys.version}\")\nprint(f\"  可执行文件: {sys.executable}\")\nprint(f\"  平台: {sys.platform}\")\nprint()\nprint(\"系统信息:\")\nprint(f\"  系统: {platform.system()}\")\nprint(f\"  版本: {platform.version()}\")\nprint(f\"  架构: {platform.machine()}\")\nprint(f\"  处理器: {platform.processor()}\")\nprint()\nprint(\"当前目录:\")\nprint(f\"  {os.getcwd()}\")\nprint()\nprint(\"目录内容:\")\nfor item in os.listdir('.')[:10]:\n    print(f\"  {item}\")\nprint()\nprint(\"测试完成!\")",
+            "description": "Python 脚本测试"
+        }
+    ]
     
     def initialize(self, core) -> None:
         self.core = core
         core.logger.info(f"Plugin '{self.get_name()}' initialized")
+        self._init_test_scripts()
+    
+    def _init_test_scripts(self) -> None:
+        """初始化测试脚本"""
+        db = DatabaseManager()
+        for script in self.TEST_SCRIPTS:
+            if not db.script_exists(self.PLUGIN_ID, script["name"]):
+                db.add_script(
+                    plugin_id=self.PLUGIN_ID,
+                    name=script["name"],
+                    content=script["content"],
+                    script_type=script["script_type"],
+                    description=script["description"]
+                )
+                self.core.logger.info(f"Added test script: {script['name']}")
     
     def shutdown(self) -> None:
         self.core.logger.info(f"Plugin '{self.get_name()}' shutdown")
     
     def _create_widget(self, parent=None) -> QWidget:
-        return CommandWidget(self.core, parent)
+        return ScriptWidget(self.core, parent)
     
     def _do_load_data(self) -> None:
-        """加载数据：直接从数据库读取"""
         if self._widget is None:
             return
         self._widget.load_data()

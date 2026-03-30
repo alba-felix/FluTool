@@ -1108,7 +1108,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "text_compare"
     PLUGIN_NAME = "文本对比"
     PLUGIN_ICON = CFIF.DIFFER
-    PLUGIN_PRIORITY = 15
+    PLUGIN_PRIORITY = 13
 
     def initialize(self, core) -> None:
         """初始化插件"""

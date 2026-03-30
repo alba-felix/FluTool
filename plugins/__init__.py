@@ -13,3 +13,4 @@ from . import system_tools
 from . import text_compare
 from . import time_converter
 from . import todo
+from . import script_manager

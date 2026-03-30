@@ -18,7 +18,7 @@ from qfluentwidgets import (
     MessageBoxBase, TransparentToolButton, CaptionLabel, ComboBox,
     TextEdit, CheckBox, SubtitleLabel, BodyLabel
 )
-from core import PluginInterface
+from core import PluginInterface, get_app_data_path
 
 
 class AddTodoDialog(MessageBoxBase):
@@ -39,6 +39,7 @@ class AddTodoDialog(MessageBoxBase):
         
         self.title_input = LineEdit(self)
         self.title_input.setPlaceholderText("输入标题...")
+        self.title_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(StrongBodyLabel("标题:", self))
         self.viewLayout.addWidget(self.title_input)
         
@@ -75,6 +76,7 @@ class AddTodoDialog(MessageBoxBase):
         self.viewLayout.addWidget(StrongBodyLabel("标签:", self))
         self.tags_input = LineEdit(self)
         self.tags_input.setPlaceholderText("用逗号分隔多个标签")
+        self.tags_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.tags_input)
         
         self.yesButton.setText("添加")
@@ -117,6 +119,7 @@ class EditTodoDialog(MessageBoxBase):
         
         self.title_input = LineEdit(self)
         self.title_input.setPlaceholderText("输入标题...")
+        self.title_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(StrongBodyLabel("标题:", self))
         self.viewLayout.addWidget(self.title_input)
         
@@ -150,6 +153,7 @@ class EditTodoDialog(MessageBoxBase):
         self.viewLayout.addWidget(StrongBodyLabel("标签:", self))
         self.tags_input = LineEdit(self)
         self.tags_input.setPlaceholderText("用逗号分隔多个标签")
+        self.tags_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.tags_input)
         
         self.completed_checkbox = CheckBox("已完成", self)
@@ -225,8 +229,7 @@ class TodoWidget(QWidget):
     
     def _init_paths(self):
         """初始化路径"""
-        base_dir = Path(__file__).parent.parent.parent
-        self.data_dir = base_dir / "data"
+        self.data_dir = get_app_data_path("data")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.json_file = self.data_dir / "todos.json"
     
@@ -754,7 +757,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "todo"
     PLUGIN_NAME = "代办事项"
     PLUGIN_ICON = FIF.CALENDAR
-    PLUGIN_PRIORITY = 7
+    PLUGIN_PRIORITY = 8
     
     def initialize(self, core) -> None:
         """初始化插件"""

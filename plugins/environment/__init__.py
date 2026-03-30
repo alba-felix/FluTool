@@ -362,7 +362,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "environment"
     PLUGIN_NAME = "环境变量"
     PLUGIN_ICON = CustomFluentIcon.ENV
-    PLUGIN_PRIORITY = 9
+    PLUGIN_PRIORITY = 14
     
     def initialize(self, core) -> None:
         self.core = core

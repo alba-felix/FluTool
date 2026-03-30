@@ -19,7 +19,7 @@ from qfluentwidgets import (
     ComboBox, FluentStyleSheet, Dialog, RoundMenu, Action, MessageBoxBase,
     SubtitleLabel, BodyLabel as FluentBodyLabel
 )
-from core import PluginInterface
+from core import PluginInterface, get_app_data_path
 
 
 class FolderTreeWidget(QWidget):
@@ -32,17 +32,17 @@ class FolderTreeWidget(QWidget):
         self.current_folder = None
         self.tree_content = ""
         self.custom_rules = {}  # 存储自定义规则 {规则名：[排除项列表]}
-        self.config_path = Path("data/folder_tree_rules.json")
+        self.config_path = get_app_data_path("data/folder_tree_rules.json")
         self.load_custom_rules()
-        self.initUI()
-        self.setupStyle()
+        self.init_ui()
+        self.setup_style()
         qconfig.themeChanged.connect(self.on_theme_changed)
 
     def on_theme_changed(self):
         """主题变化时更新样式"""
-        self.setupStyle()
+        self.setup_style()
 
-    def initUI(self):
+    def init_ui(self):
         """初始化界面"""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -166,7 +166,7 @@ class FolderTreeWidget(QWidget):
 
         return status_widget
 
-    def setupStyle(self):
+    def setup_style(self):
         """设置样式（支持主题）"""
         dark = isDarkTheme()
         
@@ -816,7 +816,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "folder_tree"
     PLUGIN_NAME = "文件夹树"
     PLUGIN_ICON = FIF.FOLDER
-    PLUGIN_PRIORITY = 14
+    PLUGIN_PRIORITY = 12
 
     def initialize(self, core) -> None:
         """初始化插件"""
