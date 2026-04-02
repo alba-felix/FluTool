@@ -14,3 +14,4 @@ from . import text_compare
 from . import time_converter
 from . import todo
 from . import script_manager
+from . import quick_copy

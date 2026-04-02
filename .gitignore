@@ -13,6 +13,7 @@ scripts/
 .trae_copy/
 config/local_settings.ini
 tests/
+config/time_lock_data.json
 
 
 # 分发/打包

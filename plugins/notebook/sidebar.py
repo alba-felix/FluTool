@@ -89,6 +89,13 @@ class NotebookSidebar(QWidget):
         for note in notes:
             item = QListWidgetItem(note['title'])
             item.setData(Qt.UserRole, note['id'])
+            
+            # 设置悬停提示显示创建时间
+            created_at = note.get('created_at', '')
+            if created_at:
+                tooltip = f"创建时间: {created_at}"
+                item.setToolTip(tooltip)
+            
             self._note_list.addItem(item)
 
     def _filter_notes(self, text: str):
