@@ -244,6 +244,8 @@ class ImagePreviewWidget(QWidget):
     
     def _format_size(self, size: int) -> str:
         """格式化文件大小"""
+        if size == 0:
+            return "0 B"
         for unit in ['B', 'KB', 'MB', 'GB']:
             if size < 1024:
                 return f"{size:.2f} {unit}"
@@ -265,14 +267,18 @@ class ImagePreviewWidget(QWidget):
         if not self._original_pixmap:
             return
         
-        # 获取滚动区域视口大小
+        img_size = self._original_pixmap.size()
+        if img_size.width() <= 0 or img_size.height() <= 0:
+            return
+        
         viewport_size = self.scroll_area.viewport().size()
-        # 减去内容边距
         margins = self.scroll_content.layout().contentsMargins()
         available_width = viewport_size.width() - margins.left() - margins.right()
         available_height = viewport_size.height() - margins.top() - margins.bottom()
         
-        img_size = self._original_pixmap.size()
+        if available_width <= 0 or available_height <= 0:
+            return
+        
         scale_x = available_width / img_size.width()
         scale_y = available_height / img_size.height()
         self._scale_factor = min(scale_x, scale_y, 1.0)
@@ -748,9 +754,7 @@ class ImageAssistantWidget(QWidget):
                 with open(list_file, 'r', encoding='utf-8') as f:
                     self.images = json.load(f)
                 
-                for image_info in self.images:
-                    if not os.path.exists(image_info["path"]):
-                        self.images.remove(image_info)
+                self.images = [img for img in self.images if os.path.exists(img["path"])]
                 
                 self._save_image_list()
         except Exception as e:

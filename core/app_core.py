@@ -9,6 +9,7 @@ from .config import AppConfig
 from .utils import get_app_data_path, get_resource_path
 from .backup_manager import BackupManager
 from .efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
+from .search import GlobalSearchManager
 from qfluentwidgets import qconfig
 from storage import DatabaseManager
 
@@ -85,6 +86,7 @@ class AppCore:
         self._config: Optional[AppConfig] = None
         self._config_path: Optional[Path] = None
         self._backup_manager: Optional[BackupManager] = None
+        self._search_manager: Optional[GlobalSearchManager] = None
 
     def initialize(self, config_path: str = None) -> None:
         """
@@ -113,6 +115,8 @@ class AppCore:
         self._backup_manager = BackupManager(self)
         if self._config.auto_backup_enabled.value and self._config.auto_backup_path.value:
             self._backup_manager.check_and_backup()
+        
+        self._search_manager = GlobalSearchManager()
         
         if self._config.efficiency_mode.value and is_efficiency_mode_supported():
             set_process_efficiency_mode(True)
@@ -151,3 +155,7 @@ class AppCore:
     @property
     def backup_manager(self) -> BackupManager:
         return self._backup_manager
+    
+    @property
+    def search_manager(self) -> GlobalSearchManager:
+        return self._search_manager

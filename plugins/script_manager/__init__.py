@@ -20,6 +20,14 @@ from storage import DatabaseManager
 from functools import partial
 
 
+def get_powershell_path() -> str:
+    """获取 PowerShell 可执行文件路径，优先使用 PowerShell 7"""
+    pwsh7_path = r"C:\Program Files\PowerShell\7\pwsh.exe"
+    if os.path.exists(pwsh7_path):
+        return pwsh7_path
+    return "powershell"
+
+
 class InputDialog(MessageBoxBase):
     """Fluent 风格输入对话框"""
     

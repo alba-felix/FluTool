@@ -12,6 +12,7 @@ from qfluentwidgets import FluentIcon as FIF
 from core import PluginInterface
 from storage import DatabaseManager
 from ui import CustomFluentIcon as CFIF
+from core import SearchResult
 from .sidebar import NotebookSidebar
 from .toolbar import NotebookToolBar
 from .editor import NotebookEditor
@@ -580,3 +581,30 @@ class Plugin(PluginInterface):
         if self._widget is None:
             return
         self._widget.load_data()
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        db = NotebookDatabase()
+        results = []
+        notes = db.search_notes(self.PLUGIN_ID, query)
+        for note in notes[:20]:
+            content_preview = note.get('content', '')[:100] + '...' if len(note.get('content', '')) > 100 else note.get('content', '')
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=note['title'],
+                description=content_preview,
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in note['title'].lower() else 0.5,
+                action=lambda note_id=note['id']: self._navigate_to_note(note_id),
+                metadata={'note_id': note['id']}
+            )
+            results.append(result)
+        return results
+    
+    def _navigate_to_note(self, note_id: int):
+        if self._widget:
+            self._widget._load_note(note_id)
+            self._widget._sidebar.select_note(note_id)

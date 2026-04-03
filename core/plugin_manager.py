@@ -150,6 +150,8 @@ class PluginManager:
                     plugin.initialize(self._core)
                     self._plugins[plugin.get_id()] = plugin
                     self._loaded_plugins.add(plugin.get_id())
+                    if self._core.search_manager and plugin.supports_search():
+                        self._core.search_manager.register_plugin(plugin)
                     self._core.logger.info(f"Loaded plugin: {plugin.get_name()}")
                     return plugin
         except Exception as e:
@@ -192,6 +194,8 @@ class PluginManager:
                     plugin.initialize(self._core)
                     self._plugins[plugin.get_id()] = plugin
                     self._loaded_plugins.add(plugin.get_id())
+                    if self._core.search_manager and plugin.supports_search():
+                        self._core.search_manager.register_plugin(plugin)
                     self._core.logger.info(f"Loaded plugin: {plugin.get_name()}")
                     return plugin
         except Exception as e:
@@ -212,6 +216,8 @@ class PluginManager:
         if plugin is None:
             return False
         plugin.shutdown()
+        if self._core.search_manager and plugin.supports_search():
+            self._core.search_manager.unregister_plugin(plugin_id)
         del self._plugins[plugin_id]
         self._loaded_plugins.discard(plugin_id)
         self._core.logger.info(f"Unloaded plugin: {plugin_id}")

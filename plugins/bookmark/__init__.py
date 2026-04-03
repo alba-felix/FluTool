@@ -14,12 +14,14 @@ from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit,
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     setCustomStyleSheet, isDarkTheme, qconfig, IndeterminateProgressBar,
-    MessageBoxBase, SubtitleLabel, MessageBox
+    MessageBoxBase, SubtitleLabel, MessageBox, SingleDirectionScrollArea,
+    TransparentToolButton
 )
 from core import PluginInterface
 from storage import DatabaseManager
 from functools import partial
 from ui.custom_icon import CustomFluentIcon
+from core import SearchResult
 
 
 def get_app_data_path(relative_path: str) -> Path:
@@ -53,9 +55,45 @@ class InputDialog(MessageBoxBase):
     
     def get_text(self) -> str:
         return self.input_edit.text().strip()
-    
+
     def validate(self) -> bool:
         return True
+
+
+class AddBookmarkDialog(MessageBoxBase):
+    """添加书签对话框"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.titleLabel = SubtitleLabel("添加书签", self)
+        self.viewLayout.addWidget(self.titleLabel)
+
+        # URL 输入
+        self.url_edit = LineEdit(self)
+        self.url_edit.setPlaceholderText("请输入网站地址")
+        self.url_edit.setClearButtonEnabled(True)
+        self.viewLayout.addWidget(self.url_edit)
+
+        # 名称输入
+        self.name_edit = LineEdit(self)
+        self.name_edit.setPlaceholderText("请输入网站名称（可选，留空自动获取）")
+        self.name_edit.setClearButtonEnabled(True)
+        self.viewLayout.addWidget(self.name_edit)
+
+        self.yesButton.setText("确定")
+        self.cancelButton.setText("取消")
+        self.widget.setMinimumWidth(400)
+
+        self.url_edit.setFocus()
+
+    def get_url(self) -> str:
+        return self.url_edit.text().strip()
+
+    def get_name(self) -> str:
+        return self.name_edit.text().strip()
+
+    def validate(self) -> bool:
+        return bool(self.get_url())
 
 
 class WebsiteInfoFetcher(QThread):
@@ -257,8 +295,8 @@ class BookmarkWidget(QWidget):
     def _setup_ui(self) -> None:
         """构建界面"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
         
         self.setObjectName("bookmarkView")
         setCustomStyleSheet(
@@ -268,20 +306,27 @@ class BookmarkWidget(QWidget):
         )
         
         header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
-        
-        self.url_edit = LineEdit(self)
-        self.url_edit.setPlaceholderText("输入网址，按回车添加...")
-        self.url_edit.setClearButtonEnabled(True)
-        self.url_edit.returnPressed.connect(self._on_url_return_pressed)
-        header_layout.addWidget(self.url_edit, 1)
-        
+        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 添加按钮
+        self.add_btn = PushButton("添加", self)
+        self.add_btn.setIcon(FIF.ADD)
+        self.add_btn.clicked.connect(self._show_add_dialog)
+        header_layout.addWidget(self.add_btn)
+
         self.search_edit = LineEdit(self)
         self.search_edit.setPlaceholderText("搜索...")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.textChanged.connect(self._filter_websites)
         self.search_edit.setFixedWidth(150)
         header_layout.addWidget(self.search_edit)
+
+        self.url_edit = LineEdit(self)
+        self.url_edit.setPlaceholderText("输入网址，按回车添加...")
+        self.url_edit.setClearButtonEnabled(True)
+        self.url_edit.returnPressed.connect(self._on_url_return_pressed)
+        header_layout.addWidget(self.url_edit, 1)
         
         self.batch_btn = PushButton("批量删除", self)
         self.batch_btn.setIcon(FIF.DELETE)
@@ -306,20 +351,56 @@ class BookmarkWidget(QWidget):
         self.progress_bar.setFixedHeight(3)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
-        
-        self.category_layout = QHBoxLayout()
-        self.category_layout.setSpacing(5)
-        
+
+        # 分类滚动区域
+        self.scroll_area = SingleDirectionScrollArea(self, orient=Qt.Horizontal)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFixedHeight(36)
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("categoryContent")
+        setCustomStyleSheet(
+            scroll_content,
+            "QWidget#categoryContent { background-color: transparent; }",
+            "QWidget#categoryContent { background-color: transparent; }"
+        )
+        self.category_layout = QHBoxLayout(scroll_content)
+        self.category_layout.setContentsMargins(5, 2, 5, 2)
+        self.category_layout.setSpacing(4)
+        self.category_layout.setAlignment(Qt.AlignLeft)
+        self.scroll_area.setWidget(scroll_content)
+        self.scroll_area.enableTransparentBackground()
+        self.scroll_area.viewport().setAutoFillBackground(False)
+        self.scroll_area.viewport().setStyleSheet("background: transparent;")
+
+        setCustomStyleSheet(
+            self.scroll_area,
+            """
+            QScrollArea { background-color: transparent; border: none; }
+            QScrollArea > QWidget > QWidget { background-color: transparent; }
+            """,
+            """
+            QScrollArea { background-color: transparent; border: none; }
+            QScrollArea > QWidget > QWidget { background-color: transparent; }
+            """
+        )
+        layout.addWidget(self.scroll_area)
+
         self.all_btn = PushButton("全部", self)
         self.all_btn.clicked.connect(self._show_all)
         self.category_layout.addWidget(self.all_btn)
-        
-        self.add_category_btn = PushButton("+", self)
+
+        self.add_category_btn = TransparentToolButton(FIF.ADD, self)
+        self.add_category_btn.setToolTip("添加分类")
         self.add_category_btn.clicked.connect(self._add_category)
         self.category_layout.addWidget(self.add_category_btn)
         self.category_layout.addStretch()
-        layout.addLayout(self.category_layout)
-        
+
+        # 设置滚轮事件处理，使垂直滚轮可以水平滚动
+        self.scroll_area.wheelEvent = self._on_category_wheel_event
+
         self.tree = TreeWidget(self)
         self.tree.setHeaderLabels(["网站名称", "网址", "分类", "备注"])
         self.tree.header().setSectionResizeMode(QHeaderView.Interactive)
@@ -402,6 +483,22 @@ class BookmarkWidget(QWidget):
                         parent=self
                     )
     
+    def _on_category_wheel_event(self, event):
+        """处理分类区域的滚轮事件，将垂直滚动转换为水平滚动"""
+        from PyQt5.QtCore import QPoint
+        # 获取水平滚动条
+        h_scrollbar = self.scroll_area.horizontalScrollBar()
+        if h_scrollbar:
+            # 使用垂直滚轮的 delta 值来水平滚动
+            delta = event.angleDelta().y()
+            if delta != 0:
+                h_scrollbar.setValue(h_scrollbar.value() - delta)
+                event.accept()
+                return
+        # 如果没有处理，调用父类的 wheelEvent
+        from qfluentwidgets import SingleDirectionScrollArea
+        SingleDirectionScrollArea.wheelEvent(self.scroll_area, event)
+
     def _delete_category(self, category: dict) -> None:
         """删除分类"""
         box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的书签将移至\"全部\"分类。", self)
@@ -443,29 +540,29 @@ class BookmarkWidget(QWidget):
         """应用树形列表样式，包括表头和交替行颜色"""
         if not hasattr(self, "tree"):
             return
-        
+
         header = self.tree.header()
         if isDarkTheme():
             header.setStyleSheet(
                 "QHeaderView { background-color: transparent; }"
-                "QHeaderView::section { background-color: #1f1f1f; color: #dddddd; border: none; padding: 6px 8px; }"
+                "QHeaderView::section { background-color: #1f1f1f; color: #dddddd; border: none; padding: 4px 6px; }"
             )
             self.tree.setStyleSheet(
                 "QTreeWidget { background-color: transparent; alternate-background-color: #252525; }"
-                "QTreeWidget::item { padding: 4px; }"
+                "QTreeWidget::item { padding: 3px; }"
                 "QTreeWidget::item:selected { background-color: #0078d4; color: white; }"
             )
         else:
             header.setStyleSheet(
                 "QHeaderView { background-color: transparent; }"
-                "QHeaderView::section { background-color: #f5f5f5; color: #202020; border: none; padding: 6px 8px; }"
+                "QHeaderView::section { background-color: #f5f5f5; color: #202020; border: none; padding: 4px 6px; }"
             )
             self.tree.setStyleSheet(
                 "QTreeWidget { background-color: transparent; alternate-background-color: #f0f0f0; }"
-                "QTreeWidget::item { padding: 4px; }"
+                "QTreeWidget::item { padding: 3px; }"
                 "QTreeWidget::item:selected { background-color: #0078d4; color: white; }"
             )
-        
+
         self.tree.setAlternatingRowColors(True)
     
     def _get_icon_path(self, icon_path: str) -> Optional[str]:
@@ -499,14 +596,69 @@ class BookmarkWidget(QWidget):
         self.url_edit.clear()
         self._start_fetch_website(url)
     
+    def _show_add_dialog(self) -> None:
+        """显示添加书签对话框"""
+        dialog = AddBookmarkDialog(parent=self)
+        if dialog.exec():
+            url = dialog.get_url()
+            name = dialog.get_name()
+
+            if not url:
+                return
+
+            url = self._normalize_url(url)
+            if not url:
+                InfoBar.warning(
+                    title="输入错误",
+                    content="请输入有效的网站地址",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+
+            # 如果用户未输入名称，使用 URL 主机名作为默认名称
+            if not name:
+                from PyQt5.QtCore import QUrl
+                name = QUrl(url).host() or url
+
+            self._add_bookmark_with_name(url, name)
+
+    def _add_bookmark_with_name(self, url: str, name: str) -> None:
+        """使用指定名称添加书签"""
+        category_name = self._current_category_name if self._current_category_name != "全部" else None
+
+        self.db.add_bookmark(
+            plugin_id=self.PLUGIN_ID,
+            name=name,
+            url=url,
+            category_name=category_name,
+            icon="",
+            notes=""
+        )
+
+        self.load_data()
+
+        InfoBar.success(
+            title="添加成功",
+            content=f"已添加书签: {name}",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self
+        )
+
     def _add_website(self) -> None:
-        """添加网站"""
+        """添加网站（右键菜单用）"""
         dialog = InputDialog("添加网站", "请输入网站URL", parent=self)
         if dialog.exec():
             url = dialog.get_text()
             if not url:
                 return
-            
+
             url = self._normalize_url(url)
             if not url:
                 InfoBar.warning(
@@ -519,7 +671,7 @@ class BookmarkWidget(QWidget):
                     parent=self
                 )
                 return
-            
+
             self._start_fetch_website(url)
     
     def _normalize_url(self, url: str) -> str:
@@ -876,3 +1028,24 @@ class Plugin(PluginInterface):
         if self._widget is None:
             return
         self._widget.load_data()
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        db = DatabaseManager()
+        results = []
+        bookmarks = db.search_bookmarks(self.PLUGIN_ID, query)
+        for bm in bookmarks[:20]:
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=bm['name'],
+                description=f"{bm['url']} - {bm.get('notes', '')}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in bm['name'].lower() else 0.5,
+                action=lambda url=bm['url']: webbrowser.open(url),
+                metadata={'bookmark_id': bm['id'], 'url': bm['url']}
+            )
+            results.append(result)
+        return results

@@ -13,6 +13,7 @@ from qframelesswindow import FramelessMainWindow, StandardTitleBar
 from core import get_resource_path
 from .more_menu import MoreMenu
 from .settings_interface import SettingsInterface
+from .global_search_dialog import GlobalSearchDialog
 
 
 class ScrollableNavButton(NavigationWidget):
@@ -552,6 +553,14 @@ class PushFluentWindow(FramelessMainWindow):
 		self.titleBar.hBoxLayout.insertWidget(2, self._theme_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
 		self.titleBar.hBoxLayout.insertSpacing(3, 8)
 		
+		self._search_btn = TransparentToolButton(FIF.SEARCH, self.titleBar)
+		self._search_btn.setFixedSize(32, 32)
+		self._search_btn.setIconSize(QSize(14, 14))
+		self._search_btn.setToolTip("<p>全局搜索</p>")
+		self._search_btn.clicked.connect(self._on_global_search)
+		self.titleBar.hBoxLayout.insertWidget(2, self._search_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+		self.titleBar.hBoxLayout.insertSpacing(3, 8)
+		
 		self._hide_btn = TransparentToolButton(FIF.MINIMIZE, self.titleBar)
 		self._hide_btn.setFixedSize(46, 32)
 		self._hide_btn.setIconSize(QSize(14, 14))
@@ -669,6 +678,20 @@ class PushFluentWindow(FramelessMainWindow):
 			setTheme(Theme.LIGHT)
 		else:
 			setTheme(Theme.DARK)
+	
+	def _on_global_search(self) -> None:
+		if not self.core.search_manager:
+			return
+		dialog = GlobalSearchDialog(self.core.search_manager, self)
+		dialog.result_selected.connect(self._on_search_result_selected)
+		dialog.show()
+	
+	def _on_search_result_selected(self, result) -> None:
+		plugin_id = result.plugin_id
+		if plugin_id in self._plugin_containers:
+			self.switchTo(self._plugin_containers[plugin_id])
+			if hasattr(result, 'action') and callable(result.action):
+				result.action()
 	
 	def _on_real_close(self) -> None:
 		self.real_close()

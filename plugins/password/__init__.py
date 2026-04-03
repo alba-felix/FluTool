@@ -23,7 +23,7 @@ from qfluentwidgets import (
 from core import PluginInterface
 from storage import DatabaseManager
 from utils import CharCryptoTool
-from core import get_app_data_path
+from core import get_app_data_path, SearchResult
 
 # 尝试导入定时密码功能，失败时优雅处理
 try:
@@ -696,9 +696,10 @@ class PasswordWidget(QWidget):
             
             for j in range(cat_item.childCount()):
                 pwd_item = cat_item.child(j)
+                # 搜索所有列：平台、用户名、密码、邮箱/手机号、备注
                 pwd_visible = any(
                     text.lower() in pwd_item.text(col).lower()
-                    for col in [0, 1, 3, 4]
+                    for col in range(5)
                 )
                 pwd_item.setHidden(not pwd_visible)
                 cat_visible = cat_visible or pwd_visible
@@ -761,6 +762,27 @@ class Plugin(PluginInterface):
     def _do_load_data(self) -> None:
         if self._widget:
             self._widget.load_data()
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        db = DatabaseManager()
+        results = []
+        passwords = db.search_passwords(self.PLUGIN_ID, query)
+        for pwd in passwords[:20]:
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=pwd.get('platform', '') or pwd.get('username', ''),
+                description=f"{pwd.get('username', '')} - {pwd.get('email', '')}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in pwd.get('platform', '').lower() else 0.5,
+                action=lambda: None,
+                metadata={'password_id': pwd['id']}
+            )
+            results.append(result)
+        return results
 
 
 __all__ = ['Plugin']

@@ -116,3 +116,18 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         实际数据加载逻辑（子类可重写）
         """
         pass
+
+    def supports_search(self) -> bool:
+        """是否支持全局搜索"""
+        return False
+
+    def search(self, query: str):
+        """全局搜索接口（子类可选实现）
+        
+        Args:
+            query: 搜索关键词
+            
+        Returns:
+            List[SearchResult]: 搜索结果列表
+        """
+        return []

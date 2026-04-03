@@ -8,6 +8,7 @@ from .settings import SettingsManager
 from .utils import get_app_data_path, get_resource_path, get_local_app_data_dir
 from .backup_manager import BackupManager
 from .efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
+from .search import SearchResult
 
 __all__ = [
     'AppCore',
@@ -23,4 +24,5 @@ __all__ = [
     'get_app_data_path',
     'get_resource_path',
     'get_local_app_data_dir',
+    'SearchResult',
 ]

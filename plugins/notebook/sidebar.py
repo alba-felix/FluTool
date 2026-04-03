@@ -114,3 +114,12 @@ class NotebookSidebar(QWidget):
         """获取选中的笔记 ID"""
         current_item = self._note_list.currentItem()
         return current_item.data(Qt.UserRole) if current_item else None
+    
+    def select_note(self, note_id: int):
+        """选中指定笔记"""
+        for i in range(self._note_list.count()):
+            item = self._note_list.item(i)
+            if item.data(Qt.UserRole) == note_id:
+                self._note_list.setCurrentItem(item)
+                self._on_note_selected(item)
+                break
