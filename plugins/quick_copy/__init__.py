@@ -40,6 +40,7 @@ class EditCardDialog(MessageBoxBase):
         self.title_input = LineEdit(self)
         self.title_input.setText(self.card_data.get("title", ""))
         self.title_input.setPlaceholderText("输入卡片标题...")
+        self.title_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.title_input)
 
         # 内容项输入（四个单独输入框）
@@ -53,6 +54,7 @@ class EditCardDialog(MessageBoxBase):
             item_input.setPlaceholderText(f"内容 {i + 1}")
             if i < len(items):
                 item_input.setText(items[i])
+            item_input.returnPressed.connect(lambda: self.yesButton.click())
             self.item_inputs.append(item_input)
             self.viewLayout.addWidget(item_input)
 

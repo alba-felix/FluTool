@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from ctypes import windll, byref, c_int, c_long, POINTER, WINFUNCTYPE, Structure, sizeof
 from ctypes.wintypes import DWORD, HINSTANCE, MSG, POINT, WPARAM, LPARAM
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QPoint, QRect, QPoint
@@ -17,7 +17,7 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, ScrollArea, PrimaryPushButton, ToolButton,
     CardWidget, SpinBox, isDarkTheme, qconfig
 )
-from core import PluginInterface
+from core import PluginInterface, SearchResult
 from storage import DatabaseManager
 
 # Windows Hook 常量
@@ -1210,3 +1210,37 @@ class Plugin(PluginInterface):
         if self._widget is None:
             return
         pass
+
+    def supports_search(self) -> bool:
+        """支持全局搜索"""
+        return True
+
+    def search(self, query: str):
+        """搜索颜色"""
+        db = DatabaseManager()
+        results = []
+        colors = db.search_colors(self.PLUGIN_ID, query)
+        for color in colors[:20]:
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=color['name'],
+                description=f"HEX: {color['color_hex']} | RGB: {color['color_rgb']}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in color['name'].lower() else 0.5,
+                action=lambda c=color: self._copy_color(c),
+                metadata={'color_id': color['id']}
+            )
+            results.append(result)
+        return results
+
+    def _copy_color(self, color: Dict[str, Any]) -> None:
+        """复制颜色值到剪贴板"""
+        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtGui import QCursor
+        from qfluentwidgets import QToolTip
+        color_hex = color.get('color_hex', '')
+        if color_hex:
+            app_clipboard = QApplication.clipboard()
+            app_clipboard.setText(color_hex)
+            QToolTip.showText(QCursor.pos(), f"已复制：{color_hex}")

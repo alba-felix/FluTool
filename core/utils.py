@@ -30,31 +30,32 @@ def get_resource_path(relative_path: str) -> Path:
 def get_app_data_path(relative_path: str) -> Path:
     """
     获取应用数据路径（可读写）
-    
-    打包后：返回 %LOCALAPPDATA%\\FluTool 下的路径
+
+    打包后：返回程序所在目录下的路径
     开发环境：返回项目根目录下的路径
-    
+
     Args:
         relative_path: 相对路径，如 "data/data.db"
-        
+
     Returns:
         绝对路径
     """
     if getattr(sys, 'frozen', False):
-        local_app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local'))
-        base_path = Path(local_app_data) / APP_NAME
+        base_path = Path(sys.executable).parent
     else:
         base_path = Path(__file__).parent.parent
-    
+
     return base_path / relative_path
 
 
 def get_local_app_data_dir() -> Path:
     """
-    获取 Local AppData 目录下的应用目录
-    
+    获取应用数据目录
+
     Returns:
-        %LOCALAPPDATA%\\FluTool 路径
+        程序所在目录下的 FluTool 路径
     """
-    local_app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local'))
-    return Path(local_app_data) / APP_NAME
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    else:
+        return Path(__file__).parent.parent

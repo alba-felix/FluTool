@@ -18,6 +18,7 @@ from qfluentwidgets import (
 from core import PluginInterface
 from storage import DatabaseManager
 from functools import partial
+from core import SearchResult
 
 
 def get_powershell_path() -> str:
@@ -905,3 +906,57 @@ class Plugin(PluginInterface):
         if self._widget is None:
             return
         self._widget.load_data()
+
+    def supports_search(self) -> bool:
+        return True
+
+    def search(self, query: str):
+        db = DatabaseManager()
+        results = []
+        scripts = db.search_scripts(self.PLUGIN_ID, query)
+        for script in scripts[:20]:
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=script['name'],
+                description=f"{script.get('description', '')} - {script['script_type']}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in script['name'].lower() else 0.5,
+                action=lambda s=script: self._run_script(s),
+                metadata={'script_id': script['id']}
+            )
+            results.append(result)
+        return results
+
+    def _run_script(self, script: Dict[str, Any]) -> None:
+        """运行脚本"""
+        import tempfile
+        import os
+
+        script_type = script.get('script_type', 'bat')
+        content = script.get('content', '')
+
+        if not content.strip():
+            return
+
+        suffix_map = {
+            'bat': '.bat',
+            'cmd': '.cmd',
+            'ps1': '.ps1',
+            'py': '.py'
+        }
+
+        suffix = suffix_map.get(script_type, '.bat')
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False, encoding='utf-8') as f:
+            f.write(content)
+            temp_path = f.name
+
+        process = QProcess()
+
+        if script_type == 'ps1':
+            process.start(get_powershell_path(), ['-ExecutionPolicy', 'Bypass', '-File', temp_path])
+        elif script_type == 'py':
+            process.start('python', [temp_path])
+        else:
+            process.start('cmd', ['/c', temp_path])

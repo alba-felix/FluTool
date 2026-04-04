@@ -16,6 +16,7 @@ from qfluentwidgets import (
 from core import PluginInterface
 from storage import DatabaseManager
 from functools import partial
+from core import SearchResult
 
 
 class InputDialog(MessageBoxBase):
@@ -697,3 +698,30 @@ class Plugin(PluginInterface):
         if self._widget is None:
             return
         self._widget.load_data()
+
+    def supports_search(self) -> bool:
+        return True
+
+    def search(self, query: str):
+        db = DatabaseManager()
+        results = []
+        commands = db.search_commands(self.PLUGIN_ID, query)
+        for cmd in commands[:20]:
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=cmd['name'],
+                description=f"{cmd.get('sub_title', '')} - {cmd['content'][:50]}...",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in cmd['name'].lower() else 0.5,
+                action=lambda content=cmd['content']: self._copy_to_clipboard(content),
+                metadata={'command_id': cmd['id']}
+            )
+            results.append(result)
+        return results
+
+    def _copy_to_clipboard(self, content: str) -> None:
+        """复制命令内容到剪贴板"""
+        from PyQt5.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        clipboard.setText(content)

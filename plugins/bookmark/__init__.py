@@ -45,12 +45,13 @@ class InputDialog(MessageBoxBase):
         self.input_edit.setText(default_text)
         self.input_edit.setPlaceholderText(label)
         self.input_edit.setClearButtonEnabled(True)
+        self.input_edit.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.input_edit)
-        
+
         self.yesButton.setText("确定")
         self.cancelButton.setText("取消")
         self.widget.setMinimumWidth(350)
-        
+
         self.input_edit.setFocus()
     
     def get_text(self) -> str:
@@ -72,12 +73,14 @@ class AddBookmarkDialog(MessageBoxBase):
         self.url_edit = LineEdit(self)
         self.url_edit.setPlaceholderText("请输入网站地址")
         self.url_edit.setClearButtonEnabled(True)
+        self.url_edit.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.url_edit)
 
         # 名称输入
         self.name_edit = LineEdit(self)
         self.name_edit.setPlaceholderText("请输入网站名称（可选，留空自动获取）")
         self.name_edit.setClearButtonEnabled(True)
+        self.name_edit.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.name_edit)
 
         self.yesButton.setText("确定")

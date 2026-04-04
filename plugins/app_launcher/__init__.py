@@ -25,7 +25,7 @@ from qfluentwidgets import (
     ScrollArea, SmoothScrollArea
 )
 
-from core import PluginInterface, get_app_data_path
+from core import PluginInterface, get_app_data_path, SearchResult
 from storage import DatabaseManager
 
 
@@ -1208,27 +1208,63 @@ class AppLauncherWidget(QWidget):
 # ==================== 插件入口 ====================
 class Plugin(PluginInterface):
     """应用启动插件"""
-    
+
     PLUGIN_ID = "app_launcher"
     PLUGIN_NAME = "应用启动"
     PLUGIN_ICON = FIF.APPLICATION
     PLUGIN_PRIORITY = 12
-    
+
     def initialize(self, core) -> None:
         """初始化插件"""
         self.core = core
         core.logger.info(f"Plugin '{self.PLUGIN_NAME}' initialized")
-    
+
     def shutdown(self) -> None:
         """关闭插件"""
         self.core.logger.info(f"Plugin '{self.PLUGIN_NAME}' shutdown")
-    
+
     def _create_widget(self, parent=None) -> QWidget:
         """创建插件界面"""
         return AppLauncherWidget(self.core, parent)
-    
+
     def _do_load_data(self) -> None:
         """加载数据"""
         if self._widget is None:
             return
         self._widget.load_data()
+
+    def supports_search(self) -> bool:
+        """支持全局搜索"""
+        return True
+
+    def search(self, query: str):
+        """搜索应用"""
+        db = DatabaseManager()
+        results = []
+        apps = db.search_apps(self.PLUGIN_ID, query)
+        for app in apps[:20]:
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=app['name'],
+                description=app.get('target_path', ''),
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query in app['name'].lower() else 0.5,
+                action=lambda a=app: self._launch_app(a),
+                metadata={'app_id': app['id']}
+            )
+            results.append(result)
+        return results
+
+    def _launch_app(self, app: Dict[str, Any]) -> None:
+        """启动应用"""
+        import os
+        import subprocess
+        target_path = app.get('target_path', '')
+        if not target_path or not os.path.exists(target_path):
+            return
+        arguments = app.get('arguments', '') or ''
+        if arguments:
+            subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
+        else:
+            os.startfile(target_path)
