@@ -20,6 +20,7 @@ from qfluentwidgets import (
     SubtitleLabel, BodyLabel as FluentBodyLabel
 )
 from core import PluginInterface, get_app_data_path
+from storage.database import DatabaseManager
 
 
 class FolderTreeWidget(QWidget):
@@ -29,10 +30,10 @@ class FolderTreeWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
+        self.db = DatabaseManager()
         self.current_folder = None
         self.tree_content = ""
-        self.custom_rules = {}  # 存储自定义规则 {规则名：[排除项列表]}
-        self.config_path = get_app_data_path("data/folder_tree_rules.json")
+        self.custom_rules = {}
         self.load_custom_rules()
         self.init_ui()
         self.setup_style()
@@ -230,21 +231,17 @@ class FolderTreeWidget(QWidget):
     def load_custom_rules(self):
         """加载自定义规则"""
         try:
-            if self.config_path.exists():
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    self.custom_rules = json.load(f)
+            rules = self.db.get_all_folder_tree_rules()
+            self.custom_rules = {}
+            for rule in rules:
+                items = json.loads(rule['exclude_items']) if rule['exclude_items'] else []
+                self.custom_rules[rule['rule_name']] = items
         except Exception as e:
             self.custom_rules = {}
     
     def save_custom_rules(self):
-        """保存自定义规则"""
-        try:
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.custom_rules, f, ensure_ascii=False, indent=2)
-            return True
-        except Exception as e:
-            return False
+        """保存自定义规则（已弃用，现在实时保存到数据库）"""
+        return True
     
     def validate_rule_items(self, items_str: str) -> Tuple[bool, List[str]]:
         """验证规则项格式
@@ -406,8 +403,38 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        # 检查是否重名（编辑时除外）
-        if edit_index is None and name in self.custom_rules:
+        if edit_index is not None:
+            rule_names = list(self.custom_rules.keys())
+            old_name = rule_names[edit_index]
+            if old_name != name:
+                if name in self.custom_rules:
+                    InfoBar.error(
+                        title="错误",
+                        content=f"规则'{name}'已存在",
+                        parent=self,
+                        duration=2000
+                    )
+                    return
+                self.db.delete_folder_tree_rule(old_name)
+                del self.custom_rules[old_name]
+            else:
+                self.db.update_folder_tree_rule(name, result)
+                self.custom_rules[name] = result
+                self._update_rules_combo(name)
+                if parent_dialog:
+                    parent_dialog.findChild(QListWidget).clear()
+                    for rule_name, items in self.custom_rules.items():
+                        parent_dialog.findChild(QListWidget).addItem(f"{rule_name}: {', '.join(items)}")
+                InfoBar.success(
+                    title="成功",
+                    content=f"已保存规则：{name}",
+                    parent=self,
+                    duration=2000
+                )
+                editor.accept()
+                return
+        
+        if name in self.custom_rules:
             InfoBar.error(
                 title="错误",
                 content=f"规则'{name}'已存在",
@@ -416,40 +443,22 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        # 保存或更新规则
-        if edit_index is not None:
-            # 编辑模式：先删除旧的
-            rule_names = list(self.custom_rules.keys())
-            old_name = rule_names[edit_index]
-            if old_name != name:
-                del self.custom_rules[old_name]
-        
+        self.db.add_folder_tree_rule(name, result)
         self.custom_rules[name] = result
+        self._update_rules_combo(name)
         
-        if self.save_custom_rules():
-            # 更新下拉框，选中新保存的规则
-            self._update_rules_combo(name)
-            
-            # 更新父对话框的列表
-            if parent_dialog:
-                parent_dialog.findChild(QListWidget).clear()
-                for rule_name, items in self.custom_rules.items():
-                    parent_dialog.findChild(QListWidget).addItem(f"{rule_name}: {', '.join(items)}")
-            
-            InfoBar.success(
-                title="成功",
-                content=f"已保存规则：{name}",
-                parent=self,
-                duration=2000
-            )
-            editor.accept()
-        else:
-            InfoBar.error(
-                title="错误",
-                content="保存规则失败",
-                parent=self,
-                duration=2000
-            )
+        if parent_dialog:
+            parent_dialog.findChild(QListWidget).clear()
+            for rule_name, items in self.custom_rules.items():
+                parent_dialog.findChild(QListWidget).addItem(f"{rule_name}: {', '.join(items)}")
+        
+        InfoBar.success(
+            title="成功",
+            content=f"已保存规则：{name}",
+            parent=self,
+            duration=2000
+        )
+        editor.accept()
     
     def delete_rule(self, parent_dialog):
         """删除规则"""
@@ -463,7 +472,6 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        # 确认删除（使用 Fluent 风格）
         from qfluentwidgets import MessageBox
         w = MessageBox(
             title='确认删除',
@@ -473,28 +481,18 @@ class FolderTreeWidget(QWidget):
         if w.exec_():
             rule_names = list(self.custom_rules.keys())
             rule_name = rule_names[current_row]
+            self.db.delete_folder_tree_rule(rule_name)
             del self.custom_rules[rule_name]
             
-            if self.save_custom_rules():
-                # 更新下拉框
-                self._update_rules_combo()
-                
-                # 更新列表
-                self._rule_list.takeItem(current_row)
-                
-                InfoBar.success(
-                    title="成功",
-                    content=f"已删除规则：{rule_name}",
-                    parent=self,
-                    duration=2000
-                )
-            else:
-                InfoBar.error(
-                    title="错误",
-                    content="删除规则失败",
-                    parent=self,
-                    duration=2000
-                )
+            self._update_rules_combo()
+            self._rule_list.takeItem(current_row)
+            
+            InfoBar.success(
+                title="成功",
+                content=f"已删除规则：{rule_name}",
+                parent=self,
+                duration=2000
+            )
     
     def _update_rules_combo(self, select_custom_rule_name: str = None):
         """更新规则下拉框
@@ -836,3 +834,26 @@ class Plugin(PluginInterface):
         if self._widget is None:
             return
         pass
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        from core import SearchResult
+        db = DatabaseManager()
+        results = []
+        rules = db.search_folder_tree_rules(query)
+        for rule in rules[:20]:
+            exclude_items = json.loads(rule['exclude_items']) if rule['exclude_items'] else []
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=f"规则: {rule['rule_name']}",
+                description=f"排除项: {', '.join(exclude_items[:5])}{'...' if len(exclude_items) > 5 else ''}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0,
+                action=lambda: None,
+                metadata={'rule_id': rule['id'], 'rule_name': rule['rule_name']}
+            )
+            results.append(result)
+        return results

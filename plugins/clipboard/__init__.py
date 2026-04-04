@@ -19,6 +19,7 @@ from qfluentwidgets import (
     MessageBox, TransparentToolButton, CaptionLabel
 )
 from core import PluginInterface, get_app_data_path
+from storage.database import DatabaseManager
 
 
 class ClipboardWidget(QWidget):
@@ -29,6 +30,7 @@ class ClipboardWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
+        self.db = DatabaseManager()
         self.clipboard_data: List[Dict[str, Any]] = []
         self.max_history = 100
         self._is_monitoring = True
@@ -215,19 +217,22 @@ class ClipboardWidget(QWidget):
     def _add_text_to_history(self, text: str):
         """添加文本到历史记录"""
         if self.clipboard_data and self.clipboard_data[0].get('type') == 'text' and self.clipboard_data[0].get('content') == text:
-            self.clipboard_data[0]['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            item_data = {
-                "type": "text",
-                "content": text,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            self.clipboard_data.insert(0, item_data)
-            
-            if len(self.clipboard_data) > self.max_history:
-                self.clipboard_data.pop()
+            return
         
-        self._save_clipboard_history()
+        item_id = self.db.add_clipboard_item("text", text)
+        item_data = {
+            "id": item_id,
+            "type": "text",
+            "content": text,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        self.clipboard_data.insert(0, item_data)
+        
+        if len(self.clipboard_data) > self.max_history:
+            removed = self.clipboard_data.pop()
+            if 'id' in removed:
+                self.db.delete_clipboard_item(removed['id'])
+        
         self._update_tree_view()
     
     def _add_image_to_history(self, image):
@@ -245,7 +250,9 @@ class ClipboardWidget(QWidget):
         pixmap.save(buffer, "PNG")
         image_data = byte_array.toBase64().data().decode()
         
+        item_id = self.db.add_clipboard_item("image", image_data, "png")
         self.clipboard_data.insert(0, {
+            "id": item_id,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "type": "image",
             "content": image_data,
@@ -253,9 +260,10 @@ class ClipboardWidget(QWidget):
         })
         
         if len(self.clipboard_data) > self.max_history:
-            self.clipboard_data = self.clipboard_data[:self.max_history]
+            removed = self.clipboard_data.pop()
+            if 'id' in removed:
+                self.db.delete_clipboard_item(removed['id'])
         
-        self._save_clipboard_history()
         self._update_tree_view()
     
     def _add_urls_to_history(self, urls):
@@ -268,16 +276,19 @@ class ClipboardWidget(QWidget):
         if self.clipboard_data and self.clipboard_data[0].get("type") == "urls" and self.clipboard_data[0].get("content") == paths:
             return
         
+        item_id = self.db.add_clipboard_item("urls", json.dumps(paths))
         self.clipboard_data.insert(0, {
+            "id": item_id,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "type": "urls",
             "content": paths
         })
         
         if len(self.clipboard_data) > self.max_history:
-            self.clipboard_data = self.clipboard_data[:self.max_history]
+            removed = self.clipboard_data.pop()
+            if 'id' in removed:
+                self.db.delete_clipboard_item(removed['id'])
         
-        self._save_clipboard_history()
         self._update_tree_view()
     
     def _update_tree_view(self):
@@ -394,24 +405,24 @@ class ClipboardWidget(QWidget):
             item_data = self.clipboard_data.pop(index)
             self.clipboard_data.insert(0, item_data)
             self._update_tree_view()
-            self._save_clipboard_history()
             self.status_label.setText("已置顶")
     
     def _delete_item(self, item: QTreeWidgetItem):
         """删除选中项"""
         index = self.tree.indexOfTopLevelItem(item)
         if index >= 0:
-            self.clipboard_data.pop(index)
+            item_data = self.clipboard_data.pop(index)
+            if 'id' in item_data:
+                self.db.delete_clipboard_item(item_data['id'])
             self.tree.takeTopLevelItem(index)
-            self._save_clipboard_history()
             self.status_label.setText("已删除")
     
     def _clear_history(self):
         """清空剪切板历史"""
         box = MessageBox("确认清空", "确定要清空所有剪切板历史记录吗？", self)
         if box.exec():
+            self.db.clear_clipboard_history()
             self.clipboard_data.clear()
-            self._save_clipboard_history()
             self._update_tree_view()
             self.status_label.setText("已清空剪切板历史")
             InfoBar.success(
@@ -533,26 +544,26 @@ class ClipboardWidget(QWidget):
         self.status_label.setText("已添加文本")
     
     def _save_clipboard_history(self):
-        """保存剪切板历史到文件"""
-        try:
-            temp_file = str(self.json_file) + '.tmp'
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(self.clipboard_data, f, ensure_ascii=False, indent=2)
-            os.replace(temp_file, str(self.json_file))
-        except Exception as e:
-            self.core.logger.error(f"保存剪切板历史失败: {e}")
+        """保存剪切板历史到数据库"""
+        pass
     
     def _load_clipboard_history(self):
-        """从文件加载剪切板历史"""
+        """从数据库加载剪切板历史"""
         try:
-            if self.json_file.exists():
-                with open(self.json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        for item in data:
-                            if isinstance(item, dict) and "type" not in item:
-                                item["type"] = "text"
-                        self.clipboard_data = data
+            data = self.db.get_clipboard_history(self.max_history)
+            self.clipboard_data = []
+            for item in data:
+                item_data = {
+                    "id": item["id"],
+                    "type": item["type"],
+                    "content": item["content"],
+                    "timestamp": item["timestamp"]
+                }
+                if item.get("format"):
+                    item_data["format"] = item["format"]
+                if item["type"] == "urls":
+                    item_data["content"] = json.loads(item["content"])
+                self.clipboard_data.append(item_data)
         except Exception as e:
             self.core.logger.error(f"加载剪切板历史失败: {e}")
             self.clipboard_data = []
@@ -594,3 +605,28 @@ class Plugin(PluginInterface):
         """加载数据"""
         if self._widget:
             self._widget.load_data()
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        from core import SearchResult
+        db = DatabaseManager()
+        results = []
+        items = db.search_clipboard(query)
+        for item in items[:20]:
+            content = item['content']
+            if len(content) > 100:
+                content = content[:100] + '...'
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=content,
+                description=f"类型: {item['type']} | 时间: {item['timestamp']}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0,
+                action=lambda c=content: QApplication.clipboard().setText(c),
+                metadata={'item_id': item['id']}
+            )
+            results.append(result)
+        return results

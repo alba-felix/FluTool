@@ -1,8 +1,5 @@
 """快速复制插件"""
 
-import json
-import os
-from pathlib import Path
 from typing import List, Dict, Any
 
 from PyQt5.QtWidgets import (
@@ -19,7 +16,8 @@ from qfluentwidgets import (
 from qfluentwidgets.components.widgets.card_widget import (
     HeaderCardWidget, CardSeparator
 )
-from core import PluginInterface, get_app_data_path
+from core import PluginInterface
+from storage.database import DatabaseManager
 
 
 class EditCardDialog(MessageBoxBase):
@@ -227,12 +225,12 @@ class QuickCopyWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
+        self.db = DatabaseManager()
         self.cards_data: List[Dict[str, Any]] = []
         self.setObjectName("quickCopyWidget")
         self._scroll_layout = None
         self._item_count = 0
         self._cards = []
-        self._init_paths()
         self._setup_ui()
         self._load_cards()
     
@@ -292,7 +290,6 @@ class QuickCopyWidget(QWidget):
 
     def _add_item(self) -> None:
         """添加快速复制项"""
-        # 移除占位符
         if self._item_count == 0:
             item = self._scroll_layout.itemAt(0)
             if item:
@@ -300,38 +297,37 @@ class QuickCopyWidget(QWidget):
                 if isinstance(widget, QLabel):
                     self._scroll_layout.removeItem(item)
 
-        # 创建新卡片数据（初始无内容，避免空白行）
+        card_id = self.db.add_quick_copy_card(f"卡片 {self._item_count + 1}", self._item_count)
+        
         new_card = {
-            "id": self._item_count + 1,
+            "id": card_id,
             "title": f"卡片 {self._item_count + 1}",
-            "items": []                     # 空列表，无默认空白项
+            "items": []
         }
         self.cards_data.append(new_card)
         
-        # 创建卡片
         card = QuickCopyCard(new_card, self)
         card.edit_clicked.connect(self._on_card_edit)
         self._scroll_layout.addWidget(card, self._item_count // 4, self._item_count % 4, 1, 1)
         self._cards.append(card)
         self._item_count += 1
-        
-        # 保存数据
-        self._save_cards()
     
     def _load_cards(self) -> None:
-        """从文件加载卡片数据"""
+        """从数据库加载卡片数据"""
         try:
-            if self.json_file.exists() and self.json_file.stat().st_size > 0:
-                with open(self.json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.cards_data = data.get("cards", [])
-            else:
-                self.cards_data = []
+            cards = self.db.get_quick_copy_cards()
+            self.cards_data = []
+            for card in cards:
+                items = self.db.get_quick_copy_items(card['id'])
+                self.cards_data.append({
+                    "id": card['id'],
+                    "title": card['title'],
+                    "items": [item['content'] for item in items]
+                })
         except Exception as e:
             self.core.logger.error(f"加载快速复制数据失败: {e}")
             self.cards_data = []
         
-        # 显示卡片
         self._display_cards()
     
     def _display_cards(self) -> None:
@@ -354,7 +350,6 @@ class QuickCopyWidget(QWidget):
     
     def _on_card_edit(self, card_id: int) -> None:
         """处理卡片编辑请求"""
-        # 查找卡片数据
         card_data = None
         card_index = -1
         for i, data in enumerate(self.cards_data):
@@ -366,45 +361,33 @@ class QuickCopyWidget(QWidget):
         if card_data is None or card_index < 0:
             return
         
-        # 显示编辑对话框
         dialog = EditCardDialog(card_data, self)
         if dialog.exec():
-            # 获取编辑后的数据
             new_data = dialog.get_data()
-            new_data["id"] = card_id  # 保持ID不变
+            new_data["id"] = card_id
             
-            # 更新数据
+            self.db.update_quick_copy_card(card_id, title=new_data["title"])
+            
+            existing_items = self.db.get_quick_copy_items(card_id)
+            existing_ids = {item['id'] for item in existing_items}
+            
+            for i, content in enumerate(new_data["items"]):
+                if i < len(existing_items):
+                    self.db.update_quick_copy_item(existing_items[i]['id'], content=content)
+                else:
+                    self.db.add_quick_copy_item(card_id, content, i)
+            
+            for item in existing_items[len(new_data["items"]):]:
+                self.db.delete_quick_copy_item(item['id'])
+            
             self.cards_data[card_index] = new_data
             
-            # 更新卡片显示
             if card_index < len(self._cards):
                 self._cards[card_index].update_data(new_data)
-            
-            # 保存数据
-            self._save_cards()
             
             InfoBar.success(
                 title="保存成功",
                 content="卡片已更新",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2000,
-                parent=self
-            )
-    
-    def _save_cards(self) -> None:
-        """保存卡片数据到文件"""
-        try:
-            temp_file = str(self.json_file) + '.tmp'
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump({"cards": self.cards_data}, f, ensure_ascii=False, indent=2)
-            os.replace(temp_file, str(self.json_file))
-        except Exception as e:
-            self.core.logger.error(f"保存快速复制数据失败: {e}")
-            InfoBar.error(
-                title="保存失败",
-                content=str(e),
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -437,3 +420,28 @@ class Plugin(PluginInterface):
     def _do_load_data(self) -> None:
         if self._widget is not None:
             self._widget.load_data()
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        from core import SearchResult
+        db = DatabaseManager()
+        results = []
+        items = db.search_quick_copy(query)
+        for item in items[:20]:
+            content = item['content']
+            if len(content) > 80:
+                content = content[:80] + '...'
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=content,
+                description=f"卡片: {item['card_title']}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0,
+                action=lambda c=item['content']: QApplication.clipboard().setText(c),
+                metadata={'item_id': item['id'], 'card_id': item['card_id']}
+            )
+            results.append(result)
+        return results

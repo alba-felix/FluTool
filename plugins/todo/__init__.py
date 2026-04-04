@@ -2,10 +2,7 @@
 代办事项插件
 提供任务管理功能，支持优先级、截止日期、标签、置顶等
 """
-import json
-import os
 from datetime import datetime
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from PyQt5.QtCore import Qt, QDate, QTimer
@@ -18,7 +15,8 @@ from qfluentwidgets import (
     MessageBoxBase, TransparentToolButton, CaptionLabel, ComboBox,
     TextEdit, CheckBox, SubtitleLabel, BodyLabel
 )
-from core import PluginInterface, get_app_data_path
+from core import PluginInterface
+from storage.database import DatabaseManager
 
 
 class AddTodoDialog(MessageBoxBase):
@@ -220,18 +218,12 @@ class TodoWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
+        self.db = DatabaseManager()
         self.todos: List[Dict[str, Any]] = []
         
-        self._init_paths()
         self._setup_ui()
         self._load_todos()
         self._setup_timer()
-    
-    def _init_paths(self):
-        """初始化路径"""
-        self.data_dir = get_app_data_path("data")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.json_file = self.data_dir / "todos.json"
     
     def _setup_ui(self):
         """构建界面"""
@@ -366,40 +358,15 @@ class TodoWidget(QWidget):
         self.timer.start(60000)
     
     def _load_todos(self):
-        """从文件加载代办事项"""
+        """从数据库加载代办事项"""
         try:
-            if self.json_file.exists() and self.json_file.stat().st_size > 0:
-                with open(self.json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.todos = data.get("todos", [])
-            else:
-                self.todos = []
-                self._save_todos()
+            self.todos = self.db.get_todos()
         except Exception as e:
             self.core.logger.error(f"加载代办事项失败: {e}")
             self.todos = []
         
         self._display_todos()
         self._update_stats()
-    
-    def _save_todos(self):
-        """保存代办事项到文件"""
-        try:
-            temp_file = str(self.json_file) + '.tmp'
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump({"todos": self.todos}, f, ensure_ascii=False, indent=2)
-            os.replace(temp_file, str(self.json_file))
-        except Exception as e:
-            self.core.logger.error(f"保存代办事项失败: {e}")
-            InfoBar.error(
-                title="保存失败",
-                content=str(e),
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2000,
-                parent=self
-            )
     
     def _display_todos(self):
         """显示代办事项列表"""
@@ -518,8 +485,18 @@ class TodoWidget(QWidget):
         if dialog.exec():
             todo_data = dialog.get_data()
             if todo_data["title"]:
+                todo_id = self.db.add_todo(
+                    title=todo_data["title"],
+                    description=todo_data.get("description", ""),
+                    priority=todo_data.get("priority", "中"),
+                    start_date=todo_data.get("start_date", ""),
+                    due_date=todo_data.get("due_date", ""),
+                    tags=todo_data.get("tags", []),
+                    completed=1 if todo_data.get("completed", False) else 0,
+                    pinned=1 if todo_data.get("pinned", False) else 0
+                )
+                todo_data["id"] = todo_id
                 self.todos.append(todo_data)
-                self._save_todos()
                 self._display_todos()
                 self._update_stats()
                 InfoBar.success(
@@ -553,8 +530,20 @@ class TodoWidget(QWidget):
         if dialog.exec():
             updated_data = dialog.get_data()
             if updated_data["title"]:
+                todo_id = todo_data.get("id")
+                if todo_id:
+                    self.db.update_todo(
+                        todo_id,
+                        title=updated_data["title"],
+                        description=updated_data.get("description", ""),
+                        priority=updated_data.get("priority", "中"),
+                        start_date=updated_data.get("start_date", ""),
+                        due_date=updated_data.get("due_date", ""),
+                        tags=updated_data.get("tags", []),
+                        completed=1 if updated_data.get("completed", False) else 0,
+                        pinned=1 if updated_data.get("pinned", False) else 0
+                    )
                 self.todos[todo_idx] = updated_data
-                self._save_todos()
                 self._display_todos()
                 self._update_stats()
                 InfoBar.success(
@@ -590,7 +579,10 @@ class TodoWidget(QWidget):
         else:
             todo.pop("completed_at", None)
         
-        self._save_todos()
+        todo_id = todo.get("id")
+        if todo_id:
+            self.db.toggle_todo_completed(todo_id)
+        
         self._display_todos()
         self._update_stats()
         
@@ -613,7 +605,11 @@ class TodoWidget(QWidget):
         todo = self.todos[todo_idx]
         
         todo["pinned"] = not todo.get("pinned", False)
-        self._save_todos()
+        
+        todo_id = todo.get("id")
+        if todo_id:
+            self.db.toggle_todo_pinned(todo_id)
+        
         self._display_todos()
         self._update_stats()
         
@@ -637,8 +633,10 @@ class TodoWidget(QWidget):
         
         box = MessageBoxBase("删除代办事项", f"确定要删除 '{todo.get('title', '未命名')}' 吗？", self)
         if box.exec():
+            todo_id = todo.get("id")
+            if todo_id:
+                self.db.delete_todo(todo_id)
             del self.todos[todo_idx]
-            self._save_todos()
             self._display_todos()
             self._update_stats()
             InfoBar.success(
@@ -727,8 +725,10 @@ class TodoWidget(QWidget):
                 if todo.get("completed", False):
                     todo["completed"] = False
                     todo.pop("completed_at", None)
+                    todo_id = todo.get("id")
+                    if todo_id:
+                        self.db.update_todo(todo_id, completed=0)
             
-            self._save_todos()
             self._display_todos()
             self._update_stats()
             InfoBar.success(
@@ -776,3 +776,27 @@ class Plugin(PluginInterface):
         """加载数据"""
         if self._widget:
             self._widget.load_data()
+    
+    def supports_search(self) -> bool:
+        return True
+    
+    def search(self, query: str):
+        from core import SearchResult
+        db = DatabaseManager()
+        results = []
+        todos = db.search_todos(query)
+        for todo in todos[:20]:
+            status = "✓" if todo['completed'] else "⭕"
+            pinned = "📌" if todo['pinned'] else ""
+            result = SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=f"{pinned}{status} {todo['title']}",
+                description=f"优先级: {todo['priority']} | 截止: {todo['due_date'] or '无'}",
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if todo['pinned'] else 0.8,
+                action=lambda t=todo['title']: QApplication.clipboard().setText(t),
+                metadata={'todo_id': todo['id']}
+            )
+            results.append(result)
+        return results

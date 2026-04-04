@@ -162,23 +162,108 @@ class DatabaseManager:
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
                 );
                 
-                CREATE INDEX IF NOT EXISTS idx_bookmarks_plugin_id ON bookmarks(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_bookmarks_category_id ON bookmarks(category_id);
-                CREATE INDEX IF NOT EXISTS idx_categories_plugin_id ON categories(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_commands_plugin_id ON commands(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_commands_category_id ON commands(category_id);
-                CREATE INDEX IF NOT EXISTS idx_passwords_plugin_id ON passwords(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_passwords_category_id ON passwords(category_id);
-                CREATE INDEX IF NOT EXISTS idx_app_launcher_plugin_id ON app_launcher(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_app_launcher_category_id ON app_launcher(category_id);
-                CREATE INDEX IF NOT EXISTS idx_notebook_plugin_id ON notebook(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_notebook_category_id ON notebook(category_id);
-                CREATE INDEX IF NOT EXISTS idx_color_palette_plugin_id ON color_palette(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_color_palette_category_id ON color_palette(category_id);
-                CREATE INDEX IF NOT EXISTS idx_scripts_plugin_id ON scripts(plugin_id);
-                CREATE INDEX IF NOT EXISTS idx_scripts_category_id ON scripts(category_id);
+                CREATE TABLE IF NOT EXISTS clipboard_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_type TEXT NOT NULL DEFAULT 'text',
+                    content TEXT NOT NULL,
+                    format TEXT DEFAULT '',
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE TABLE IF NOT EXISTS folder_tree_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_name TEXT NOT NULL UNIQUE,
+                    exclude_items TEXT NOT NULL DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE TABLE IF NOT EXISTS quick_copy_cards (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE TABLE IF NOT EXISTS quick_copy_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_id INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (card_id) REFERENCES quick_copy_cards(id) ON DELETE CASCADE
+                );
+                
+                CREATE TABLE IF NOT EXISTS todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    priority TEXT DEFAULT '中',
+                    start_date TEXT DEFAULT '',
+                    due_date TEXT DEFAULT '',
+                    tags TEXT DEFAULT '[]',
+                    completed INTEGER DEFAULT 0,
+                    pinned INTEGER DEFAULT 0,
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
             ''')
             conn.commit()
+            
+            self._run_migrations(conn)
+            self._create_indexes(conn)
+    
+    def _run_migrations(self, conn) -> None:
+        """运行数据库迁移，添加缺失的列"""
+        migrations = [
+            ("clipboard_history", "timestamp", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("clipboard_history", "item_type", "TEXT NOT NULL DEFAULT 'text'"),
+            ("clipboard_history", "format", "TEXT DEFAULT ''"),
+            ("todos", "sort_order", "INTEGER DEFAULT 0"),
+        ]
+        
+        for table, column, definition in migrations:
+            try:
+                cursor = conn.execute(f"PRAGMA table_info({table})")
+                columns = [row[1] for row in cursor.fetchall()]
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                    conn.commit()
+            except Exception:
+                pass
+    
+    def _create_indexes(self, conn) -> None:
+        """创建索引"""
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_bookmarks_plugin_id ON bookmarks(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_bookmarks_category_id ON bookmarks(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_categories_plugin_id ON categories(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_commands_plugin_id ON commands(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_commands_category_id ON commands(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_passwords_plugin_id ON passwords(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_passwords_category_id ON passwords(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_app_launcher_plugin_id ON app_launcher(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_app_launcher_category_id ON app_launcher(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notebook_plugin_id ON notebook(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notebook_category_id ON notebook(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_color_palette_plugin_id ON color_palette(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_color_palette_category_id ON color_palette(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_scripts_plugin_id ON scripts(plugin_id)",
+            "CREATE INDEX IF NOT EXISTS idx_scripts_category_id ON scripts(category_id)",
+            "CREATE INDEX IF NOT EXISTS idx_clipboard_timestamp ON clipboard_history(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_quick_copy_card_id ON quick_copy_items(card_id)",
+            "CREATE INDEX IF NOT EXISTS idx_todos_completed ON todos(completed)",
+            "CREATE INDEX IF NOT EXISTS idx_todos_pinned ON todos(pinned)",
+        ]
+        
+        for index_sql in indexes:
+            try:
+                conn.execute(index_sql)
+            except Exception:
+                pass
+        conn.commit()
     
     def add_category(self, plugin_id: str, name: str, sort_order: int = 0) -> int:
         """添加分类"""
@@ -205,6 +290,47 @@ class DatabaseManager:
                 (plugin_id,)
             )
             return [dict(row) for row in cursor.fetchall()]
+    
+    def update_category(self, plugin_id: str, category_id: int, name: str) -> bool:
+        """更新分类名称"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE categories SET name = ? WHERE plugin_id = ? AND id = ?",
+                (name, plugin_id, category_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def search_todos(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """搜索待办事项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """SELECT id, title, description, priority, due_date, completed, pinned 
+                   FROM todos 
+                   WHERE title LIKE ? OR description LIKE ? OR tags LIKE ?
+                   ORDER BY pinned DESC, id DESC LIMIT ?""",
+                (f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', limit)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def search_folder_tree_rules(self, keyword: str) -> List[Dict[str, Any]]:
+        """搜索文件夹树规则"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT id, rule_name, exclude_items FROM folder_tree_rules WHERE rule_name LIKE ?",
+                (f'%{keyword}%',)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def delete_category(self, plugin_id: str, category_id: int) -> bool:
+        """删除分类"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM categories WHERE plugin_id = ? AND id = ?",
+                (plugin_id, category_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
     
     def add_bookmark(self, plugin_id: str, name: str, url: str, 
                      category_name: str = None, icon: str = None, 
@@ -281,26 +407,6 @@ class DatabaseManager:
             cursor = conn.execute(
                 "DELETE FROM bookmarks WHERE plugin_id = ? AND id = ?",
                 (plugin_id, bookmark_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-    
-    def update_category(self, plugin_id: str, category_id: int, name: str) -> bool:
-        """更新分类名称"""
-        with self.get_connection() as conn:
-            cursor = conn.execute(
-                "UPDATE categories SET name = ? WHERE plugin_id = ? AND id = ?",
-                (name, plugin_id, category_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-    
-    def delete_category(self, plugin_id: str, category_id: int) -> bool:
-        """删除分类"""
-        with self.get_connection() as conn:
-            cursor = conn.execute(
-                "DELETE FROM categories WHERE plugin_id = ? AND id = ?",
-                (plugin_id, category_id)
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -442,7 +548,33 @@ class DatabaseManager:
             )
             return [dict(row) for row in cursor.fetchall()]
     
-    # ==================== Password methods ====================
+    def import_commands_from_json(self, plugin_id: str, json_path: str) -> int:
+        """从 JSON 文件导入命令数据"""
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        count = 0
+        for cat_name, commands in data.items():
+            cat_id = self.add_category(plugin_id, cat_name)
+            if isinstance(commands, dict):
+                for cmd_order, (cmd_name, cmd_data) in enumerate(commands.items()):
+                    if self.command_exists(plugin_id, cmd_name, cat_name):
+                        continue
+                    if isinstance(cmd_data, dict):
+                        content = cmd_data.get('content', '')
+                        sub_title = cmd_data.get('sub_title', '')
+                    else:
+                        content = str(cmd_data)
+                        sub_title = ''
+                    self.add_command(
+                        plugin_id=plugin_id,
+                        name=cmd_name,
+                        content=content,
+                        category_name=cat_name,
+                        sub_title=sub_title,
+                        sort_order=cmd_order
+                    )
+                    count += 1
+        return count
     
     def add_password(self, plugin_id: str, username: str, password: str,
                      platform: str = '', category_name: str = None,
@@ -535,36 +667,6 @@ class DatabaseManager:
                 (plugin_id, f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%')
             )
             return [dict(row) for row in cursor.fetchall()]
-    
-    def import_commands_from_json(self, plugin_id: str, json_path: str) -> int:
-        """从 JSON 文件导入命令数据"""
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        count = 0
-        for cat_name, commands in data.items():
-            cat_id = self.add_category(plugin_id, cat_name)
-            if isinstance(commands, dict):
-                for cmd_order, (cmd_name, cmd_data) in enumerate(commands.items()):
-                    if self.command_exists(plugin_id, cmd_name, cat_name):
-                        continue
-                    if isinstance(cmd_data, dict):
-                        content = cmd_data.get('content', '')
-                        sub_title = cmd_data.get('sub_title', '')
-                    else:
-                        content = str(cmd_data)
-                        sub_title = ''
-                    self.add_command(
-                        plugin_id=plugin_id,
-                        name=cmd_name,
-                        content=content,
-                        category_name=cat_name,
-                        sub_title=sub_title,
-                        sort_order=cmd_order
-                    )
-                    count += 1
-        return count
-    
-    # ==================== App Launcher methods ====================
     
     def add_app(self, plugin_id: str, name: str, target_path: str,
                 category_name: str = None, category_id: int = None,
@@ -775,8 +877,6 @@ class DatabaseManager:
             )
             return [dict(row) for row in cursor.fetchall()]
     
-    # ==================== Script methods ====================
-    
     def add_script(self, plugin_id: str, name: str, content: str,
                    script_type: str = 'bat', category_name: str = None,
                    category_id: int = None, description: str = '',
@@ -868,3 +968,269 @@ class DatabaseManager:
                 (plugin_id, f'%{keyword}%', f'%{keyword}%', f'%{keyword}%', f'%{keyword}%')
             )
             return [dict(row) for row in cursor.fetchall()]
+    
+    def add_clipboard_item(self, item_type: str, content: str, format: str = '') -> int:
+        """添加剪贴板历史项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO clipboard_history (plugin_id, content_type, content, format, item_type) VALUES (?, ?, ?, ?, ?)",
+                ("clipboard", item_type, content, format, item_type)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_clipboard_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """获取剪贴板历史"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT id, item_type as type, content, format, timestamp FROM clipboard_history ORDER BY timestamp DESC LIMIT ?",
+                (limit,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def clear_clipboard_history(self) -> bool:
+        """清空剪贴板历史"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM clipboard_history")
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_clipboard_item(self, item_id: int) -> bool:
+        """删除剪贴板历史项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM clipboard_history WHERE id = ?", (item_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def search_clipboard(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """搜索剪贴板历史"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT id, item_type as type, content, format, timestamp FROM clipboard_history WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?",
+                (f'%{keyword}%', limit)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def add_folder_tree_rule(self, rule_name: str, exclude_items: list) -> int:
+        """添加文件夹树规则"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO folder_tree_rules (rule_name, exclude_items) VALUES (?, ?)",
+                (rule_name, json.dumps(exclude_items))
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_folder_tree_rule(self, rule_name: str) -> Optional[Dict[str, Any]]:
+        """获取文件夹树规则"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM folder_tree_rules WHERE rule_name = ?",
+                (rule_name,)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    def get_all_folder_tree_rules(self) -> List[Dict[str, Any]]:
+        """获取所有文件夹树规则"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM folder_tree_rules ORDER BY id")
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_folder_tree_rule(self, rule_name: str, exclude_items: list) -> bool:
+        """更新文件夹树规则"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE folder_tree_rules SET exclude_items = ?, updated_at = CURRENT_TIMESTAMP WHERE rule_name = ?",
+                (json.dumps(exclude_items), rule_name)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_folder_tree_rule(self, rule_name: str) -> bool:
+        """删除文件夹树规则"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM folder_tree_rules WHERE rule_name = ?",
+                (rule_name,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def folder_tree_rule_exists(self, rule_name: str) -> bool:
+        """检查文件夹树规则是否存在"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM folder_tree_rules WHERE rule_name = ?",
+                (rule_name,)
+            )
+            return cursor.fetchone() is not None
+    
+    def add_quick_copy_card(self, title: str, sort_order: int = 0) -> int:
+        """添加快速复制卡片"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO quick_copy_cards (title, sort_order) VALUES (?, ?)",
+                (title, sort_order)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_quick_copy_cards(self) -> List[Dict[str, Any]]:
+        """获取所有快速复制卡片"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM quick_copy_cards ORDER BY sort_order, id")
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_quick_copy_card(self, card_id: int, **kwargs) -> bool:
+        """更新快速复制卡片"""
+        allowed_fields = {'title', 'sort_order'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
+        values = list(updates.values()) + [card_id]
+        with self.get_connection() as conn:
+            conn.execute(
+                f"UPDATE quick_copy_cards SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                values
+            )
+            conn.commit()
+            return True
+    
+    def delete_quick_copy_card(self, card_id: int) -> bool:
+        """删除快速复制卡片"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM quick_copy_cards WHERE id = ?", (card_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def add_quick_copy_item(self, card_id: int, content: str, sort_order: int = 0) -> int:
+        """添加快速复制项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO quick_copy_items (card_id, content, sort_order) VALUES (?, ?, ?)",
+                (card_id, content, sort_order)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_quick_copy_items(self, card_id: int) -> List[Dict[str, Any]]:
+        """获取快速复制项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM quick_copy_items WHERE card_id = ? ORDER BY sort_order, id",
+                (card_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_quick_copy_item(self, item_id: int, **kwargs) -> bool:
+        """更新快速复制项"""
+        allowed_fields = {'content', 'sort_order'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not updates:
+            return False
+        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
+        values = list(updates.values()) + [item_id]
+        with self.get_connection() as conn:
+            conn.execute(
+                f"UPDATE quick_copy_items SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                values
+            )
+            conn.commit()
+            return True
+    
+    def delete_quick_copy_item(self, item_id: int) -> bool:
+        """删除快速复制项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM quick_copy_items WHERE id = ?", (item_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def search_quick_copy(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """搜索快速复制内容"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                """SELECT i.id, i.card_id, i.content, c.title as card_title 
+                   FROM quick_copy_items i 
+                   JOIN quick_copy_cards c ON i.card_id = c.id 
+                   WHERE i.content LIKE ? OR c.title LIKE ?
+                   ORDER BY i.id DESC LIMIT ?""",
+                (f'%{keyword}%', f'%{keyword}%', limit)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def add_todo(self, title: str, description: str = '', priority: str = '中',
+                 start_date: str = '', due_date: str = '', tags: list = None,
+                 completed: int = 0, pinned: int = 0) -> int:
+        """添加待办事项"""
+        with self.get_connection() as conn:
+            tags_json = json.dumps(tags) if tags else '[]'
+            cursor = conn.execute(
+                "INSERT INTO todos (title, description, priority, start_date, due_date, tags, completed, pinned) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, description, priority, start_date, due_date, tags_json, completed, pinned)
+            )
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_todos(self, completed: int = None) -> List[Dict[str, Any]]:
+        """获取待办事项列表"""
+        with self.get_connection() as conn:
+            if completed is not None:
+                cursor = conn.execute(
+                    "SELECT * FROM todos WHERE completed = ? ORDER BY pinned DESC, sort_order, id",
+                    (completed,)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM todos ORDER BY pinned DESC, sort_order, id"
+                )
+            todos = [dict(row) for row in cursor.fetchall()]
+            for todo in todos:
+                todo['tags'] = json.loads(todo['tags']) if todo['tags'] else []
+            return todos
+    
+    def update_todo(self, todo_id: int, **kwargs) -> bool:
+        """更新待办事项"""
+        allowed_fields = {'title', 'description', 'priority', 'start_date', 'due_date', 'tags', 'completed', 'pinned', 'sort_order'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if 'tags' in updates:
+            updates['tags'] = json.dumps(updates['tags'])
+        if not updates:
+            return False
+        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
+        values = list(updates.values()) + [todo_id]
+        with self.get_connection() as conn:
+            conn.execute(
+                f"UPDATE todos SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                values
+            )
+            conn.commit()
+            return True
+    
+    def delete_todo(self, todo_id: int) -> bool:
+        """删除待办事项"""
+        with self.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def toggle_todo_completed(self, todo_id: int) -> bool:
+        """切换待办事项完成状态"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE todos SET completed = NOT completed, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (todo_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def toggle_todo_pinned(self, todo_id: int) -> bool:
+        """切换待办事项置顶状态"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE todos SET pinned = NOT pinned, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (todo_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
