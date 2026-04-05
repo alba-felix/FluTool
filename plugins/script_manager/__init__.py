@@ -848,7 +848,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "script_manager"
     PLUGIN_NAME = "脚本管理"
     PLUGIN_ICON = FIF.CODE
-    PLUGIN_PRIORITY = 11
+    PLUGIN_PRIORITY = 14
     
     TEST_SCRIPTS = [
         {

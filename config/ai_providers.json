@@ -1,0 +1,64 @@
+{
+  "providers": [
+    {
+      "provider_id": "custom",
+      "name": "自定义",
+      "provider_type": "custom",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "default_model": "gpt-4o-mini",
+      "enabled": false,
+      "is_default": false,
+      "timeout_sec": 60,
+      "custom_headers": {}
+    },
+    {
+      "provider_id": "deepseek",
+      "name": "DeepSeek",
+      "provider_type": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "api_key": "",
+      "default_model": "deepseek-chat",
+      "enabled": true,
+      "is_default": true,
+      "timeout_sec": 60,
+      "custom_headers": {}
+    },
+    {
+      "provider_id": "doubao",
+      "name": "豆包",
+      "provider_type": "doubao",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "api_key": "",
+      "default_model": "doubao-seed-1-6-250615",
+      "enabled": true,
+      "is_default": false,
+      "timeout_sec": 60,
+      "custom_headers": {}
+    },
+    {
+      "provider_id": "ollama",
+      "name": "Ollama",
+      "provider_type": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "",
+      "default_model": "qwen2.5:7b",
+      "enabled": true,
+      "is_default": false,
+      "timeout_sec": 60,
+      "custom_headers": {}
+    },
+    {
+      "provider_id": "qwen",
+      "name": "Qwen",
+      "provider_type": "qwen",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key": "",
+      "default_model": "qwen-plus",
+      "enabled": true,
+      "is_default": false,
+      "timeout_sec": 60,
+      "custom_headers": {}
+    }
+  ]
+}

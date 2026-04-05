@@ -412,11 +412,17 @@ class ScrollableNavigationPanel(QWidget):
 	#     bar.setValue(bar.value() + 100)
 	
 	def _check_overflow(self):
-		self._update_overflow()
+		# 延迟检查，确保布局完成后再计算
+		QTimer.singleShot(0, self._update_overflow)
 	
 	def _update_overflow(self):
 		widget_height = self._scroll_widget.height()
 		viewport_height = self._scroll_area.viewport().height()
+		
+		# 如果高度还未计算，稍后重试
+		if viewport_height <= 0:
+			QTimer.singleShot(50, self._update_overflow)
+			return
 		
 		if widget_height > viewport_height:
 			bar = self._scroll_area.verticalScrollBar()
@@ -457,6 +463,11 @@ class ScrollableNavigationPanel(QWidget):
 	def resizeEvent(self, e):
 		super().resizeEvent(e)
 		self._check_overflow()
+	
+	def showEvent(self, e):
+		super().showEvent(e)
+		# 窗口显示时检查溢出
+		QTimer.singleShot(100, self._check_overflow)
 	
 	def wheelEvent(self, e):
 		delta = e.angleDelta().y()

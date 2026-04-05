@@ -9,10 +9,12 @@ from qfluentwidgets import (
     ScrollArea, SettingCardGroup, SwitchSettingCard,
     RangeSettingCard, FluentIcon as FIF,
     setCustomStyleSheet, PushSettingCard, MessageBox,
-    InfoBar, InfoBarPosition, FolderListSettingCard
+    InfoBar, InfoBarPosition, FolderListSettingCard,
+    MessageBoxBase, SubtitleLabel, LineEdit, ComboBox
 )
 from core import get_app_data_path
 from core.efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
+from core.settings import AISettingsManager
 
 
 class SettingsInterface(ScrollArea):
@@ -25,6 +27,8 @@ class SettingsInterface(ScrollArea):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
+        self.ai_settings = AISettingsManager()
+        self._selected_ai_provider = self.ai_settings.get_default_provider()
         self.setObjectName("settings")
         self._init_paths()
         self._setup_ui()
@@ -44,6 +48,7 @@ class SettingsInterface(ScrollArea):
         self._create_general_group()
         self._create_window_group()
         self._create_data_group()
+        self._create_ai_group()
         self.vBoxLayout.addStretch(1)
         self.setWidget(self.view)
         self.setWidgetResizable(True)
@@ -148,6 +153,225 @@ class SettingsInterface(ScrollArea):
         self.dataGroup.addSettingCard(self.loadCard)
         
         self.vBoxLayout.addWidget(self.dataGroup)
+
+    def _create_ai_group(self) -> None:
+        """创建 AI 设置组"""
+        self.aiGroup = SettingCardGroup("AI 设置", self.view)
+
+        self.aiProviderCard = PushSettingCard(
+            "切换",
+            FIF.SETTING,
+            "当前服务商",
+            "",
+            parent=self.view
+        )
+        self.aiProviderCard.clicked.connect(self._select_ai_provider)
+        self.aiGroup.addSettingCard(self.aiProviderCard)
+
+        self.aiApiKeyCard = PushSettingCard(
+            "编辑",
+            FIF.SAVE,
+            "API Key",
+            "",
+            parent=self.view
+        )
+        self.aiApiKeyCard.clicked.connect(self._edit_ai_api_key)
+        self.aiGroup.addSettingCard(self.aiApiKeyCard)
+
+        self.aiApiUrlCard = PushSettingCard(
+            "编辑",
+            FIF.SETTING,
+            "API 地址",
+            "",
+            parent=self.view
+        )
+        self.aiApiUrlCard.clicked.connect(self._edit_ai_base_url)
+        self.aiGroup.addSettingCard(self.aiApiUrlCard)
+
+        self.aiDefaultModelCard = PushSettingCard(
+            "编辑",
+            FIF.SETTING,
+            "默认模型",
+            "",
+            parent=self.view
+        )
+        self.aiDefaultModelCard.clicked.connect(self._edit_ai_default_model)
+        self.aiGroup.addSettingCard(self.aiDefaultModelCard)
+
+        self.aiEnabledCard = PushSettingCard(
+            "切换",
+            FIF.POWER_BUTTON,
+            "服务商启用状态",
+            "",
+            parent=self.view
+        )
+        self.aiEnabledCard.clicked.connect(self._toggle_ai_provider_enabled)
+        self.aiGroup.addSettingCard(self.aiEnabledCard)
+
+        self.aiTestCard = PushSettingCard(
+            "测试",
+            FIF.SYNC,
+            "连接测试",
+            "发送测试请求验证配置是否可用",
+            parent=self.view
+        )
+        self.aiTestCard.clicked.connect(self._test_ai_connection)
+        self.aiGroup.addSettingCard(self.aiTestCard)
+
+        self.vBoxLayout.addWidget(self.aiGroup)
+        self._refresh_ai_cards()
+
+    def _refresh_ai_cards(self) -> None:
+        """刷新 AI 设置卡片显示"""
+        provider = self._selected_ai_provider
+        provider_config = self.ai_settings.get_provider_config(provider)
+        provider_name = provider_config.get("name", provider)
+        base_url = provider_config.get("base_url", "")
+        api_key = provider_config.get("api_key", "")
+        default_model = provider_config.get("default_model", "")
+        enabled = bool(provider_config.get("enabled", True))
+
+        masked_key = "未设置"
+        if api_key:
+            masked_key = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else "已设置"
+
+        self.aiProviderCard.setContent(f"{provider_name} ({provider})")
+        self.aiApiKeyCard.setContent(masked_key)
+        self.aiApiUrlCard.setContent(base_url or "未设置")
+        self.aiDefaultModelCard.setContent(default_model or "未设置")
+        self.aiEnabledCard.setContent("ON" if enabled else "OFF")
+
+    def _select_ai_provider(self) -> None:
+        """选择 AI 服务商"""
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel("选择服务商", dialog)
+        dialog.viewLayout.addWidget(title)
+        combo = ComboBox(dialog)
+        providers = self.ai_settings.list_providers()
+        provider_ids = []
+        for provider in providers:
+            provider_id = str(provider.get("provider_id", ""))
+            provider_name = str(provider.get("name", provider_id))
+            combo.addItem(f"{provider_name} ({provider_id})")
+            provider_ids.append(provider_id)
+
+        if self._selected_ai_provider in provider_ids:
+            combo.setCurrentIndex(provider_ids.index(self._selected_ai_provider))
+        dialog.viewLayout.addWidget(combo)
+        dialog.yesButton.setText("确定")
+        dialog.cancelButton.setText("取消")
+
+        if not dialog.exec():
+            return
+
+        if combo.currentIndex() < 0 or combo.currentIndex() >= len(provider_ids):
+            return
+
+        self._selected_ai_provider = provider_ids[combo.currentIndex()]
+        self.ai_settings.set_default_provider(self._selected_ai_provider)
+        self._refresh_ai_cards()
+
+    def _edit_ai_api_key(self) -> None:
+        """编辑 API Key"""
+        provider = self._selected_ai_provider
+        provider_config = self.ai_settings.get_provider_config(provider)
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel(f"编辑 API Key ({provider})", dialog)
+        dialog.viewLayout.addWidget(title)
+        input_edit = LineEdit(dialog)
+        input_edit.setPlaceholderText("输入 API Key")
+        input_edit.setText(str(provider_config.get("api_key", "")))
+        dialog.viewLayout.addWidget(input_edit)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+
+        self.ai_settings.save_provider_config(provider, {"api_key": input_edit.text().strip()})
+        self._refresh_ai_cards()
+
+    def _edit_ai_base_url(self) -> None:
+        """编辑 API 地址"""
+        provider = self._selected_ai_provider
+        provider_config = self.ai_settings.get_provider_config(provider)
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel(f"编辑 API 地址 ({provider})", dialog)
+        dialog.viewLayout.addWidget(title)
+        input_edit = LineEdit(dialog)
+        input_edit.setPlaceholderText("输入 Base URL")
+        input_edit.setText(str(provider_config.get("base_url", "")))
+        dialog.viewLayout.addWidget(input_edit)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+
+        self.ai_settings.save_provider_config(provider, {"base_url": input_edit.text().strip()})
+        self._refresh_ai_cards()
+
+    def _edit_ai_default_model(self) -> None:
+        """编辑默认模型"""
+        provider = self._selected_ai_provider
+        provider_config = self.ai_settings.get_provider_config(provider)
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel(f"编辑默认模型 ({provider})", dialog)
+        dialog.viewLayout.addWidget(title)
+        input_edit = LineEdit(dialog)
+        input_edit.setPlaceholderText("例如: deepseek-chat")
+        input_edit.setText(str(provider_config.get("default_model", "")))
+        dialog.viewLayout.addWidget(input_edit)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+
+        model_id = input_edit.text().strip()
+        if not model_id:
+            return
+        self.ai_settings.save_provider_config(provider, {"default_model": model_id})
+        self.ai_settings.set_default_model(model_id)
+        self._refresh_ai_cards()
+
+    def _toggle_ai_provider_enabled(self) -> None:
+        """切换服务商启用状态"""
+        provider = self._selected_ai_provider
+        provider_config = self.ai_settings.get_provider_config(provider)
+        current_enabled = bool(provider_config.get("enabled", True))
+        self.ai_settings.save_provider_config(provider, {"enabled": not current_enabled})
+        self._refresh_ai_cards()
+
+    def _test_ai_connection(self) -> None:
+        """测试当前 AI 服务商连接"""
+        provider = self._selected_ai_provider
+        provider_config = self.ai_settings.get_provider_config(provider)
+        model_id = str(provider_config.get("default_model", "")).strip() or self.ai_settings.get_default_model()
+        response = self.core.ai_chat_service.send_message(
+            user_text="你好，请回复“连接成功”",
+            provider=provider,
+            model_id=model_id
+        )
+
+        if response.error:
+            InfoBar.error(
+                title="连接失败",
+                content=response.error,
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=4000,
+                parent=self
+            )
+            return
+
+        InfoBar.success(
+            title="连接成功",
+            content=f"{provider} 已可用",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2500,
+            parent=self
+        )
     
     def _get_backup_path_display(self) -> str:
         """获取备份路径显示文本"""

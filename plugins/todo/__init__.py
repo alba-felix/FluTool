@@ -757,7 +757,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "todo"
     PLUGIN_NAME = "代办事项"
     PLUGIN_ICON = FIF.CALENDAR
-    PLUGIN_PRIORITY = 8
+    PLUGIN_PRIORITY = 11
     
     def initialize(self, core) -> None:
         """初始化插件"""

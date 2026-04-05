@@ -1,12 +1,12 @@
 """全局搜索对话框"""
 
 from typing import List
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem, QStackedWidget
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from qfluentwidgets import (
     LineEdit, ListWidget, PushButton, ToolButton,
-    FluentIcon as FIF, MessageBoxBase, SubtitleLabel
+    FluentIcon as FIF, MessageBoxBase, SubtitleLabel, IndeterminateProgressRing
 )
 from core import SearchResult
 
@@ -44,13 +44,24 @@ class GlobalSearchDialog(MessageBoxBase):
 
         self.viewLayout.addLayout(title_layout)
 
-        # 搜索输入框
+        # 搜索输入框 + 进度圆圈
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(8)
+
         self.search_input = LineEdit(self)
         self.search_input.setPlaceholderText("搜索所有内容...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._on_search)
         self.search_input.setFixedHeight(40)
-        self.viewLayout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_input, 1)
+
+        # 不确定性进度圆圈
+        self.progress_ring = IndeterminateProgressRing(self)
+        self.progress_ring.setFixedSize(24, 24)
+        self.progress_ring.setVisible(False)
+        search_layout.addWidget(self.progress_ring)
+
+        self.viewLayout.addLayout(search_layout)
 
         # 结果列表
         self.result_list = ListWidget(self)
@@ -68,9 +79,16 @@ class GlobalSearchDialog(MessageBoxBase):
         self.result_list.clear()
 
         if not text or not text.strip():
+            self.progress_ring.setVisible(False)
             return
 
+        # 显示进度圆圈
+        self.progress_ring.setVisible(True)
+
         results = self.search_manager.search(text)
+
+        # 隐藏进度圆圈
+        self.progress_ring.setVisible(False)
 
         # 按插件分组
         grouped_results = {}

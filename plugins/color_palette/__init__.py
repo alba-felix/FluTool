@@ -1188,7 +1188,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "color_palette"
     PLUGIN_NAME = "调色板"
     PLUGIN_ICON = FIF.PALETTE
-    PLUGIN_PRIORITY = 10
+    PLUGIN_PRIORITY = 13
 
     def initialize(self, core) -> None:
         """初始化插件"""

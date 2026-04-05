@@ -814,7 +814,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "folder_tree"
     PLUGIN_NAME = "文件夹树"
     PLUGIN_ICON = FIF.FOLDER
-    PLUGIN_PRIORITY = 12
+    PLUGIN_PRIORITY = 16
 
     def initialize(self, core) -> None:
         """初始化插件"""

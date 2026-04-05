@@ -209,11 +209,74 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS ai_conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    system_prompt TEXT DEFAULT '',
+                    pinned INTEGER DEFAULT 0,
+                    archived INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS ai_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    tool_name TEXT DEFAULT '',
+                    tool_payload TEXT DEFAULT '',
+                    status TEXT DEFAULT 'done',
+                    token_input INTEGER DEFAULT 0,
+                    token_output INTEGER DEFAULT 0,
+                    latency_ms INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
+                );
             ''')
             conn.commit()
             
             self._run_migrations(conn)
+            self._migrate_ai_tables(conn)
             self._create_indexes(conn)
+
+    def _migrate_ai_tables(self, conn) -> None:
+        """迁移 AI 表，处理旧结构问题"""
+        cursor = conn.execute("PRAGMA table_info(ai_conversations)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+
+        need_migrate = False
+        if "provider_id" in columns and "provider" not in columns:
+            need_migrate = True
+        if "provider_id" in columns:
+            try:
+                conn.execute("SELECT provider_id FROM ai_conversations WHERE provider_id IS NULL LIMIT 1")
+            except Exception:
+                pass
+            else:
+                cursor = conn.execute("SELECT COUNT(*) FROM ai_conversations WHERE provider_id IS NULL")
+                if cursor.fetchone()[0] > 0:
+                    conn.execute("UPDATE ai_conversations SET provider_id = 'default' WHERE provider_id IS NULL")
+                    conn.commit()
+
+        if "provider" not in columns:
+            conn.execute("ALTER TABLE ai_conversations ADD COLUMN provider TEXT NOT NULL DEFAULT 'default'")
+            conn.commit()
+        if "model_id" not in columns:
+            conn.execute("ALTER TABLE ai_conversations ADD COLUMN model_id TEXT NOT NULL DEFAULT 'default'")
+            conn.commit()
+        if "system_prompt" not in columns:
+            conn.execute("ALTER TABLE ai_conversations ADD COLUMN system_prompt TEXT DEFAULT ''")
+            conn.commit()
+
+        if "provider_id" in columns and "provider" in columns:
+            cursor = conn.execute("SELECT COUNT(*) FROM ai_conversations WHERE provider = 'default' AND provider_id != 'default'")
+            if cursor.fetchone()[0] > 0:
+                conn.execute("UPDATE ai_conversations SET provider = provider_id WHERE provider = 'default'")
+                conn.commit()
     
     def _run_migrations(self, conn) -> None:
         """运行数据库迁移，添加缺失的列"""
@@ -222,6 +285,18 @@ class DatabaseManager:
             ("clipboard_history", "item_type", "TEXT NOT NULL DEFAULT 'text'"),
             ("clipboard_history", "format", "TEXT DEFAULT ''"),
             ("todos", "sort_order", "INTEGER DEFAULT 0"),
+            ("ai_conversations", "provider_id", "TEXT NOT NULL DEFAULT 'default'"),
+            ("ai_conversations", "provider", "TEXT NOT NULL DEFAULT 'default'"),
+            ("ai_conversations", "model_id", "TEXT NOT NULL DEFAULT 'default'"),
+            ("ai_conversations", "system_prompt", "TEXT DEFAULT ''"),
+            ("ai_conversations", "pinned", "INTEGER DEFAULT 0"),
+            ("ai_conversations", "archived", "INTEGER DEFAULT 0"),
+            ("ai_messages", "tool_name", "TEXT DEFAULT ''"),
+            ("ai_messages", "tool_payload", "TEXT DEFAULT ''"),
+            ("ai_messages", "status", "TEXT DEFAULT 'done'"),
+            ("ai_messages", "token_input", "INTEGER DEFAULT 0"),
+            ("ai_messages", "token_output", "INTEGER DEFAULT 0"),
+            ("ai_messages", "latency_ms", "INTEGER DEFAULT 0"),
         ]
         
         for table, column, definition in migrations:
@@ -256,6 +331,9 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_quick_copy_card_id ON quick_copy_items(card_id)",
             "CREATE INDEX IF NOT EXISTS idx_todos_completed ON todos(completed)",
             "CREATE INDEX IF NOT EXISTS idx_todos_pinned ON todos(pinned)",
+            "CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated_at ON ai_conversations(updated_at)",
+            "CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ai_messages_created_at ON ai_messages(created_at)",
         ]
         
         for index_sql in indexes:

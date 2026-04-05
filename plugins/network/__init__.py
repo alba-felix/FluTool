@@ -583,7 +583,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "network"
     PLUGIN_NAME = "网络信息"
     PLUGIN_ICON = FIF.GLOBE
-    PLUGIN_PRIORITY = 15
+    PLUGIN_PRIORITY = 19
     
     def initialize(self, core) -> None:
         self.core = core

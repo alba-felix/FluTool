@@ -80,7 +80,7 @@ class PluginManager:
                     obj.__module__ == module.__name__):
                     # 获取 PLUGIN_PRIORITY 属性，默认为 999
                     priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                    return int(priority)
+                    return float(priority)
         except Exception as e:
             self._core.logger.warning(f"Failed to get priority for {plugin_id}: {e}")
         

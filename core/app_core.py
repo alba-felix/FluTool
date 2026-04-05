@@ -10,6 +10,8 @@ from .utils import get_app_data_path, get_resource_path
 from .backup_manager import BackupManager
 from .efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
 from .search import GlobalSearchManager
+from .settings import AISettingsManager
+from .ai import AIChatService, AISettingsBridge, AISearchBridge
 from qfluentwidgets import qconfig
 from storage import DatabaseManager
 
@@ -87,6 +89,9 @@ class AppCore:
         self._config_path: Optional[Path] = None
         self._backup_manager: Optional[BackupManager] = None
         self._search_manager: Optional[GlobalSearchManager] = None
+        self._settings_manager: Optional[AISettingsManager] = None
+        self._ai_settings: Optional[AISettingsBridge] = None
+        self._ai_chat_service: Optional[AIChatService] = None
 
     def initialize(self, config_path: str = None) -> None:
         """
@@ -117,6 +122,12 @@ class AppCore:
             self._backup_manager.check_and_backup()
         
         self._search_manager = GlobalSearchManager()
+        self._settings_manager = AISettingsManager()
+        self._ai_settings = AISettingsBridge(self._settings_manager)
+        self._ai_chat_service = AIChatService(
+            settings_bridge=self._ai_settings,
+            search_bridge=AISearchBridge(self._search_manager),
+        )
         
         if self._config.efficiency_mode.value and is_efficiency_mode_supported():
             set_process_efficiency_mode(True)
@@ -159,3 +170,11 @@ class AppCore:
     @property
     def search_manager(self) -> GlobalSearchManager:
         return self._search_manager
+
+    @property
+    def ai_settings(self) -> AISettingsBridge:
+        return self._ai_settings
+
+    @property
+    def ai_chat_service(self) -> AIChatService:
+        return self._ai_chat_service

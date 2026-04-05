@@ -774,7 +774,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "image_assistant"
     PLUGIN_NAME = "图片助手"
     PLUGIN_ICON = CustomFluentIcon.PICTURE
-    PLUGIN_PRIORITY = 9
+    PLUGIN_PRIORITY = 12
     
     def initialize(self, core) -> None:
         """初始化插件"""

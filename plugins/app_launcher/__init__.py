@@ -1212,7 +1212,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "app_launcher"
     PLUGIN_NAME = "应用启动"
     PLUGIN_ICON = FIF.APPLICATION
-    PLUGIN_PRIORITY = 12
+    PLUGIN_PRIORITY = 15
 
     def initialize(self, core) -> None:
         """初始化插件"""
