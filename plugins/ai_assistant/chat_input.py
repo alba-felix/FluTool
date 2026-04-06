@@ -21,6 +21,7 @@ from qfluentwidgets import (
     ToolButton,
     PrimaryToolButton,
     ToggleButton,
+    PushButton,
     FluentIcon as FIF,
     isDarkTheme,
 )
@@ -213,20 +214,16 @@ class ChatInputWidget(QWidget):
         """设置发送状态"""
         self._is_sending = is_sending
         if is_sending:
-            # 发送中：显示停止按钮，禁用输入
             self._send_btn.setIcon(FIF.PAUSE)
             self._send_btn.setToolTip("停止生成")
             self._input_edit.setEnabled(False)
             self._attach_btn.setEnabled(False)
-            self._deep_think_btn.setEnabled(False)
             self._search_btn.setEnabled(False)
         else:
-            # 空闲：显示发送按钮，启用输入
             self._send_btn.setIcon(FIF.SEND_FILL)
             self._send_btn.setToolTip("发送")
             self._input_edit.setEnabled(True)
             self._attach_btn.setEnabled(True)
-            self._deep_think_btn.setEnabled(True)
             self._search_btn.setEnabled(True)
             self._input_edit.setFocus()
 
@@ -278,17 +275,12 @@ class ChatInputWidget(QWidget):
         toolbar.setSpacing(8)
 
         # 左侧功能按钮
-        self._deep_think_btn = ToggleButton("深度思考", self)
-        self._deep_think_btn.setIcon(FIF.BRIGHTNESS)
-        self._deep_think_btn.setToolTip("开启深度思考模式")
-        self._deep_think_btn.setFixedHeight(32)
-
         self._search_btn = ToggleButton("智能搜索", self)
         self._search_btn.setIcon(FIF.SEARCH)
         self._search_btn.setToolTip("开启智能搜索")
         self._search_btn.setFixedHeight(32)
+        self._search_btn.setChecked(True)  # 默认激活智能搜索
 
-        toolbar.addWidget(self._deep_think_btn)
         toolbar.addWidget(self._search_btn)
         toolbar.addStretch()
 
@@ -434,10 +426,6 @@ class ChatInputWidget(QWidget):
     def get_attachments(self) -> List[AttachmentData]:
         """获取附件列表"""
         return self._attachments.copy()
-
-    def is_deep_think_enabled(self) -> bool:
-        """是否开启深度思考"""
-        return self._deep_think_btn.isChecked()
 
     def is_search_enabled(self) -> bool:
         """是否开启智能搜索"""

@@ -71,6 +71,49 @@ class AIChatWorker(QThread):
         self.wait(1000)  # 等待1秒让线程结束
 
 
+class OllamaModelFetchWorker(QThread):
+    """Ollama模型列表获取工作线程 - 防止UI阻塞"""
+
+    finished_signal = pyqtSignal(list)  # 完成信号，传递模型列表
+    error_signal = pyqtSignal(str)  # 错误信号
+
+    def __init__(self, base_url: str):
+        super().__init__()
+        self.base_url = base_url
+        self._is_running = True
+
+    def run(self):
+        """执行模型列表获取"""
+        import requests
+        try:
+            clean_url = self.base_url.replace("/v1", "").rstrip("/")
+            api_url = f"{clean_url}/api/tags"
+            response = requests.get(api_url, timeout=3)
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("models", [])
+                model_names = [m.get("name", "") for m in models if m.get("name")]
+                if self._is_running:
+                    self.finished_signal.emit(model_names)
+            else:
+                if self._is_running:
+                    self.error_signal.emit(f"HTTP {response.status_code}")
+        except requests.exceptions.ConnectionError:
+            if self._is_running:
+                self.error_signal.emit("Connection refused")
+        except requests.exceptions.Timeout:
+            if self._is_running:
+                self.error_signal.emit("Timeout")
+        except Exception as e:
+            if self._is_running:
+                self.error_signal.emit(str(e))
+
+    def stop(self):
+        """停止获取"""
+        self._is_running = False
+        self.wait(500)
+
+
 class SidebarToggleButton(QWidget):
     """侧边栏切换按钮"""
 
@@ -156,9 +199,9 @@ class AISidebar(QWidget):
         self._toggle_btn.clicked.connect(self.toggle)
         self.vBoxLayout.addWidget(self._toggle_btn, 0, Qt.AlignTop | Qt.AlignLeft)
 
-        self._new_chat_btn = ToolButton(FIF.ADD, self)
-        self._new_chat_btn.setToolTip("新建会话")
-        self._new_chat_btn.setFixedSize(32, 32)
+        self._new_chat_btn = PushButton("新建会话", self)
+        self._new_chat_btn.setIcon(FIF.ADD_TO)
+        self._new_chat_btn.setFixedHeight(32)
         self._new_chat_btn.clicked.connect(self._on_new_chat)
         self.vBoxLayout.addWidget(self._new_chat_btn, 0, Qt.AlignTop | Qt.AlignLeft)
 
@@ -311,7 +354,7 @@ class AIAssistantWidget(QWidget):
         # 重新加载
         self._load_provider_and_models()
 
-        # 尝试恢复选择，如果没有则使用设置中的默认值
+        # 尝试恢复提供商选择，如果没有则使用设置中的默认值
         provider_index = self.provider_combo.findText(current_provider)
         if provider_index >= 0:
             self.provider_combo.setCurrentIndex(provider_index)
@@ -321,6 +364,11 @@ class AIAssistantWidget(QWidget):
             idx = self.provider_combo.findText(default_provider)
             if idx >= 0:
                 self.provider_combo.setCurrentIndex(idx)
+
+        # 尝试恢复模型选择
+        model_index = self.model_combo.findText(current_model)
+        if model_index >= 0:
+            self.model_combo.setCurrentIndex(model_index)
 
     def _setup_ui(self) -> None:
         self.setObjectName("aiAssistantWidget")
@@ -370,9 +418,11 @@ class AIAssistantWidget(QWidget):
 
         # 工作线程
         self._chat_worker: Optional[AIChatWorker] = None
+        self._ollama_fetch_worker: Optional[OllamaModelFetchWorker] = None
         self._current_ai_bubble = None
         self._stream_timer = None
         self._text_queue = None
+        self._pending_ollama_default_model = ""
 
     def _apply_theme_style(self) -> None:
         dark = isDarkTheme()
@@ -418,10 +468,55 @@ class AIAssistantWidget(QWidget):
         if not item:
             return
         menu = QMenu(self)
+        
+        rename_action = QAction("重命名", self)
+        rename_action.triggered.connect(lambda: self._rename_conversation(item))
+        menu.addAction(rename_action)
+        
+        menu.addSeparator()
+        
         delete_action = QAction("删除此会话", self)
         delete_action.triggered.connect(lambda: self._delete_conversation(item))
         menu.addAction(delete_action)
         menu.exec_(self._sidebar.history_list.mapToGlobal(pos))
+
+    def _rename_conversation(self, item: QListWidgetItem) -> None:
+        """重命名会话"""
+        from qfluentwidgets import MessageBoxBase, SubtitleLabel, LineEdit
+        
+        conv_id = item.data(Qt.UserRole)
+        if conv_id is None:
+            return
+        
+        conv_id = int(conv_id)
+        current_title = item.text()
+        
+        class RenameDialog(MessageBoxBase):
+            def __init__(self, parent, title):
+                super().__init__(parent)
+                self.titleLabel = SubtitleLabel("重命名会话", self)
+                self.viewLayout.addWidget(self.titleLabel)
+                
+                self.input_edit = LineEdit(self)
+                self.input_edit.setText(title)
+                self.input_edit.setClearButtonEnabled(True)
+                self.input_edit.selectAll()
+                self.viewLayout.addWidget(self.input_edit)
+                
+                self.yesButton.setText("确定")
+                self.cancelButton.setText("取消")
+                self.widget.setMinimumWidth(300)
+            
+            def get_text(self):
+                return self.input_edit.text().strip()
+        
+        dialog = RenameDialog(self, current_title)
+        if dialog.exec():
+            new_title = dialog.get_text()
+            if new_title and new_title != current_title:
+                self.repo.update_conversation_title(conv_id, new_title)
+                item.setText(new_title)
+                item.setToolTip(new_title)
 
     def _delete_conversation(self, item: QListWidgetItem) -> None:
         conv_id = item.data(Qt.UserRole)
@@ -431,7 +526,7 @@ class AIAssistantWidget(QWidget):
         self.repo.delete_conversation(conv_id)
         if self.current_conversation_id == conv_id:
             self.current_conversation_id = None
-            self.chat_view.clear()
+            self.chat_view.clear_messages()
         self._sidebar.history_list.takeItem(self._sidebar.history_list.row(item))
         if self._sidebar.history_list.count() == 0:
             self._create_conversation()
@@ -449,25 +544,46 @@ class AIAssistantWidget(QWidget):
 
         self.provider_combo.setEnabled(True)
         self.model_combo.setEnabled(True)
+        
+        # 添加空选项
+        self.provider_combo.addItem("")
+        
         providers = sorted(set(model.provider for model in models))
         for provider in providers:
             self.provider_combo.addItem(provider)
 
-        default_provider = self.ai_settings.get_default_provider() or ""
-        provider_index = self.provider_combo.findText(default_provider)
-        if provider_index >= 0:
-            self.provider_combo.setCurrentIndex(provider_index)
-
-        self._refresh_models_for_provider(self.provider_combo.currentText() or "")
+        # 默认不选中任何提供商
+        self.provider_combo.setCurrentIndex(0)
+        self.model_combo.clear()
+        self.model_combo.setPlaceholderText("请先选择提供商")
 
     def _refresh_models_for_provider(self, provider: str) -> None:
         self.model_combo.clear()
         if not provider:
             return
 
-        # 从提供商配置获取默认模型
+        # 从提供商配置获取默认模型和模型列表
         provider_config = self.ai_settings.get_provider_config(provider)
         default_model = provider_config.get("default_model", "")
+        models_list = provider_config.get("models", [])
+
+        # Ollama 特殊处理：异步获取本地模型列表，避免阻塞UI
+        if provider == "ollama":
+            self._pending_ollama_default_model = default_model
+            self.model_combo.addItem("加载中...")
+            self.model_combo.setEnabled(False)
+            self._start_ollama_model_fetch(provider_config.get("base_url", "http://localhost:11434"))
+            return
+
+        # 如果配置中有模型列表，使用配置的模型列表
+        if models_list:
+            for model in models_list:
+                self.model_combo.addItem(model)
+            if default_model:
+                model_index = self.model_combo.findText(default_model)
+                if model_index >= 0:
+                    self.model_combo.setCurrentIndex(model_index)
+            return
 
         # 添加默认模型到下拉框
         if default_model:
@@ -485,8 +601,54 @@ class AIAssistantWidget(QWidget):
             if model_index >= 0:
                 self.model_combo.setCurrentIndex(model_index)
 
+    def _start_ollama_model_fetch(self, base_url: str) -> None:
+        """启动异步获取 Ollama 模型列表"""
+        # 停止之前的获取线程
+        if self._ollama_fetch_worker is not None:
+            self._ollama_fetch_worker.stop()
+            self._ollama_fetch_worker = None
+
+        self._ollama_fetch_worker = OllamaModelFetchWorker(base_url)
+        self._ollama_fetch_worker.finished_signal.connect(self._on_ollama_models_fetched)
+        self._ollama_fetch_worker.error_signal.connect(self._on_ollama_models_error)
+        self._ollama_fetch_worker.start()
+
+    def _on_ollama_models_fetched(self, models: list) -> None:
+        """Ollama 模型列表获取完成回调"""
+        self.model_combo.clear()
+        self.model_combo.setEnabled(True)
+
+        default_model = self._pending_ollama_default_model
+
+        if models:
+            for model in models:
+                self.model_combo.addItem(model)
+            if default_model:
+                model_index = self.model_combo.findText(default_model)
+                if model_index >= 0:
+                    self.model_combo.setCurrentIndex(model_index)
+        elif default_model:
+            self.model_combo.addItem(default_model)
+
+        self._ollama_fetch_worker = None
+
+    def _on_ollama_models_error(self, error_msg: str) -> None:
+        """Ollama 模型列表获取失败回调"""
+        self.model_combo.clear()
+        self.model_combo.setEnabled(True)
+
+        default_model = self._pending_ollama_default_model
+
+        # 使用默认模型
+        if default_model:
+            self.model_combo.addItem(default_model)
+
+        self._ollama_fetch_worker = None
+
     def _on_provider_changed(self, provider: str) -> None:
         if not provider:
+            self.model_combo.clear()
+            self.model_combo.setPlaceholderText("请先选择提供商")
             return
         self._refresh_models_for_provider(provider)
         self.ai_settings.set_default_provider(provider)
@@ -526,6 +688,7 @@ class AIAssistantWidget(QWidget):
                 model_id=model_id,
             )
             self.current_conversation_id = conversation_id
+            self.chat_view.clear_messages()  # 清空聊天视图
             self._refresh_history_list()
             for i in range(self._sidebar.history_list.count()):
                 item = self._sidebar.history_list.item(i)
@@ -602,8 +765,11 @@ class AIAssistantWidget(QWidget):
 
         provider = self.provider_combo.currentText() or self.ai_settings.get_default_provider()
         model_id = self.model_combo.currentText() or self.ai_settings.get_default_model()
-        if not provider or not model_id:
-            QMessageBox.warning(self, "提示", "请先选择提供商和模型")
+        if not provider:
+            QMessageBox.warning(self, "提示", "请先选择AI提供商")
+            return
+        if not model_id:
+            QMessageBox.warning(self, "提示", "请先选择模型")
             return
         self.ai_settings.set_default_provider(provider)
         self.ai_settings.set_default_model(model_id)
@@ -637,6 +803,10 @@ class AIAssistantWidget(QWidget):
             display_content = text + "\n" + ", ".join([f"[{f}]" for f in attach_files])
         self.chat_view.add_message(display_content, is_user=True)
 
+        # 判断是否是第一次对话（在保存消息之前判断）
+        self._is_first_message = self.repo.get_message_count(self.current_conversation_id) == 0
+        self._first_message_content = text[:100]
+
         # 保存到数据库的是完整内容
         self.repo.add_message(
             conversation_id=self.current_conversation_id,
@@ -644,8 +814,7 @@ class AIAssistantWidget(QWidget):
             content=content,
         )
 
-        # TODO: 处理深度思考和智能搜索选项
-        deep_think = self.chat_input.is_deep_think_enabled()
+        # TODO: 处理智能搜索选项
         search_enabled = self.chat_input.is_search_enabled()
 
         # 创建AI消息气泡（用于流式更新）- 显示思考中
@@ -722,17 +891,14 @@ class AIAssistantWidget(QWidget):
         self._is_streaming = False
         self.chat_input.set_sending_state(False)
 
-        # 等待队列处理完成
         if self._stream_timer:
             self._stream_timer.stop()
 
         assistant_text = response.content if not response.error else f"请求失败: {response.error}"
 
-        # 确保最终内容显示完整
         if self._current_ai_bubble:
             self._current_ai_bubble.update_text(assistant_text)
 
-        # 保存到数据库
         self.repo.add_message(
             conversation_id=self.current_conversation_id,
             role="assistant",
@@ -740,10 +906,38 @@ class AIAssistantWidget(QWidget):
             status="done" if not response.error else "error",
         )
 
-        # 清理
+        # 第一次对话完成后自动生成标题
+        if hasattr(self, '_is_first_message') and self._is_first_message and not response.error:
+            self._auto_generate_title()
+
         self._chat_worker = None
         self._current_ai_bubble = None
         self._text_queue = None
+
+    def _auto_generate_title(self) -> None:
+        """自动生成会话标题"""
+        if not self.current_conversation_id:
+            return
+        
+        content = getattr(self, '_first_message_content', '')
+        if not content:
+            return
+        
+        # 简单截取前20个字符作为标题
+        title = content[:20]
+        if len(content) > 20:
+            title += "..."
+        
+        # 更新标题
+        self.repo.update_conversation_title(self.current_conversation_id, title)
+        
+        # 更新列表显示
+        for i in range(self._sidebar.history_list.count()):
+            item = self._sidebar.history_list.item(i)
+            if item and item.data(Qt.UserRole) == self.current_conversation_id:
+                item.setText(title)
+                item.setToolTip(title)
+                break
 
     def _on_chat_error(self, error_msg: str):
         """聊天错误回调"""

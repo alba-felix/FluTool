@@ -30,17 +30,22 @@
       "provider_type": "doubao",
       "base_url": "https://ark.cn-beijing.volces.com/api/v3",
       "api_key": "",
-      "default_model": "doubao-seed-1-6-250615",
+      "default_model": "doubao-seed-1-6-251015",
       "enabled": true,
       "is_default": false,
       "timeout_sec": 60,
-      "custom_headers": {}
+      "custom_headers": {},
+      "models": [
+        "doubao-seedance-1-0-pro-fast-251015",
+        "doubao-seedream-4-0-250828",
+        "doubao-seed-1-6-251015"
+      ]
     },
     {
       "provider_id": "ollama",
       "name": "Ollama",
       "provider_type": "ollama",
-      "base_url": "http://localhost:11434/v1",
+      "base_url": "http://localhost:11434",
       "api_key": "",
       "default_model": "qwen2.5:7b",
       "enabled": true,

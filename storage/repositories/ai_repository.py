@@ -154,3 +154,26 @@ class AIRepository:
                 (search_pattern, limit),
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def update_conversation_title(self, conversation_id: int, title: str) -> bool:
+        """更新会话标题"""
+        with self._db.get_connection() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE ai_conversations
+                SET title = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (title, conversation_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_message_count(self, conversation_id: int) -> int:
+        """获取会话消息数量"""
+        with self._db.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?",
+                (conversation_id,),
+            )
+            return cursor.fetchone()[0]

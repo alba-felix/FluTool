@@ -1,13 +1,32 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from PyQt5.QtCore import QSettings
+from utils.crypto_utils import CharCryptoTool
 
 
 class SettingsManager:
+    """基础设置管理器 - 使用注册表存储通用配置"""
+    
+    _CRYPTO_KEY = 20260406
+
     def __init__(self, organization: str = "FluTool", application: str = "App"):
         self._settings = QSettings(organization, application)
+        self._crypto = CharCryptoTool()
+
+    def _encrypt_value(self, value: str) -> str:
+        if not value:
+            return ""
+        return self._crypto.shift_encrypt(value, self._CRYPTO_KEY)
+
+    def _decrypt_value(self, value: str) -> str:
+        if not value:
+            return ""
+        try:
+            return self._crypto.shift_decrypt(value, self._CRYPTO_KEY)
+        except Exception:
+            return value
 
     def get(self, key: str, default=None):
         return self._settings.value(key, default)
@@ -25,8 +44,92 @@ class SettingsManager:
         return self._settings.contains(key)
 
 
-class AISettingsManager(SettingsManager):
-    """AI 配置管理器"""
+class FileSettingsManager:
+    """文件设置管理器 - 使用 JSON 文件存储配置"""
+    
+    _CRYPTO_KEY = 20260406
+    
+    def __init__(self, config_path: Path):
+        self._config_path = config_path
+        self._config_path.parent.mkdir(parents=True, exist_ok=True)
+        self._data: Dict[str, Any] = {}
+        self._crypto = CharCryptoTool()
+        self._load()
+    
+    def _load(self) -> None:
+        """从文件加载配置"""
+        if self._config_path.exists():
+            try:
+                with open(self._config_path, 'r', encoding='utf-8') as f:
+                    self._data = json.load(f)
+            except Exception:
+                self._data = {}
+        else:
+            self._data = {}
+    
+    def _save(self) -> None:
+        """保存配置到文件"""
+        try:
+            with open(self._config_path, 'w', encoding='utf-8') as f:
+                json.dump(self._data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存配置失败: {e}")
+    
+    def _encrypt_value(self, value: str) -> str:
+        if not value:
+            return ""
+        return self._crypto.shift_encrypt(value, self._CRYPTO_KEY)
+
+    def _decrypt_value(self, value: str) -> str:
+        if not value:
+            return ""
+        try:
+            return self._crypto.shift_decrypt(value, self._CRYPTO_KEY)
+        except Exception:
+            return value
+    
+    def get(self, key: str, default=None):
+        """获取配置值，支持点号分隔的键路径"""
+        keys = key.split('/')
+        data = self._data
+        for k in keys:
+            if isinstance(data, dict) and k in data:
+                data = data[k]
+            else:
+                return default
+        return data
+    
+    def set(self, key: str, value) -> None:
+        """设置配置值，支持点号分隔的键路径"""
+        keys = key.split('/')
+        data = self._data
+        for k in keys[:-1]:
+            if k not in data:
+                data[k] = {}
+            data = data[k]
+        data[keys[-1]] = value
+        self._save()
+    
+    def remove(self, key: str) -> None:
+        """删除配置值"""
+        keys = key.split('/')
+        data = self._data
+        for k in keys[:-1]:
+            if isinstance(data, dict) and k in data:
+                data = data[k]
+            else:
+                return
+        if keys[-1] in data:
+            del data[keys[-1]]
+            self._save()
+    
+    def contains(self, key: str) -> bool:
+        """检查键是否存在"""
+        return self.get(key) is not None
+
+
+class AISettingsManager:
+    """AI 配置管理器 - 使用文件存储"""
 
     DEFAULT_PROVIDERS = [
         {
@@ -47,7 +150,7 @@ class AISettingsManager(SettingsManager):
             "provider_type": "doubao",
             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
             "api_key": "",
-            "default_model": "doubao-seed-1-6-250615",
+            "default_model": "doubao-seed-1-6-251015",
             "enabled": True,
             "is_default": False,
             "timeout_sec": 60,
@@ -71,7 +174,7 @@ class AISettingsManager(SettingsManager):
             "provider_type": "ollama",
             "base_url": "http://localhost:11434",
             "api_key": "",
-            "default_model": "gemma3",
+            "default_model": "qwen2.5:7b",
             "enabled": True,
             "is_default": False,
             "timeout_sec": 60,
@@ -101,8 +204,8 @@ class AISettingsManager(SettingsManager):
         },
         {
             "provider": "doubao",
-            "model_id": "doubao-1.5-pro-32k",
-            "display_name": "豆包 Pro 32k",
+            "model_id": "doubao-seed-1-6-251015",
+            "display_name": "豆包 Seed 1.6",
             "enabled": True,
             "capabilities": ["chat"],
         },
@@ -115,19 +218,24 @@ class AISettingsManager(SettingsManager):
         },
         {
             "provider": "ollama",
-            "model_id": "gemma3",
-            "display_name": "Gemma 3",
+            "model_id": "qwen2.5:7b",
+            "display_name": "Qwen 2.5 7B",
             "enabled": True,
             "capabilities": ["chat"],
         },
     ]
 
-    def __init__(self, organization: str = "FluTool", application: str = "App"):
-        super().__init__(organization, application)
+    def __init__(self, config_path: Optional[Path] = None):
+        if config_path is None:
+            config_path = Path(__file__).parent.parent / "config" / "ai_settings.json"
+        
+        self._file_manager = FileSettingsManager(config_path)
         self._provider_templates = self._load_provider_templates()
-        self._seed_provider_defaults()
+        self._ensure_defaults()
+        self._migrate_from_registry()
 
     def _load_provider_templates(self) -> Dict[str, Dict[str, Any]]:
+        """加载提供商模板（从 ai_providers.json）"""
         config_path = Path(__file__).parent.parent / "config" / "ai_providers.json"
         if not config_path.exists():
             return {item["provider_id"]: item for item in self.DEFAULT_PROVIDERS}
@@ -151,54 +259,103 @@ class AISettingsManager(SettingsManager):
 
         return {item["provider_id"]: item for item in self.DEFAULT_PROVIDERS}
 
-    def _seed_provider_defaults(self) -> None:
-        for provider_id, config in self._provider_templates.items():
-            prefix = f"ai/providers/{provider_id}"
-            if not self.contains(f"{prefix}/base_url"):
-                self.set(f"{prefix}/base_url", config.get("base_url", ""))
-            if not self.contains(f"{prefix}/enabled"):
-                self.set(f"{prefix}/enabled", "true" if config.get("enabled", True) else "false")
-            if not self.contains(f"{prefix}/extra_headers_json"):
-                self.set(
-                    f"{prefix}/extra_headers_json",
-                    json.dumps(config.get("custom_headers", {}), ensure_ascii=False),
-                )
-            if not self.contains(f"{prefix}/timeout_sec"):
-                self.set(f"{prefix}/timeout_sec", int(config.get("timeout_sec", 60)))
-            if not self.contains(f"{prefix}/default_model"):
-                self.set(f"{prefix}/default_model", str(config.get("default_model", "")))
-
-        # 迁移：修复 Ollama 旧配置
-        self._migrate_ollama_config()
-        # 迁移：同步模型列表
-        self._migrate_models_catalog()
-
-    def _migrate_ollama_config(self) -> None:
-        """迁移 Ollama 旧配置（移除 /v1 后缀）"""
-        prefix = "ai/providers/ollama"
-        if self.contains(f"{prefix}/base_url"):
-            current_url = str(self.get(f"{prefix}/base_url", ""))
-            if current_url.endswith("/v1"):
-                self.set(f"{prefix}/base_url", current_url[:-3])
-        if self.contains(f"{prefix}/default_model"):
-            current_model = str(self.get(f"{prefix}/default_model", ""))
-            if current_model in ("qwen2.5:7b", "llama3.1"):
-                self.set(f"{prefix}/default_model", "gemma3")
-
-    def _migrate_models_catalog(self) -> None:
-        """迁移模型列表，添加缺失的提供商模型"""
-        current_models = self.get_models()
-        current_providers = {m.get("provider") for m in current_models}
+    def _ensure_defaults(self) -> None:
+        """确保默认配置存在"""
+        # 确保默认提供商设置
+        if not self._file_manager.get("default_provider"):
+            self._file_manager.set("default_provider", "deepseek")
         
-        # 检查是否有新的默认模型需要添加
-        for default_model in self.DEFAULT_MODELS:
-            provider = default_model.get("provider")
-            if provider not in current_providers:
-                current_models.append(default_model.copy())
+        # 确保默认模型设置
+        if not self._file_manager.get("default_model"):
+            self._file_manager.set("default_model", "deepseek-chat")
         
-        # 保存更新后的模型列表
-        if len(current_models) > len(current_providers):
-            self.save_models(current_models)
+        # 确保 providers 配置存在
+        if not self._file_manager.get("providers"):
+            self._file_manager.set("providers", {})
+        
+        # 确保 models 配置存在
+        if not self._file_manager.get("models"):
+            default_models = [m.copy() for m in self.DEFAULT_MODELS]
+            self._file_manager.set("models", default_models)
+        
+        # 为每个提供商设置默认值
+        for provider_id, template in self._provider_templates.items():
+            prefix = f"providers/{provider_id}"
+            if not self._file_manager.get(f"{prefix}/base_url"):
+                self._file_manager.set(f"{prefix}/base_url", template.get("base_url", ""))
+            if not self._file_manager.get(f"{prefix}/enabled"):
+                self._file_manager.set(f"{prefix}/enabled", template.get("enabled", True))
+            if not self._file_manager.get(f"{prefix}/default_model"):
+                self._file_manager.set(f"{prefix}/default_model", template.get("default_model", ""))
+            if not self._file_manager.get(f"{prefix}/timeout_sec"):
+                self._file_manager.set(f"{prefix}/timeout_sec", template.get("timeout_sec", 60))
+            if not self._file_manager.get(f"{prefix}/extra_headers"):
+                self._file_manager.set(f"{prefix}/extra_headers", template.get("custom_headers", {}))
+
+    def _migrate_from_registry(self) -> None:
+        """从注册表迁移数据到文件"""
+        try:
+            registry = QSettings("FluTool", "App")
+            
+            # 迁移默认提供商
+            old_default_provider = registry.value("ai/default_provider", "")
+            if old_default_provider and not self._file_manager.get("default_provider"):
+                self._file_manager.set("default_provider", old_default_provider)
+            
+            # 迁移默认模型
+            old_default_model = registry.value("ai/default_model", "")
+            if old_default_model and not self._file_manager.get("default_model"):
+                self._file_manager.set("default_model", old_default_model)
+            
+            # 迁移提供商配置
+            for provider_id in self._provider_templates.keys():
+                registry_prefix = f"ai/providers/{provider_id}"
+                file_prefix = f"providers/{provider_id}"
+                
+                # 迁移 API Key（需要解密再加密）
+                old_api_key = registry.value(f"{registry_prefix}/api_key", "")
+                if old_api_key and not self._file_manager.get(f"{file_prefix}/api_key"):
+                    try:
+                        # 尝试解密旧的加密值
+                        crypto = CharCryptoTool()
+                        decrypted = crypto.shift_decrypt(old_api_key, 20260406)
+                        self._file_manager.set(f"{file_prefix}/api_key", decrypted)
+                    except:
+                        # 如果不是加密的，直接保存
+                        self._file_manager.set(f"{file_prefix}/api_key", old_api_key)
+                
+                # 迁移其他字段
+                for field in ["base_url", "default_model", "timeout_sec"]:
+                    old_value = registry.value(f"{registry_prefix}/{field}", "")
+                    if old_value and not self._file_manager.get(f"{file_prefix}/{field}"):
+                        self._file_manager.set(f"{file_prefix}/{field}", old_value)
+                
+                # 迁移 enabled
+                old_enabled = registry.value(f"{registry_prefix}/enabled", "")
+                if old_enabled and not self._file_manager.get(f"{file_prefix}/enabled"):
+                    self._file_manager.set(f"{file_prefix}/enabled", old_enabled.lower() == "true")
+                
+                # 迁移 extra_headers
+                old_headers = registry.value(f"{registry_prefix}/extra_headers_json", "")
+                if old_headers and not self._file_manager.get(f"{file_prefix}/extra_headers"):
+                    try:
+                        headers = json.loads(old_headers)
+                        self._file_manager.set(f"{file_prefix}/extra_headers", headers)
+                    except:
+                        pass
+            
+            # 迁移模型列表
+            old_models = registry.value("ai/models/catalog_json", "")
+            if old_models:
+                try:
+                    models = json.loads(old_models)
+                    if models and not self._file_manager.get("models"):
+                        self._file_manager.set("models", models)
+                except:
+                    pass
+                    
+        except Exception as e:
+            print(f"迁移注册表数据失败: {e}")
 
     @staticmethod
     def _to_bool(value: Any, default: bool = False) -> bool:
@@ -208,20 +365,8 @@ class AISettingsManager(SettingsManager):
             return default
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
-    @staticmethod
-    def _parse_json_object(value: str) -> Dict[str, str]:
-        if not value:
-            return {}
-        try:
-            data = json.loads(value)
-            if isinstance(data, dict):
-                return {str(k): str(v) for k, v in data.items()}
-        except Exception:
-            pass
-        return {}
-
     def get_default_provider(self) -> str:
-        value = str(self.get("ai/default_provider", "")).strip()
+        value = str(self._file_manager.get("default_provider", "")).strip()
         if value:
             return value
         for provider_id, config in self._provider_templates.items():
@@ -230,10 +375,10 @@ class AISettingsManager(SettingsManager):
         return "deepseek"
 
     def set_default_provider(self, provider: str) -> None:
-        self.set("ai/default_provider", provider)
+        self._file_manager.set("default_provider", provider)
 
     def get_default_model(self) -> str:
-        value = str(self.get("ai/default_model", "")).strip()
+        value = str(self._file_manager.get("default_model", "")).strip()
         if value:
             return value
         default_provider = self.get_default_provider()
@@ -241,22 +386,16 @@ class AISettingsManager(SettingsManager):
         return str(provider_config.get("default_model", "deepseek-chat"))
 
     def set_default_model(self, model_id: str) -> None:
-        self.set("ai/default_model", model_id)
+        self._file_manager.set("default_model", model_id)
 
     def get_models(self) -> List[Dict[str, Any]]:
-        raw_value = self.get("ai/models/catalog_json", "")
-        if not raw_value:
-            return self.DEFAULT_MODELS.copy()
-        try:
-            parsed = json.loads(str(raw_value))
-            if not isinstance(parsed, list):
-                return self.DEFAULT_MODELS.copy()
-            return parsed
-        except Exception:
-            return self.DEFAULT_MODELS.copy()
+        models = self._file_manager.get("models", [])
+        if not models:
+            return [m.copy() for m in self.DEFAULT_MODELS]
+        return models
 
     def save_models(self, models: List[Dict[str, Any]]) -> None:
-        self.set("ai/models/catalog_json", json.dumps(models, ensure_ascii=False))
+        self._file_manager.set("models", models)
 
     def list_providers(self) -> List[Dict[str, Any]]:
         providers = []
@@ -266,54 +405,54 @@ class AISettingsManager(SettingsManager):
 
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         template = self._provider_templates.get(provider, {})
-        prefix = f"ai/providers/{provider}"
-        raw_headers = str(
-            self.get(
-                f"{prefix}/extra_headers_json",
-                json.dumps(template.get("custom_headers", {}), ensure_ascii=False),
-            )
-        )
-        timeout_value = self.get(f"{prefix}/timeout_sec", template.get("timeout_sec", 60))
+        prefix = f"providers/{provider}"
+        
+        extra_headers = self._file_manager.get(f"{prefix}/extra_headers", {})
+        if not isinstance(extra_headers, dict):
+            extra_headers = {}
+        
+        timeout_sec = self._file_manager.get(f"{prefix}/timeout_sec", template.get("timeout_sec", 60))
         try:
-            timeout_sec = int(timeout_value)
-        except Exception:
+            timeout_sec = int(timeout_sec)
+        except:
             timeout_sec = 60
 
         return {
             "provider_id": provider,
             "name": str(template.get("name", provider)),
             "provider_type": str(template.get("provider_type", provider)),
-            "base_url": str(self.get(f"{prefix}/base_url", template.get("base_url", ""))),
-            "api_key": str(self.get(f"{prefix}/api_key", template.get("api_key", ""))).strip(),
+            "base_url": str(self._file_manager.get(f"{prefix}/base_url", template.get("base_url", ""))),
+            "api_key": str(self._file_manager.get(f"{prefix}/api_key", "")).strip(),
             "default_model": str(
-                self.get(f"{prefix}/default_model", template.get("default_model", ""))
+                self._file_manager.get(f"{prefix}/default_model", template.get("default_model", ""))
             ).strip(),
-            "enabled": self._to_bool(self.get(f"{prefix}/enabled", template.get("enabled", True)), True),
+            "enabled": self._to_bool(
+                self._file_manager.get(f"{prefix}/enabled", template.get("enabled", True)), 
+                True
+            ),
             "timeout_sec": timeout_sec,
-            "extra_headers": self._parse_json_object(raw_headers),
-            "extra_headers_json": raw_headers,
+            "extra_headers": extra_headers,
+            "extra_headers_json": json.dumps(extra_headers, ensure_ascii=False),
+            "models": template.get("models", []),
         }
 
     def save_provider_config(self, provider: str, config: Dict[str, Any]) -> None:
-        prefix = f"ai/providers/{provider}"
+        prefix = f"providers/{provider}"
         if "base_url" in config:
-            self.set(f"{prefix}/base_url", str(config.get("base_url", "")))
+            self._file_manager.set(f"{prefix}/base_url", str(config.get("base_url", "")))
         if "api_key" in config:
-            self.set(f"{prefix}/api_key", str(config.get("api_key", "")).strip())
+            self._file_manager.set(f"{prefix}/api_key", str(config.get("api_key", "")).strip())
         if "enabled" in config:
-            self.set(f"{prefix}/enabled", "true" if self._to_bool(config.get("enabled"), True) else "false")
+            self._file_manager.set(f"{prefix}/enabled", self._to_bool(config.get("enabled"), True))
         if "default_model" in config:
-            self.set(f"{prefix}/default_model", str(config.get("default_model", "")).strip())
+            self._file_manager.set(f"{prefix}/default_model", str(config.get("default_model", "")).strip())
         if "timeout_sec" in config:
             try:
                 timeout_value = int(config.get("timeout_sec", 60))
-            except Exception:
+            except:
                 timeout_value = 60
-            self.set(f"{prefix}/timeout_sec", timeout_value)
+            self._file_manager.set(f"{prefix}/timeout_sec", timeout_value)
         if "extra_headers" in config:
             headers = config.get("extra_headers", {})
             if isinstance(headers, dict):
-                self.set(
-                    f"{prefix}/extra_headers_json",
-                    json.dumps(headers, ensure_ascii=False),
-                )
+                self._file_manager.set(f"{prefix}/extra_headers", headers)

@@ -1,0 +1,85 @@
+{
+  "version": "1.0",
+  "default_provider": "ollama",
+  "default_model": "gemma4:e2b",
+  "providers": {
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "api_key": "sk-21c74d7992f54a5089d0eac2d596e9b6",
+      "default_model": "deepseek-chat",
+      "enabled": true,
+      "timeout_sec": 60,
+      "extra_headers": {}
+    },
+    "doubao": {
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "api_key": "0bfe6952-050d-4f5e-a4db-f8e96c601ec6",
+      "default_model": "doubao-seed-1-6-251015",
+      "enabled": true,
+      "timeout_sec": 60,
+      "extra_headers": {}
+    },
+    "qwen": {
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key": "",
+      "default_model": "qwen-plus",
+      "enabled": true,
+      "timeout_sec": 60,
+      "extra_headers": {}
+    },
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "api_key": "",
+      "default_model": "qwen2.5:7b",
+      "enabled": true,
+      "timeout_sec": 60,
+      "extra_headers": {}
+    },
+    "custom": {
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "default_model": "gpt-4o-mini",
+      "enabled": false,
+      "timeout_sec": 60,
+      "extra_headers": {}
+    }
+  },
+  "models": [
+    {
+      "provider": "deepseek",
+      "model_id": "deepseek-chat",
+      "display_name": "DeepSeek Chat",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "doubao",
+      "model_id": "doubao-seed-1-6-251015",
+      "display_name": "豆包 Seed 1.6",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "qwen",
+      "model_id": "qwen-plus",
+      "display_name": "Qwen Plus",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "ollama",
+      "model_id": "qwen2.5:7b",
+      "display_name": "Qwen 2.5 7B",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    }
+  ]
+}

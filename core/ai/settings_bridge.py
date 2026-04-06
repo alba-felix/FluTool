@@ -5,22 +5,22 @@ from core.ai.types import AIModelInfo
 
 
 class AISettingsBridge:
-    """AI 配置桥接层，统一管理 QSettings 键"""
+    """AI 配置桥接层，适配 AISettingsManager 的字段格式"""
 
     def __init__(self, settings_manager: AISettingsManager = None):
         self._settings = settings_manager or AISettingsManager()
 
     def get_default_provider(self) -> str:
-        return str(self._settings.get("ai/default_provider", "deepseek"))
+        return self._settings.get_default_provider()
 
     def set_default_provider(self, provider: str) -> None:
-        self._settings.set("ai/default_provider", provider)
+        self._settings.set_default_provider(provider)
 
     def get_default_model(self) -> str:
-        return str(self._settings.get("ai/default_model", "deepseek-chat"))
+        return self._settings.get_default_model()
 
     def set_default_model(self, model_id: str) -> None:
-        self._settings.set("ai/default_model", model_id)
+        self._settings.set_default_model(model_id)
 
     def get_models(self) -> List[AIModelInfo]:
         parsed = self._settings.get_models()

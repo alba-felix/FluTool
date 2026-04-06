@@ -35,9 +35,11 @@ class OllamaAdapter(AIProviderAdapter):
 
         provider_config = request.provider_config or {}
         base_url = str(provider_config.get("base_url", "")).strip() or self.DEFAULT_BASE_URL
+        # Ollama 原生 API 不使用 /v1 前缀，移除它
+        base_url = base_url.replace("/v1", "").rstrip("/")
         timeout_sec = int(provider_config.get("timeout_sec", request.timeout_sec))
 
-        endpoint = f"{base_url.rstrip('/')}/api/chat"
+        endpoint = f"{base_url}/api/chat"
 
         messages = []
         for message in request.messages:
@@ -53,6 +55,7 @@ class OllamaAdapter(AIProviderAdapter):
         }
 
         full_content = ""
+        response = None
 
         try:
             response = requests.post(
@@ -137,6 +140,9 @@ class OllamaAdapter(AIProviderAdapter):
                 error=f"解析响应异常: {exc}",
                 provider_meta={"endpoint": endpoint},
             )
+        finally:
+            if response is not None:
+                response.close()
 
     def chat(self, request: AIChatRequest) -> AIChatResponse:
         if not request.messages:
@@ -150,9 +156,11 @@ class OllamaAdapter(AIProviderAdapter):
 
         provider_config = request.provider_config or {}
         base_url = str(provider_config.get("base_url", "")).strip() or self.DEFAULT_BASE_URL
+        # Ollama 原生 API 不使用 /v1 前缀，移除它
+        base_url = base_url.replace("/v1", "").rstrip("/")
         timeout_sec = int(provider_config.get("timeout_sec", request.timeout_sec))
 
-        endpoint = f"{base_url.rstrip('/')}/api/chat"
+        endpoint = f"{base_url}/api/chat"
 
         messages = []
         for message in request.messages:

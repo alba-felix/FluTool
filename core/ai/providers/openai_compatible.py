@@ -67,6 +67,7 @@ class OpenAICompatibleAdapter(AIProviderAdapter):
         full_content = ""
         finish_reason = "stop"
         error_msg = ""
+        response = None
 
         try:
             response = requests.post(
@@ -86,6 +87,8 @@ class OpenAICompatibleAdapter(AIProviderAdapter):
                     provider_meta={"status_code": response.status_code},
                 )
 
+            # 正确处理编码：豆包等API可能返回非标准编码
+            response.encoding = 'utf-8'
             for line in response.iter_lines(decode_unicode=True):
                 if not line:
                     continue
@@ -122,6 +125,9 @@ class OpenAICompatibleAdapter(AIProviderAdapter):
                 error=f"解析响应异常: {exc}",
                 provider_meta={"endpoint": endpoint},
             )
+        finally:
+            if response is not None:
+                response.close()
 
         return AIChatResponse(
             provider=request.provider,
@@ -193,6 +199,8 @@ class OpenAICompatibleAdapter(AIProviderAdapter):
                     provider_meta={"status_code": response.status_code},
                 )
 
+            # 确保使用 UTF-8 解码
+            response.encoding = 'utf-8'
             data = response.json()
             choices = data.get("choices", [])
             if not choices:

@@ -280,6 +280,8 @@ class SettingsInterface(ScrollArea):
         dialog.viewLayout.addWidget(title)
         input_edit = LineEdit(dialog)
         input_edit.setPlaceholderText("输入 API Key")
+        # 设置密码模式，显示掩码
+        input_edit.setEchoMode(LineEdit.Password)
         input_edit.setText(str(provider_config.get("api_key", "")))
         dialog.viewLayout.addWidget(input_edit)
         dialog.yesButton.setText("保存")
