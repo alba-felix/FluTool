@@ -345,6 +345,7 @@ class ScriptWidget(QWidget):
         layout.addLayout(top_layout)
         
         splitter = QSplitter(Qt.Horizontal, self)
+        splitter.setHandleWidth(1)
         
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
@@ -373,6 +374,8 @@ class ScriptWidget(QWidget):
         splitter.addWidget(self.editor)
         
         splitter.setSizes([300, 500])
+        self._apply_splitter_style(splitter)
+        qconfig.themeChangedFinished.connect(lambda: self._apply_splitter_style(splitter))
         layout.addWidget(splitter)
         
         self._set_ui_enabled(False)
@@ -404,6 +407,33 @@ class ScriptWidget(QWidget):
             )
         
         self.tree.setAlternatingRowColors(True)
+    
+    def _apply_splitter_style(self, splitter: QSplitter) -> None:
+        """应用分割线样式"""
+        if isDarkTheme():
+            splitter.setStyleSheet("""
+                QSplitter::handle {
+                    background-color: #3d3d3d;
+                }
+                QSplitter::handle:hover {
+                    background-color: #0078d4;
+                }
+                QSplitter::handle:pressed {
+                    background-color: #005a9e;
+                }
+            """)
+        else:
+            splitter.setStyleSheet("""
+                QSplitter::handle {
+                    background-color: #e0e0e0;
+                }
+                QSplitter::handle:hover {
+                    background-color: #0078d4;
+                }
+                QSplitter::handle:pressed {
+                    background-color: #005a9e;
+                }
+            """)
     
     def load_data(self) -> None:
         if self._loader and self._loader.isRunning():

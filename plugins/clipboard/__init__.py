@@ -16,7 +16,8 @@ from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, TreeWidget, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig, TextEdit,
-    MessageBox, TransparentToolButton, CaptionLabel
+    MessageBox, TransparentToolButton, CaptionLabel,
+    RoundMenu
 )
 from core import PluginInterface, get_app_data_path
 from storage.database import DatabaseManager
@@ -373,15 +374,13 @@ class ClipboardWidget(QWidget):
     def _show_context_menu(self, pos):
         """显示右键菜单"""
         from PyQt5.QtGui import QCursor
-        from PyQt5.QtWidgets import QMenu, QAction
+        from PyQt5.QtWidgets import QAction
         
         item = self.tree.itemAt(pos)
         if not item:
             return
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
-        
+        menu = RoundMenu(parent=self)
         copy_action = QAction("复制", self)
         copy_action.triggered.connect(lambda: self._copy_to_clipboard(item, 0))
         menu.addAction(copy_action)
@@ -396,7 +395,7 @@ class ClipboardWidget(QWidget):
         delete_action.triggered.connect(lambda: self._delete_item(item))
         menu.addAction(delete_action)
         
-        menu.exec_(QCursor.pos())
+        menu.exec(QCursor.pos())
     
     def _pin_item(self, item: QTreeWidgetItem):
         """置顶选中项"""
