@@ -281,9 +281,9 @@ class MessageBubble(QWidget):
         dark = isDarkTheme()
 
         if self.is_user:
-            bg_color = "#0078d4"
+            bg_color = "#ffb6b3"
             text_color = "#ffffff"
-            header_bg = "#005a9e"
+            header_bg = "#ef977a"
         else:
             if dark:
                 bg_color = "#3d3d3d"
@@ -303,11 +303,13 @@ class MessageBubble(QWidget):
             }}
         """)
 
-        # 设置状态栏样式（透明背景，只显示文字和按钮）
+        # 设置状态栏样式
         self._header_widget.setStyleSheet(f"""
             QWidget {{
-                background: transparent;
+                background-color: {header_bg};
                 border: none;
+                border-top-left-radius: 12px;
+                border-top-right-radius: 12px;
             }}
             QLabel#roleLabel {{
                 background: transparent;

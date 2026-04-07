@@ -487,6 +487,48 @@ class ImageAssistantWidget(QWidget):
                 QListWidget::item:hover {
                     background-color: #3d3d3d;
                 }
+                QScrollBar:vertical {
+                    background-color: #2d2d2d;
+                    width: 12px;
+                    border-radius: 6px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:vertical {
+                    background-color: #4d4d4d;
+                    border-radius: 5px;
+                    min-height: 30px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background-color: #5d5d5d;
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    background: none;
+                    height: 0px;
+                }
+                QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                    background: none;
+                }
+                QScrollBar:horizontal {
+                    background-color: #2d2d2d;
+                    height: 12px;
+                    border-radius: 6px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: #4d4d4d;
+                    border-radius: 5px;
+                    min-width: 30px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: #5d5d5d;
+                }
+                QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                    background: none;
+                    width: 0px;
+                }
+                QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                    background: none;
+                }
             """)
         else:
             self.image_list.setStyleSheet("""
@@ -505,6 +547,48 @@ class ImageAssistantWidget(QWidget):
                 }
                 QListWidget::item:hover {
                     background-color: #f0f0f0;
+                }
+                QScrollBar:vertical {
+                    background-color: #f0f0f0;
+                    width: 12px;
+                    border-radius: 6px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:vertical {
+                    background-color: #c0c0c0;
+                    border-radius: 5px;
+                    min-height: 30px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background-color: #a0a0a0;
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    background: none;
+                    height: 0px;
+                }
+                QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                    background: none;
+                }
+                QScrollBar:horizontal {
+                    background-color: #f0f0f0;
+                    height: 12px;
+                    border-radius: 6px;
+                    margin: 2px;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: #c0c0c0;
+                    border-radius: 5px;
+                    min-width: 30px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: #a0a0a0;
+                }
+                QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                    background: none;
+                    width: 0px;
+                }
+                QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                    background: none;
                 }
             """)
     
