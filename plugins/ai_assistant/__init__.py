@@ -199,33 +199,33 @@ class AISidebar(QWidget):
         self._toggle_btn.clicked.connect(self.toggle)
         self.vBoxLayout.addWidget(self._toggle_btn, 0, Qt.AlignTop | Qt.AlignLeft)
 
+        # 顶部工具栏容器（新建会话 + 搜索）
+        self._top_toolbar = QWidget(self)
+        self._top_toolbar_layout = QHBoxLayout(self._top_toolbar)
+        self._top_toolbar_layout.setContentsMargins(8, 8, 8, 8)
+        self._top_toolbar_layout.setSpacing(8)
+
         self._new_chat_btn = PushButton("新建会话", self)
         self._new_chat_btn.setIcon(FIF.ADD_TO)
         self._new_chat_btn.setFixedHeight(32)
         self._new_chat_btn.clicked.connect(self._on_new_chat)
-        self.vBoxLayout.addWidget(self._new_chat_btn, 0, Qt.AlignTop | Qt.AlignLeft)
-
-        # 搜索框容器
-        self._search_container = QWidget(self)
-        self._search_layout = QHBoxLayout(self._search_container)
-        self._search_layout.setContentsMargins(8, 8, 8, 8)
-        self._search_layout.setSpacing(4)
+        self._top_toolbar_layout.addWidget(self._new_chat_btn)
 
         self._search_edit = LineEdit(self)
         self._search_edit.setPlaceholderText("搜索对话...")
         self._search_edit.setClearButtonEnabled(True)
         self._search_edit.returnPressed.connect(self._on_search)
         self._search_edit.textChanged.connect(self._on_search_text_changed)
-        self._search_layout.addWidget(self._search_edit, 1)
+        self._top_toolbar_layout.addWidget(self._search_edit, 1)
 
         self._clear_search_btn = ToolButton(FIF.CANCEL, self)
         self._clear_search_btn.setToolTip("清除搜索")
         self._clear_search_btn.setFixedSize(28, 28)
         self._clear_search_btn.clicked.connect(self._on_clear_search)
         self._clear_search_btn.setVisible(False)
-        self._search_layout.addWidget(self._clear_search_btn)
+        self._top_toolbar_layout.addWidget(self._clear_search_btn)
 
-        self.vBoxLayout.addWidget(self._search_container)
+        self.vBoxLayout.addWidget(self._top_toolbar)
 
         self._new_chat_callback = None
 
@@ -281,8 +281,7 @@ class AISidebar(QWidget):
     def _update_compacted_state(self):
         compacted = not self._isExpanded
         self._toggle_btn.setCompacted(compacted)
-        self._new_chat_btn.setVisible(self._isExpanded)
-        self._search_container.setVisible(self._isExpanded)
+        self._top_toolbar.setVisible(self._isExpanded)
         self.history_list.setVisible(self._isExpanded)
 
     def toggle(self):

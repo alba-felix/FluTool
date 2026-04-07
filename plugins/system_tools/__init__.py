@@ -196,6 +196,7 @@ class SystemToolsWidget(QWidget):
             ("服务管理", "services.msc", CFIF.SERVICES, True, ["服务", "services", "管理"]),
             
             ("环境变量", "rundll32 sysdm.cpl,EditEnvironmentVariables", CFIF.ENV, False, ["环境变量", "environment", "变量"]),
+            ("系统属性", "sysdm.cpl", FIF.SETTING, True, ["系统属性", "sysdm", "属性"]),
             ("任务管理器", "taskmgr", CFIF.TASK, False, ["任务", "taskmgr", "管理器"]),
             ("控制面板", "control", CFIF.CONTROL_PANEL, False, ["控制面板", "control", "设置"]),
             ("命令提示符", "cmd", CFIF.CMD, True, ["命令", "cmd", "控制台"]),
@@ -216,7 +217,6 @@ class SystemToolsWidget(QWidget):
             ("DirectX诊断", "dxdiag", FIF.GAME, False, ["directx", "dxdiag", "诊断"]),
             
             ("程序和功能", "appwiz.cpl", FIF.FOLDER, True, ["程序", "appwiz", "卸载"]),
-            ("系统属性", "sysdm.cpl", FIF.SETTING, True, ["系统属性", "sysdm", "属性"]),
             ("Windows功能", "optionalfeatures", FIF.ADD, True, ["windows功能", "功能", "features"]),
             ("回收站", "explorer shell:RecycleBinFolder", CFIF.RECYCLE_BIN, False, ["回收站", "recycle", "垃圾桶"]),
             ("组策略", "gpedit.msc", CFIF.GROUP_POLICY, True, ["组策略", "gpedit", "策略", "gpo"]),

@@ -809,7 +809,8 @@ class ScriptWidget(QWidget):
         self._process.finished.connect(self._on_process_finished)
         
         if script_type == 'ps1':
-            self._process.start('powershell', ['-ExecutionPolicy', 'Bypass', '-File', temp_path])
+            ps_path = get_powershell_path()
+            self._process.start(ps_path, ['-ExecutionPolicy', 'Bypass', '-File', temp_path])
         elif script_type == 'py':
             self._process.start('python', [temp_path])
         else:
