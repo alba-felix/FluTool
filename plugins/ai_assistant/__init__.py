@@ -337,8 +337,17 @@ class AIAssistantWidget(QWidget):
         self.current_conversation_id: Optional[int] = None
         self._setup_ui()
         self._apply_theme_style()
+        
+        self._initialized = False
+        QTimer.singleShot(50, self._delayed_init)
+
+    def _delayed_init(self) -> None:
+        """延迟初始化，避免阻塞 UI"""
+        if self._initialized:
+            return
+        self._initialized = True
         self._load_provider_and_models()
-        self._load_or_create_conversation()
+        QTimer.singleShot(50, self._load_or_create_conversation)
 
     def showEvent(self, event):
         """窗口显示时刷新设置"""

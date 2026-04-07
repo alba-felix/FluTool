@@ -62,7 +62,7 @@ class OllamaAdapter(AIProviderAdapter):
                 endpoint,
                 headers={"Content-Type": "application/json"},
                 json=payload,
-                timeout=timeout_sec,
+                timeout=(5, timeout_sec),
                 stream=True,
             )
             if response.status_code == 404:
@@ -180,7 +180,7 @@ class OllamaAdapter(AIProviderAdapter):
                 endpoint,
                 headers={"Content-Type": "application/json"},
                 json=payload,
-                timeout=timeout_sec,
+                timeout=(5, timeout_sec),
             )
             if response.status_code == 404:
                 return AIChatResponse(

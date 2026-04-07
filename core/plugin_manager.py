@@ -1,6 +1,7 @@
 import importlib
 import inspect
 import pkgutil
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from .plugin_interface import PluginInterface
@@ -14,6 +15,8 @@ class PluginManager:
     1. scan_plugins() - 扫描插件目录，注册插件元信息
     2. load_plugin() - 加载单个插件（initialize）
     3. get_plugin_widget() - 获取插件界面（懒加载）
+    
+    所有插件操作都有错误隔离，不会影响主线程
     """
     
     def __init__(self, core):
@@ -21,6 +24,7 @@ class PluginManager:
         self._plugins: Dict[str, PluginInterface] = {}
         self._plugin_dirs: Dict[str, Path] = {}
         self._loaded_plugins: Set[str] = set()
+        self._failed_plugins: Set[str] = set()
 
     def scan_plugins(self, plugin_path: str) -> List[str]:
         """
@@ -135,27 +139,52 @@ class PluginManager:
         """
         if plugin_id in self._loaded_plugins:
             return self._plugins.get(plugin_id)
+        
+        if plugin_id in self._failed_plugins:
+            self._core.logger.warning(f"Plugin {plugin_id} already failed to load, skipping")
+            return None
+        
         plugin_dir = self._plugin_dirs.get(plugin_id)
         if not plugin_dir:
+            self._core.logger.warning(f"Plugin directory not found for {plugin_id}")
             return None
+        
         try:
             module_name = f"plugins.{plugin_dir.name}"
             importlib.invalidate_caches()
             module = importlib.import_module(module_name)
+            
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if (issubclass(obj, PluginInterface) and 
                     obj is not PluginInterface and
                     obj.__module__ == module.__name__):
-                    plugin = obj()
-                    plugin.initialize(self._core)
-                    self._plugins[plugin.get_id()] = plugin
-                    self._loaded_plugins.add(plugin.get_id())
-                    if self._core.search_manager and plugin.supports_search():
-                        self._core.search_manager.register_plugin(plugin)
-                    self._core.logger.info(f"Loaded plugin: {plugin.get_name()}")
-                    return plugin
+                    
+                    try:
+                        plugin = obj()
+                        plugin.initialize(self._core)
+                        self._plugins[plugin.get_id()] = plugin
+                        self._loaded_plugins.add(plugin.get_id())
+                        
+                        if self._core.search_manager and plugin.supports_search():
+                            try:
+                                self._core.search_manager.register_plugin(plugin)
+                            except Exception as e:
+                                self._core.logger.error(f"Failed to register search for {plugin_id}: {e}")
+                        
+                        self._core.logger.info(f"Loaded plugin: {plugin.get_name()}")
+                        return plugin
+                        
+                    except Exception as e:
+                        self._failed_plugins.add(plugin_id)
+                        self._core.logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
+                        self._core.logger.debug(traceback.format_exc())
+                        return None
+                        
         except Exception as e:
+            self._failed_plugins.add(plugin_id)
             self._core.logger.error(f"Failed to load plugin {plugin_id}: {e}")
+            self._core.logger.debug(traceback.format_exc())
+            
         return None
 
     def load_all_plugins(self, plugin_path: str) -> None:

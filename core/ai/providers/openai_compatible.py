@@ -74,7 +74,7 @@ class OpenAICompatibleAdapter(AIProviderAdapter):
                 endpoint,
                 headers=headers,
                 json=payload,
-                timeout=timeout_sec,
+                timeout=(5, timeout_sec),
                 stream=True,
             )
             if response.status_code >= 400:
@@ -187,7 +187,7 @@ class OpenAICompatibleAdapter(AIProviderAdapter):
                 endpoint,
                 headers=headers,
                 json=payload,
-                timeout=timeout_sec,
+                timeout=(5, timeout_sec),
             )
             if response.status_code >= 400:
                 error_text = response.text[:300]
