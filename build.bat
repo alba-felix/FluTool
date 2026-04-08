@@ -9,8 +9,6 @@ pyinstaller --noconfirm --onedir --windowed ^
       --collect-all plugins ^
       --collect-submodules ui ^
       --collect-submodules core ^
-      --collect-submodules core.ai ^
-      --collect-submodules core.ai.providers ^
       --collect-submodules utils ^
       --hidden-import "uuid" ^
       --hidden-import "darkdetect" ^
