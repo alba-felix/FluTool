@@ -506,6 +506,9 @@ class FluentTitleBarButton(StandardTitleBar):
 		self.setFixedHeight(38)
 		self.hBoxLayout.setContentsMargins(16, 0, 0, 0)
 		FluentStyleSheet.FLUENT_WINDOW.apply(self)
+		# 隐藏标题栏图标
+		if hasattr(self, 'iconLabel'):
+			self.iconLabel.hide()
 
 
 class PushFluentWindow(FramelessMainWindow):
@@ -556,21 +559,24 @@ class PushFluentWindow(FramelessMainWindow):
 		self.titleBar.closeBtn.hide()
 		self.titleBar.minBtn.hide()
 		
+		# 左侧间距
+		self.titleBar.hBoxLayout.insertSpacing(2, 50)
+		
 		self._theme_btn = TransparentToolButton(FIF.CONSTRACT, self.titleBar)
 		self._theme_btn.setFixedSize(32, 32)
 		self._theme_btn.setIconSize(QSize(14, 14))
 		self._theme_btn.setToolTip("<p>切换主题</p>")
 		self._theme_btn.clicked.connect(self._toggle_theme)
-		self.titleBar.hBoxLayout.insertWidget(2, self._theme_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-		self.titleBar.hBoxLayout.insertSpacing(3, 8)
+		self.titleBar.hBoxLayout.insertWidget(3, self._theme_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+		self.titleBar.hBoxLayout.insertSpacing(4, 8)
 		
 		self._search_btn = TransparentToolButton(FIF.SEARCH, self.titleBar)
 		self._search_btn.setFixedSize(32, 32)
 		self._search_btn.setIconSize(QSize(14, 14))
 		self._search_btn.setToolTip("<p>全局搜索</p>")
 		self._search_btn.clicked.connect(self._on_global_search)
-		self.titleBar.hBoxLayout.insertWidget(2, self._search_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-		self.titleBar.hBoxLayout.insertSpacing(3, 8)
+		self.titleBar.hBoxLayout.insertWidget(3, self._search_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+		self.titleBar.hBoxLayout.insertSpacing(4, 8)
 		
 		self._hide_btn = TransparentToolButton(FIF.MINIMIZE, self.titleBar)
 		self._hide_btn.setFixedSize(46, 32)
@@ -640,6 +646,10 @@ class PushFluentWindow(FramelessMainWindow):
 		color_picker_action.triggered.connect(self._start_screen_color_picker)
 		self._tray_menu.addAction(color_picker_action)
 		
+		translate_action = QAction("翻译", self._tray_menu)
+		translate_action.triggered.connect(self._show_translator_window)
+		self._tray_menu.addAction(translate_action)
+		
 		self._tray_menu.addSeparator()
 		
 		quit_action = QAction("退出程序", self._tray_menu)
@@ -682,6 +692,15 @@ class PushFluentWindow(FramelessMainWindow):
 		self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
 		self.activateWindow()
 		self.raise_()
+	
+	def _show_translator_window(self) -> None:
+		"""显示翻译窗口"""
+		from .translator_window import TranslatorWindow
+		if not hasattr(self, '_translator_window') or self._translator_window is None:
+			self._translator_window = TranslatorWindow()
+		self._translator_window.show()
+		self._translator_window.raise_()
+		self._translator_window.activateWindow()
 	
 	def _toggle_theme(self) -> None:
 		from qfluentwidgets import qconfig
