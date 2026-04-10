@@ -1,20 +1,46 @@
-"""随手记编辑器 - 文本编辑区域"""
+"""随手记编辑器 - 文本编辑区域 - 性能优化版本"""
 
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QRect
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit
-from PyQt5.QtGui import QColor, QKeyEvent, QPainter
+from PyQt5.QtGui import QColor, QKeyEvent, QPainter, QFont, QFontMetrics
 from qfluentwidgets import isDarkTheme, qconfig
 
 from .highlighter import NotebookHighlighter
 
 
+class StyleCache:
+    """样式缓存"""
+    _dark_bg = None
+    _dark_text = None
+    _light_bg = None
+    _light_text = None
+    
+    @classmethod
+    def get_colors(cls, dark: bool):
+        """获取缓存的颜色"""
+        if dark:
+            if cls._dark_bg is None:
+                cls._dark_bg = QColor("#2d2d2d")
+                cls._dark_text = QColor("#ffffff")
+            return cls._dark_bg, cls._dark_text
+        else:
+            if cls._light_bg is None:
+                cls._light_bg = QColor("#f0f0f0")
+                cls._light_text = QColor("#333333")
+            return cls._light_bg, cls._light_text
+
+
 class LineNumberArea(QWidget):
-    """行号显示区域"""
+    """行号显示区域 - 性能优化版本"""
+    
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
+        self._cached_font = None
+        self._cached_fm = None
+        self._last_font_size = 0
         self.update_style()
-    
+
     def update_style(self):
         """更新样式"""
         dark = isDarkTheme()
@@ -22,19 +48,23 @@ class LineNumberArea(QWidget):
             self.setStyleSheet("background-color: #2d2d2d; border-right: 1px solid #3d3d3d;")
         else:
             self.setStyleSheet("background-color: #f0f0f0; border-right: 1px solid #ccc;")
-    
+
     def paintEvent(self, event):
-        """绘制行号"""
+        """绘制行号 - 优化版本"""
         painter = QPainter(self)
         dark = isDarkTheme()
         
-        bg_color = QColor("#2d2d2d") if dark else QColor("#f0f0f0")
+        bg_color, text_color = StyleCache.get_colors(dark)
         painter.fillRect(event.rect(), bg_color)
-        
-        text_color = QColor("#ffffff") if dark else QColor("#333333")
         painter.setPen(text_color)
         
-        painter.setFont(self.editor.font())
+        font = self.editor.font()
+        if self._cached_font != font:
+            self._cached_font = font
+            self._cached_fm = QFontMetrics(font)
+        fm = self._cached_fm
+        
+        painter.setFont(font)
         
         block = self.editor.firstVisibleBlock()
         block_number = block.blockNumber()
@@ -43,12 +73,13 @@ class LineNumberArea(QWidget):
         bottom = top + round(self.editor.blockBoundingRect(block).height())
         
         line_number_width = self.width() - 5
+        font_height = fm.height()
         
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(block_number + 1)
                 painter.drawText(0, top, line_number_width, 
-                               self.editor.fontMetrics().height(),
+                               font_height,
                                Qt.AlignRight | Qt.AlignTop, number)
             
             block = block.next()
@@ -58,12 +89,11 @@ class LineNumberArea(QWidget):
 
 
 class NotebookEditor(QWidget):
-    """编辑器组件"""
+    """编辑器组件 - 性能优化版本"""
     
-    # 自定义信号
-    enter_pressed = pyqtSignal()  # Enter 键按下
-    alt_enter_pressed = pyqtSignal()  # Alt+Enter 按下
-    save_signal = pyqtSignal()  # Ctrl+S
+    enter_pressed = pyqtSignal()
+    alt_enter_pressed = pyqtSignal()
+    save_signal = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,19 +152,15 @@ class NotebookEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setObjectName("notebookEditorLayout")
 
-        # 文本编辑器
         self._editor = CustomTextEdit(self)
         self._editor.setPlaceholderText("开始输入笔记内容...")
         self._editor.setObjectName("noteTextEdit")
-        # 连接信号
         self._editor.enter_pressed.connect(self.enter_pressed.emit)
         self._editor.alt_enter_pressed.connect(self.alt_enter_pressed.emit)
         self._editor.save_signal.connect(self.save_signal.emit)
         
-        # 设置样式
         self._update_editor_style()
-        
-        # 移除聚焦时的边框
+        self.set_font_size(13)
         self._editor.setFocusPolicy(Qt.StrongFocus)
         layout.addWidget(self._editor)
 
@@ -157,14 +183,20 @@ class NotebookEditor(QWidget):
         self._editor.setFont(font)
     
     def set_font_size(self, size: int):
-        """设置字体大小"""
-        font = self._editor.font()
-        font.setPointSize(size)
-        self._editor.setFont(font)
+        """设置字体大小 - 只设置内容字体，不影响行号"""
+        from PyQt5.QtGui import QTextCharFormat
+        
+        cursor = self._editor.textCursor()
+        cursor.select(cursor.Document)
+        
+        fmt = QTextCharFormat()
+        fmt.setFontPointSize(size)
+        cursor.mergeCharFormat(fmt)
+        self._editor.setCurrentCharFormat(fmt)
 
 
 class CustomTextEdit(QPlainTextEdit):
-    """自定义 TextEdit，支持快捷键和行号"""
+    """自定义 TextEdit，支持快捷键和行号 - 性能优化版本"""
     
     enter_pressed = pyqtSignal()
     alt_enter_pressed = pyqtSignal()
@@ -173,22 +205,30 @@ class CustomTextEdit(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.line_number_area = LineNumberArea(self)
+        self._cached_width = None
+        self._last_block_count = 0
 
         self.blockCountChanged.connect(self.update_line_number_area_width)
         self.updateRequest.connect(self.update_line_number_area)
 
         self.update_line_number_area_width()
-
         self.highlighter = NotebookHighlighter(self.document())
     
     def line_number_area_width(self):
-        """计算行号区域宽度"""
+        """计算行号区域宽度 - 优化版本"""
+        block_count = self.blockCount()
+        if block_count == self._last_block_count and self._cached_width is not None:
+            return self._cached_width
+        
+        self._last_block_count = block_count
         digits = 1
-        max_value = max(1, self.blockCount())
+        max_value = max(1, block_count)
         while max_value >= 10:
-            max_value /= 10
+            max_value //= 10
             digits += 1
-        return 20 + self.fontMetrics().horizontalAdvance('9') * max(3, digits)
+        
+        self._cached_width = 20 + self.fontMetrics().horizontalAdvance('9') * max(3, digits)
+        return self._cached_width
     
     def update_line_number_area_width(self, _=0):
         """更新行号区域宽度"""

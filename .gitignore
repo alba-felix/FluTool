@@ -15,6 +15,7 @@ config/local_settings.ini
 tests/
 config/time_lock_data.json
 cert/
+.golutra/
 
 
 # 分发/打包

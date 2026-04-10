@@ -1,85 +1,96 @@
-"""
-随手记语法高亮器
-包含基础高亮规则和语言特定高亮规则
-"""
+"""随手记语法高亮器 - 性能优化版本"""
 
-from PyQt5.QtCore import QRegExp
+from PyQt5.QtCore import QRegularExpression
 from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QFont, QColor
 
 
+class HighlighterCache:
+    """高亮器缓存 - 避免重复创建格式对象"""
+    _formats = {}
+    _patterns = {}
+    
+    @classmethod
+    def get_format(cls, key: str, color: tuple, bold: bool = False, italic: bool = False, underline: bool = False) -> QTextCharFormat:
+        """获取或创建格式对象"""
+        cache_key = (key, color, bold, italic, underline)
+        if cache_key not in cls._formats:
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(*color))
+            if bold:
+                fmt.setFontWeight(QFont.Bold)
+            if italic:
+                fmt.setFontItalic(True)
+            if underline:
+                fmt.setFontUnderline(True)
+            cls._formats[cache_key] = fmt
+        return cls._formats[cache_key]
+    
+    @classmethod
+    def get_pattern(cls, pattern: str) -> QRegularExpression:
+        """获取或创建正则表达式对象"""
+        if pattern not in cls._patterns:
+            cls._patterns[pattern] = QRegularExpression(pattern)
+        return cls._patterns[pattern]
+
+
 class BaseHighlighter(QSyntaxHighlighter):
-    """基础高亮器 - 包含通用语法高亮规则"""
+    """基础高亮器 - 优化版本"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.highlighting_rules = []
+        self._rules = []
         self._setup_common_rules()
 
     def highlightBlock(self, text):
-        """高亮文本块"""
-        for pattern, format in self.highlighting_rules:
-            expression = QRegExp(pattern)
-            index = expression.indexIn(text)
-            while index >= 0:
-                length = expression.matchedLength()
-                self.setFormat(index, length, format)
-                index = expression.indexIn(text, index + length)
+        """高亮文本块 - 使用缓存的正则表达式"""
+        for pattern, fmt in self._rules:
+            match_iterator = pattern.globalMatch(text)
+            while match_iterator.hasNext():
+                match = match_iterator.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
     def _setup_common_rules(self):
-        """设置通用高亮规则"""
-
-        number_format = QTextCharFormat()
-        number_format.setForeground(QColor(255, 255, 0))
-
-        string_format = QTextCharFormat()
-        string_format.setForeground(QColor(0, 255, 0))
-
-        bracket_format = QTextCharFormat()
-        bracket_format.setForeground(QColor(128, 0, 128))
-
-        angle_bracket_format = QTextCharFormat()
-        angle_bracket_format.setForeground(QColor(128, 0, 128))
-
-        url_format = QTextCharFormat()
-        url_format.setForeground(QColor(0, 0, 255))
-        url_format.setFontUnderline(True)
-
-        comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(128, 128, 128))
-        comment_format.setFontItalic(True)
-
-        paren_format = QTextCharFormat()
-        paren_format.setForeground(QColor(255, 255, 0))
-
-        hex_color_format = QTextCharFormat()
-        hex_color_format.setForeground(QColor(255, 165, 0))
-
-        self.highlighting_rules.append((r'\b\d+\b', number_format))
-        self.highlighting_rules.append((r'\b\d+\.\d+\b', number_format))
-
-        self.highlighting_rules.append((r'"[^"]*"', string_format))
-        self.highlighting_rules.append((r"'[^']*'", string_format))
-
-        self.highlighting_rules.append((r'\[', bracket_format))
-        self.highlighting_rules.append((r'\]', bracket_format))
-
-        self.highlighting_rules.append((r'<', angle_bracket_format))
-        self.highlighting_rules.append((r'>', angle_bracket_format))
-
-        self.highlighting_rules.append((r'https?://[^\s]+', url_format))
-
-        self.highlighting_rules.append((r'#[^\n]*', comment_format))
-
-        self.highlighting_rules.append((r'\(', paren_format))
-        self.highlighting_rules.append((r'\)', paren_format))
-
-        self.highlighting_rules.append((r'#[0-9a-fA-F]{6}\b', hex_color_format))
-        self.highlighting_rules.append((r'#[0-9a-fA-F]{3}\b', hex_color_format))
-        self.highlighting_rules.append((r'#[0-9a-fA-F]{8}\b', hex_color_format))
+        """设置通用高亮规则 - 预编译正则表达式"""
+        cache = HighlighterCache
+        
+        rules = [
+            (r'\b\d+\b', cache.get_format('number', (255, 255, 0))),
+            (r'\b\d+\.\d+\b', cache.get_format('number', (255, 255, 0))),
+            (r'"[^"]*"', cache.get_format('string', (0, 255, 0))),
+            (r"'[^']*'", cache.get_format('string', (0, 255, 0))),
+            (r'\[', cache.get_format('bracket', (128, 0, 128))),
+            (r'\]', cache.get_format('bracket', (128, 0, 128))),
+            (r'<', cache.get_format('angle', (128, 0, 128))),
+            (r'>', cache.get_format('angle', (128, 0, 128))),
+            (r'https?://[^\s]+', cache.get_format('url', (0, 0, 255), underline=True)),
+            (r'#[^\n]*', cache.get_format('comment', (128, 128, 128), italic=True)),
+            (r'\(', cache.get_format('paren', (255, 255, 0))),
+            (r'\)', cache.get_format('paren', (255, 255, 0))),
+            (r'#[0-9a-fA-F]{6}\b', cache.get_format('hex_color', (255, 165, 0))),
+            (r'#[0-9a-fA-F]{3}\b', cache.get_format('hex_color', (255, 165, 0))),
+            (r'#[0-9a-fA-F]{8}\b', cache.get_format('hex_color', (255, 165, 0))),
+        ]
+        
+        for pattern_str, fmt in rules:
+            pattern = QRegularExpression(pattern_str)
+            self._rules.append((pattern, fmt))
 
 
 class PythonHighlighter(BaseHighlighter):
-    """Python语法高亮器"""
+    """Python语法高亮器 - 优化版本"""
+
+    _keywords = [
+        'if', 'else', 'elif', 'for', 'while', 'break', 'continue',
+        'try', 'except', 'finally', 'raise', 'with',
+        'def', 'class', 'return', 'yield', 'lambda',
+        'import', 'from', 'as',
+        'and', 'or', 'not', 'in', 'is',
+        'True', 'False', 'None',
+        'pass', 'del', 'global', 'nonlocal', 'assert',
+        'async', 'await'
+    ]
+    
+    _keyword_pattern = None
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -87,60 +98,51 @@ class PythonHighlighter(BaseHighlighter):
 
     def _setup_rules(self):
         """设置Python特定语法高亮规则"""
-
-        keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor(255, 165, 0))
-        keyword_format.setFontWeight(QFont.Bold)
-
-        function_format = QTextCharFormat()
-        function_format.setForeground(QColor(0, 150, 255))
-
-        class_format = QTextCharFormat()
-        class_format.setForeground(QColor(0, 150, 255))
-        class_format.setFontWeight(QFont.Bold)
-
-        py_string_format = QTextCharFormat()
-        py_string_format.setForeground(QColor(0, 200, 100))
-
-        comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(128, 128, 128))
-        comment_format.setFontItalic(True)
-
-        number_format = QTextCharFormat()
-        number_format.setForeground(QColor(200, 100, 255))
-
-        python_keywords = [
-            'if', 'else', 'elif', 'for', 'while', 'break', 'continue',
-            'try', 'except', 'finally', 'raise', 'with',
-            'def', 'class', 'return', 'yield', 'lambda',
-            'import', 'from', 'as',
-            'and', 'or', 'not', 'in', 'is',
-            'True', 'False', 'None',
-            'pass', 'del', 'global', 'nonlocal', 'assert',
-            'async', 'await'
-        ]
-
-        for keyword in python_keywords:
-            self.highlighting_rules.append((f'\\b{keyword}\\b', keyword_format))
-
-        self.highlighting_rules.append((r'\b[a-zA-Z_][a-zA-Z0-9_]*\(', function_format))
-        self.highlighting_rules.append((r'\bclass\s+([a-zA-Z_][a-zA-Z0-9_]*)', class_format))
-        self.highlighting_rules.append((r'\bdef\s+([a-zA-Z_][a-zA-Z0-9_]*)', function_format))
-
-        self.highlighting_rules.append((r'"[^"]*"', py_string_format))
-        self.highlighting_rules.append((r"'[^']*'", py_string_format))
-        self.highlighting_rules.append((r'"""[^"""]*"""', py_string_format))
-        self.highlighting_rules.append((r"'''[^''']*'''", py_string_format))
-
-        self.highlighting_rules.append((r'#[^\n]*', comment_format))
-
-        self.highlighting_rules.append((r'\b\d+\b', number_format))
-        self.highlighting_rules.append((r'\b\d+\.\d+\b', number_format))
-        self.highlighting_rules.append((r'\b0x[0-9a-fA-F]+\b', number_format))
+        cache = HighlighterCache
+        
+        keyword_fmt = cache.get_format('py_keyword', (255, 165, 0), bold=True)
+        function_fmt = cache.get_format('py_function', (0, 150, 255))
+        class_fmt = cache.get_format('py_class', (0, 150, 255), bold=True)
+        string_fmt = cache.get_format('py_string', (0, 200, 100))
+        comment_fmt = cache.get_format('py_comment', (128, 128, 128), italic=True)
+        number_fmt = cache.get_format('py_number', (200, 100, 255))
+        
+        keyword_pattern_str = r'\b(' + '|'.join(self._keywords) + r')\b'
+        self._rules.append((QRegularExpression(keyword_pattern_str), keyword_fmt))
+        
+        self._rules.extend([
+            (QRegularExpression(r'\b[a-zA-Z_][a-zA-Z0-9_]*(?=\()'), function_fmt),
+            (QRegularExpression(r'\bclass\s+([a-zA-Z_][a-zA-Z0-9_]*)'), class_fmt),
+            (QRegularExpression(r'\bdef\s+([a-zA-Z_][a-zA-Z0-9_]*)'), function_fmt),
+            (QRegularExpression(r'"[^"]*"'), string_fmt),
+            (QRegularExpression(r"'[^']*'"), string_fmt),
+            (QRegularExpression(r'"""[\s\S]*?"""'), string_fmt),
+            (QRegularExpression(r"'''[\s\S]*?'''"), string_fmt),
+            (QRegularExpression(r'#[^\n]*'), comment_fmt),
+            (QRegularExpression(r'\b\d+\b'), number_fmt),
+            (QRegularExpression(r'\b\d+\.\d+\b'), number_fmt),
+            (QRegularExpression(r'\b0x[0-9a-fA-F]+\b'), number_fmt),
+        ])
 
 
 class BashHighlighter(BaseHighlighter):
-    """Bash脚本高亮器"""
+    """Bash脚本高亮器 - 优化版本"""
+
+    _keywords = [
+        'if', 'then', 'else', 'elif', 'fi',
+        'for', 'while', 'do', 'done',
+        'case', 'esac',
+        'function', 'return',
+        'in', 'select', 'until',
+        'export', 'source', 'alias', 'unalias',
+        'cd', 'pwd', 'ls', 'echo', 'printf', 'read',
+        'grep', 'sed', 'awk', 'find', 'xargs',
+        'chmod', 'chown', 'mkdir', 'rm', 'cp', 'mv', 'touch',
+        'sudo', 'apt', 'yum', 'dnf', 'pacman', 'brew',
+        'ssh', 'scp', 'rsync', 'curl', 'wget',
+        'git', 'docker', 'kubectl',
+        'true', 'false'
+    ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -148,227 +150,118 @@ class BashHighlighter(BaseHighlighter):
 
     def _setup_rules(self):
         """设置Bash特定语法高亮规则"""
-
-        keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor(255, 165, 0))
-        keyword_format.setFontWeight(QFont.Bold)
-
-        function_format = QTextCharFormat()
-        function_format.setForeground(QColor(0, 150, 255))
-
-        string_format = QTextCharFormat()
-        string_format.setForeground(QColor(0, 200, 100))
-
-        variable_format = QTextCharFormat()
-        variable_format.setForeground(QColor(255, 100, 100))
-
-        comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(128, 128, 128))
-        comment_format.setFontItalic(True)
-
-        bash_keywords = [
-            'if', 'then', 'else', 'elif', 'fi',
-            'for', 'while', 'do', 'done',
-            'case', 'esac',
-            'function', 'return',
-            'in', 'select', 'until',
-            'export', 'source', 'alias', 'unalias',
-            'cd', 'pwd', 'ls', 'echo', 'printf', 'read',
-            'grep', 'sed', 'awk', 'find', 'xargs',
-            'chmod', 'chown', 'mkdir', 'rm', 'cp', 'mv', 'touch',
-            'sudo', 'apt', 'yum', 'dnf', 'pacman', 'brew',
-            'ssh', 'scp', 'rsync', 'curl', 'wget',
-            'git', 'docker', 'kubectl',
-            'true', 'false'
-        ]
-
-        for keyword in bash_keywords:
-            self.highlighting_rules.append((f'\\b{keyword}\\b', keyword_format))
-
-        self.highlighting_rules.append((r'\$[a-zA-Z_][a-zA-Z0-9_]*', variable_format))
-        self.highlighting_rules.append((r'\$\{[^\}]+\}', variable_format))
-
-        self.highlighting_rules.append((r'"[^"]*"', string_format))
-        self.highlighting_rules.append((r"'[^']*'", string_format))
-
-        self.highlighting_rules.append((r'#[^\n]*', comment_format))
-
-        self.highlighting_rules.append((r'\b[a-zA-Z_][a-zA-Z0-9_]*=', function_format))
+        cache = HighlighterCache
+        
+        keyword_fmt = cache.get_format('bash_keyword', (255, 165, 0), bold=True)
+        function_fmt = cache.get_format('bash_function', (0, 150, 255))
+        string_fmt = cache.get_format('bash_string', (0, 200, 100))
+        variable_fmt = cache.get_format('bash_variable', (255, 100, 100))
+        comment_fmt = cache.get_format('bash_comment', (128, 128, 128), italic=True)
+        
+        keyword_pattern_str = r'\b(' + '|'.join(self._keywords) + r')\b'
+        self._rules.append((QRegularExpression(keyword_pattern_str), keyword_fmt))
+        
+        self._rules.extend([
+            (QRegularExpression(r'\$[a-zA-Z_][a-zA-Z0-9_]*'), variable_fmt),
+            (QRegularExpression(r'\$\{[^\}]+\}'), variable_fmt),
+            (QRegularExpression(r'"[^"]*"'), string_fmt),
+            (QRegularExpression(r"'[^']*'"), string_fmt),
+            (QRegularExpression(r'#[^\n]*'), comment_fmt),
+            (QRegularExpression(r'\b[a-zA-Z_][a-zA-Z0-9_]*(?==)'), function_fmt),
+        ])
 
 
 class NotebookHighlighter(QSyntaxHighlighter):
-    """随手记智能高亮器 - 根据内容片段自动检测语言类型"""
+    """随手记智能高亮器 - 优化版本"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.base = BaseHighlighter(parent)
-        self.python = PythonHighlighter(parent)
-        self.bash = BashHighlighter(parent)
-        self._rules = []
-        self._setup_rules()
+        self._base_rules = self._create_base_rules()
+        self._snippet_patterns = [
+            (QRegularExpression(r'```python\n[\s\S]*?\n```'), 'python'),
+            (QRegularExpression(r'```py\n[\s\S]*?\n```'), 'python'),
+            (QRegularExpression(r'```bash\n[\s\S]*?\n```'), 'bash'),
+            (QRegularExpression(r'```sh\n[\s\S]*?\n```'), 'bash'),
+            (QRegularExpression(r'```shell\n[\s\S]*?\n```'), 'bash'),
+            (QRegularExpression(r'`[^`\n]+`'), 'inline'),
+        ]
+        self._python_rules = self._create_python_rules()
+        self._bash_rules = self._create_bash_rules()
+        self._inline_fmt = HighlighterCache.get_format('inline', (255, 200, 100))
 
-    def _setup_rules(self):
-        """设置代码片段检测规则"""
-        self._rules = [
-            (r'```python\n[\s\S]*?\n```', 'python'),
-            (r'```py\n[\s\S]*?\n```', 'python'),
-            (r'```bash\n[\s\S]*?\n```', 'bash'),
-            (r'```sh\n[\s\S]*?\n```', 'bash'),
-            (r'```shell\n[\s\S]*?\n```', 'bash'),
-            (r'`[^`\n]+`', 'inline'),
+    def _create_base_rules(self):
+        """创建基础高亮规则"""
+        cache = HighlighterCache
+        return [
+            (QRegularExpression(r'\b\d+\b'), cache.get_format('base_num', (255, 255, 0))),
+            (QRegularExpression(r'\b\d+\.\d+\b'), cache.get_format('base_num', (255, 255, 0))),
+            (QRegularExpression(r'"[^"]*"'), cache.get_format('base_str', (0, 255, 0))),
+            (QRegularExpression(r"'[^']*'"), cache.get_format('base_str', (0, 255, 0))),
+            (QRegularExpression(r'#[^\n]*'), cache.get_format('base_comment', (128, 128, 128), italic=True)),
+        ]
+
+    def _create_python_rules(self):
+        """创建Python高亮规则"""
+        cache = HighlighterCache
+        keywords = ['if', 'else', 'elif', 'for', 'while', 'break', 'continue',
+                   'try', 'except', 'finally', 'raise', 'with',
+                   'def', 'class', 'return', 'yield', 'lambda',
+                   'import', 'from', 'as', 'and', 'or', 'not', 'in', 'is',
+                   'True', 'False', 'None', 'pass', 'del', 'global', 'nonlocal', 'assert']
+        
+        keyword_pattern = QRegularExpression(r'\b(' + '|'.join(keywords) + r')\b')
+        return [
+            (keyword_pattern, cache.get_format('snip_py_kw', (255, 165, 0), bold=True)),
+            (QRegularExpression(r'\b[a-zA-Z_][a-zA-Z0-9_]*(?=\()'), cache.get_format('snip_py_func', (0, 150, 255))),
+            (QRegularExpression(r'"[^"]*"'), cache.get_format('snip_py_str', (0, 200, 100))),
+            (QRegularExpression(r"'[^']*'"), cache.get_format('snip_py_str', (0, 200, 100))),
+            (QRegularExpression(r'#[^\n]*'), cache.get_format('snip_py_comment', (128, 128, 128), italic=True)),
+        ]
+
+    def _create_bash_rules(self):
+        """创建Bash高亮规则"""
+        cache = HighlighterCache
+        keywords = ['if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done',
+                   'case', 'esac', 'function', 'export', 'source', 'alias',
+                   'cd', 'echo', 'read', 'printf', 'grep', 'sed', 'awk', 'find',
+                   'chmod', 'mkdir', 'rm', 'cp', 'mv', 'sudo', 'git', 'docker', 'true', 'false']
+        
+        keyword_pattern = QRegularExpression(r'\b(' + '|'.join(keywords) + r')\b')
+        return [
+            (keyword_pattern, cache.get_format('snip_bash_kw', (255, 165, 0), bold=True)),
+            (QRegularExpression(r'\$[a-zA-Z_][a-zA-Z0-9_]*'), cache.get_format('snip_bash_var', (255, 100, 100))),
+            (QRegularExpression(r'"[^"]*"'), cache.get_format('snip_bash_str', (0, 200, 100))),
+            (QRegularExpression(r"'[^']*'"), cache.get_format('snip_bash_str', (0, 200, 100))),
+            (QRegularExpression(r'#[^\n]*'), cache.get_format('snip_bash_comment', (128, 128, 128), italic=True)),
         ]
 
     def highlightBlock(self, text):
-        """高亮文本块 - 先应用基础高亮，再处理代码片段"""
-        self.base.highlightBlock(text)
-        self._highlight_snippets(text)
-
-    def _highlight_snippets(self, text):
-        """高亮代码片段"""
-        for pattern, lang in self._rules:
-            expression = QRegExp(pattern)
-            index = expression.indexIn(text)
-            while index >= 0:
-                length = expression.matchedLength()
-                snippet = text[index:index + length]
-
+        """高亮文本块"""
+        for pattern, fmt in self._base_rules:
+            match_iterator = pattern.globalMatch(text)
+            while match_iterator.hasNext():
+                match = match_iterator.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+        
+        for pattern, lang in self._snippet_patterns:
+            match_iterator = pattern.globalMatch(text)
+            while match_iterator.hasNext():
+                match = match_iterator.next()
+                start = match.capturedStart()
+                length = match.capturedLength()
+                snippet = match.capturedTexts()[0] if match.capturedTexts() else text[start:start+length]
+                
                 if lang == 'python':
-                    self._apply_python_highlight(snippet, index)
+                    self._apply_rules(snippet, start, self._python_rules)
                 elif lang == 'bash':
-                    self._apply_bash_highlight(snippet, index)
+                    self._apply_rules(snippet, start, self._bash_rules)
                 elif lang == 'inline':
-                    self._apply_inline_highlight(snippet, index)
+                    self.setFormat(start, length, self._inline_fmt)
 
-                index = expression.indexIn(text, index + length)
-
-    def _apply_python_highlight(self, snippet, offset):
-        """应用Python高亮到代码片段"""
-        clean_code = self._strip_fence(snippet)
-        if not clean_code:
-            return
-
-        keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor(255, 165, 0))
-        keyword_format.setFontWeight(QFont.Bold)
-
-        function_format = QTextCharFormat()
-        function_format.setForeground(QColor(0, 150, 255))
-
-        string_format = QTextCharFormat()
-        string_format.setForeground(QColor(0, 200, 100))
-
-        comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(128, 128, 128))
-        comment_format.setFontItalic(True)
-
-        python_keywords = [
-            'if', 'else', 'elif', 'for', 'while', 'break', 'continue',
-            'try', 'except', 'finally', 'raise', 'with',
-            'def', 'class', 'return', 'yield', 'lambda',
-            'import', 'from', 'as',
-            'and', 'or', 'not', 'in', 'is',
-            'True', 'False', 'None',
-            'pass', 'del', 'global', 'nonlocal', 'assert'
-        ]
-
-        for keyword in python_keywords:
-            pattern = f'\\b{keyword}\\b'
-            expr = QRegExp(pattern)
-            idx = expr.indexIn(clean_code)
-            while idx >= 0:
-                length = expr.matchedLength()
-                self.setFormat(offset + idx, length, keyword_format)
-                idx = expr.indexIn(clean_code, idx + length)
-
-        func_expr = QRegExp(r'\b[a-zA-Z_][a-zA-Z0-9_]*\(')
-        idx = func_expr.indexIn(clean_code)
-        while idx >= 0:
-            length = func_expr.matchedLength()
-            self.setFormat(offset + idx, length, function_format)
-            idx = func_expr.indexIn(clean_code, idx + length)
-
-        for pattern, fmt in [
-            (r'"[^"]*"', string_format),
-            (r"'[^']*'", string_format),
-            (r'#[^\n]*', comment_format),
-        ]:
-            expr = QRegExp(pattern)
-            idx = expr.indexIn(clean_code)
-            while idx >= 0:
-                length = expr.matchedLength()
-                self.setFormat(offset + idx, length, fmt)
-                idx = expr.indexIn(clean_code, idx + length)
-
-    def _apply_bash_highlight(self, snippet, offset):
-        """应用Bash高亮到代码片段"""
-        clean_code = self._strip_fence(snippet)
-        if not clean_code:
-            return
-
-        keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor(255, 165, 0))
-        keyword_format.setFontWeight(QFont.Bold)
-
-        variable_format = QTextCharFormat()
-        variable_format.setForeground(QColor(255, 100, 100))
-
-        string_format = QTextCharFormat()
-        string_format.setForeground(QColor(0, 200, 100))
-
-        comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor(128, 128, 128))
-        comment_format.setFontItalic(True)
-
-        bash_keywords = [
-            'if', 'then', 'else', 'elif', 'fi',
-            'for', 'while', 'do', 'done',
-            'case', 'esac', 'function',
-            'export', 'source', 'alias',
-            'cd', 'echo', 'read', 'printf',
-            'grep', 'sed', 'awk', 'find',
-            'chmod', 'mkdir', 'rm', 'cp', 'mv',
-            'sudo', 'git', 'docker',
-            'true', 'false'
-        ]
-
-        for keyword in bash_keywords:
-            pattern = f'\\b{keyword}\\b'
-            expr = QRegExp(pattern)
-            idx = expr.indexIn(clean_code)
-            while idx >= 0:
-                length = expr.matchedLength()
-                self.setFormat(offset + idx, length, keyword_format)
-                idx = expr.indexIn(clean_code, idx + length)
-
-        var_expr = QRegExp(r'\$[a-zA-Z_][a-zA-Z0-9_]*')
-        idx = var_expr.indexIn(clean_code)
-        while idx >= 0:
-            length = var_expr.matchedLength()
-            self.setFormat(offset + idx, length, variable_format)
-            idx = var_expr.indexIn(clean_code, idx + length)
-
-        for pattern, fmt in [
-            (r'"[^"]*"', string_format),
-            (r"'[^']*'", string_format),
-            (r'#[^\n]*', comment_format),
-        ]:
-            expr = QRegExp(pattern)
-            idx = expr.indexIn(clean_code)
-            while idx >= 0:
-                length = expr.matchedLength()
-                self.setFormat(offset + idx, length, fmt)
-                idx = expr.indexIn(clean_code, idx + length)
-
-    def _apply_inline_highlight(self, snippet, offset):
-        """应用行内代码高亮"""
-        inline_format = QTextCharFormat()
-        inline_format.setForeground(QColor(255, 200, 100))
-        inline_format.setBackground(QColor(50, 50, 50))
-        self.setFormat(offset, len(snippet), inline_format)
-
-    def _strip_fence(self, code):
-        """去除代码 fences"""
-        lines = code.split('\n')
-        if len(lines) <= 2:
-            return code
-        return '\n'.join(lines[1:-1] if lines[0].startswith('```') else lines)
+    def _apply_rules(self, text: str, offset: int, rules: list):
+        """应用高亮规则"""
+        for pattern, fmt in rules:
+            match_iterator = pattern.globalMatch(text)
+            while match_iterator.hasNext():
+                match = match_iterator.next()
+                self.setFormat(offset + match.capturedStart(), match.capturedLength(), fmt)

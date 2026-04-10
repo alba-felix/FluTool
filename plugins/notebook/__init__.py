@@ -2,7 +2,7 @@
 
 from typing import Optional, List, Dict, Any
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFileDialog
 from qfluentwidgets import (
     LineEdit, ComboBox, SpinBox, PushButton, ToolButton, 
     SearchLineEdit, InfoBar, InfoBarPosition, MessageBox, MessageBoxBase
@@ -16,6 +16,8 @@ from core import SearchResult
 from .sidebar import NotebookSidebar
 from .toolbar import NotebookToolBar
 from .editor import NotebookEditor
+from .quick_replace import QuickReplacePanel
+from .text_processor import TextProcessor
 
 
 class NotebookDatabase:
@@ -28,7 +30,7 @@ class NotebookDatabase:
     
     def add_note(self, plugin_id: str, title: str, content: str,
                  category_name: str = None, note_type: str = 'markdown',
-                 sort_order: int = 0) -> int:
+                 sort_order: int = 0, color: str = None) -> int:
         """添加笔记"""
         with self.db.get_connection() as conn:
             category_id = None
@@ -41,9 +43,9 @@ class NotebookDatabase:
                 if row:
                     category_id = row['id']
             cursor = conn.execute(
-                """INSERT INTO notebook (plugin_id, category_id, title, content, note_type, sort_order) 
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (plugin_id, category_id, title, content, note_type, sort_order)
+                """INSERT INTO notebook (plugin_id, category_id, title, content, note_type, sort_order, color) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (plugin_id, category_id, title, content, note_type, sort_order, color)
             )
             conn.commit()
             return cursor.lastrowid
@@ -82,7 +84,7 @@ class NotebookDatabase:
     
     def update_note(self, plugin_id: str, note_id: int, **kwargs) -> bool:
         """更新笔记"""
-        allowed_fields = {'title', 'content', 'note_type', 'category_id', 'sort_order'}
+        allowed_fields = {'title', 'content', 'note_type', 'category_id', 'sort_order', 'color'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not updates:
             return False
@@ -132,6 +134,7 @@ class NotebookWidget(QWidget):
         self.db = NotebookDatabase()
         self.PLUGIN_ID = "notebook"
         self._current_note_id = None
+        self._quick_replace_visible = False
         self._setup_ui()
         self._connect_signals()
 
@@ -140,12 +143,10 @@ class NotebookWidget(QWidget):
         self.setObjectName("notebookWidget")
         self.setStyleSheet("NotebookWidget{background: transparent;}")
 
-        # 主布局
         main_layout = QHBoxLayout(self)
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 创建最外层的滚动区域
         from qfluentwidgets import ScrollArea as FluentScrollArea
         self._main_scroll_area = FluentScrollArea()
         self._main_scroll_area.setWidgetResizable(True)
@@ -167,7 +168,6 @@ class NotebookWidget(QWidget):
             }
         """)
         
-        # 创建内容容器
         self._content_widget = QWidget()
         self._content_widget.setObjectName("contentWidget")
         self._content_widget.setStyleSheet("QWidget#contentWidget{background: transparent;}")
@@ -175,14 +175,12 @@ class NotebookWidget(QWidget):
         self._content_layout.setSpacing(0)
         self._content_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 分隔符
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setHandleWidth(1)
-        splitter.setObjectName("notebookSplitter")
+        self._main_splitter = QSplitter(Qt.Horizontal)
+        self._main_splitter.setHandleWidth(1)
+        self._main_splitter.setObjectName("notebookMainSplitter")
         
-        # 设置样式 - 添加边框
-        splitter.setStyleSheet("""
-            QSplitter#notebookSplitter {
+        self._main_splitter.setStyleSheet("""
+            QSplitter#notebookMainSplitter {
                 border: 1px solid rgba(0, 0, 0, 0.06);
                 border-radius: 5px;
                 background: transparent;
@@ -193,7 +191,10 @@ class NotebookWidget(QWidget):
             }
         """)
 
-        # 左侧边栏
+        self._left_splitter = QSplitter(Qt.Horizontal)
+        self._left_splitter.setHandleWidth(1)
+        self._left_splitter.setObjectName("notebookLeftSplitter")
+
         self._sidebar = NotebookSidebar(self)
         self._sidebar.setStyleSheet("""
             NotebookSidebar {
@@ -201,9 +202,8 @@ class NotebookWidget(QWidget):
                 border-right: 1px solid rgba(0, 0, 0, 0.06);
             }
         """)
-        splitter.addWidget(self._sidebar)
+        self._left_splitter.addWidget(self._sidebar)
 
-        # 右侧编辑区
         self._editor_container = QWidget()
         self._editor_container.setObjectName("editorContainer")
         self._editor_container.setStyleSheet("""
@@ -215,7 +215,6 @@ class NotebookWidget(QWidget):
         self._editor_layout.setSpacing(0)
         self._editor_layout.setContentsMargins(0, 0, 0, 0)
 
-        # 工具栏
         self._toolbar = NotebookToolBar(self)
         self._toolbar.setStyleSheet("""
             NotebookToolBar {
@@ -224,7 +223,6 @@ class NotebookWidget(QWidget):
             }
         """)
         
-        # 创建滚动区域包装工具栏
         from qfluentwidgets import ScrollArea as FluentScrollArea
         self._toolbar_scroll_area = FluentScrollArea()
         self._toolbar_scroll_area.setWidgetResizable(True)
@@ -250,13 +248,11 @@ class NotebookWidget(QWidget):
         
         self._editor_layout.addWidget(self._toolbar_scroll_area)
 
-        # 创建滚动区域包装编辑器
         from qfluentwidgets import ScrollArea
         self._editor_scroll_area = ScrollArea()
         self._editor_scroll_area.setWidgetResizable(True)
         self._editor_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._editor_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        # 设置滚动区域背景透明
         self._editor_scroll_area.setStyleSheet("""
             ScrollArea {
                 background: transparent;
@@ -278,7 +274,6 @@ class NotebookWidget(QWidget):
             }
         """)
         
-        # 编辑器
         self._editor = NotebookEditor(self)
         self._editor.setStyleSheet("""
             NotebookEditor {
@@ -299,16 +294,22 @@ class NotebookWidget(QWidget):
         self._editor_scroll_area.setWidget(self._editor)
         self._editor_layout.addWidget(self._editor_scroll_area)
 
-        splitter.addWidget(self._editor_container)
+        self._left_splitter.addWidget(self._editor_container)
+        self._left_splitter.setStretchFactor(0, 0)
+        self._left_splitter.setStretchFactor(1, 1)
+        self._left_splitter.setSizes([250, 800])
 
-        # 设置分割比例
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([250, 1000])
+        self._quick_replace_panel = QuickReplacePanel(self)
+        self._quick_replace_panel.setFixedWidth(280)
+        self._quick_replace_panel.hide()
 
-        self._content_layout.addWidget(splitter)
+        self._main_splitter.addWidget(self._left_splitter)
+        self._main_splitter.addWidget(self._quick_replace_panel)
+        self._main_splitter.setStretchFactor(0, 1)
+        self._main_splitter.setStretchFactor(1, 0)
+
+        self._content_layout.addWidget(self._main_splitter)
         
-        # 将内容容器添加到滚动区域
         self._main_scroll_area.setWidget(self._content_widget)
         
         main_layout.addWidget(self._main_scroll_area)
@@ -317,6 +318,10 @@ class NotebookWidget(QWidget):
         """连接信号"""
         self._sidebar.note_selected.connect(self._load_note)
         self._sidebar.note_created.connect(self._create_new_note)
+        self._sidebar.note_deleted.connect(self._delete_note_by_id)
+        self._sidebar.note_renamed.connect(self._rename_note)
+        self._sidebar.note_exported.connect(self._export_note_by_id)
+        
         self._toolbar.new_note_signal.connect(self._create_new_note)
         self._toolbar.save_note_signal.connect(self._save_note)
         self._toolbar.delete_note_signal.connect(self._delete_note)
@@ -327,8 +332,14 @@ class NotebookWidget(QWidget):
         self._toolbar.export_note_signal.connect(self._export_note)
         self._toolbar.font_changed.connect(self._change_font)
         self._toolbar.font_size_changed.connect(self._change_font_size)
+        self._toolbar.wrap_toggled.connect(self._toggle_wrap)
+        self._toolbar.quick_replace_toggled.connect(self._toggle_quick_replace)
+        self._toolbar.list_toggled.connect(self._toggle_list)
+        
         self._editor.alt_enter_pressed.connect(self._on_alt_enter_pressed)
         self._editor.save_signal.connect(self._save_note)
+        
+        self._quick_replace_panel.replace_triggered.connect(self._execute_quick_replace)
     
     def load_data(self):
         """加载数据"""
@@ -341,7 +352,9 @@ class NotebookWidget(QWidget):
             if note['id'] == note_id:
                 self._current_note_id = note_id
                 self._editor.set_content(note['content'])
-                self._toolbar.set_note_type(note['note_type'])
+                self._toolbar.set_note_type(note.get('note_type', 'markdown'))
+                self._editor._editor.setLineWrapMode(1)
+                self._toolbar.set_wrap_state(True)
                 break
     
     def _create_new_note(self):
@@ -349,13 +362,10 @@ class NotebookWidget(QWidget):
         self._current_note_id = None
         self._editor.clear()
         self._toolbar.set_note_type('markdown')
+        self._toolbar.set_wrap_state(True)
     
     def _save_note(self):
-        """保存笔记
-
-        第一次保存：弹出对话框输入标题
-        后续保存：直接覆盖保存
-        """
+        """保存笔记"""
         from qfluentwidgets import MessageBoxBase, LineEdit
         from PyQt5.QtWidgets import QVBoxLayout
         from datetime import datetime
@@ -363,7 +373,6 @@ class NotebookWidget(QWidget):
         content = self._editor.get_content()
         note_type = self._toolbar.get_note_type()
 
-        # 如果已有笔记ID，直接覆盖保存
         if self._current_note_id:
             notes = self.db.get_notes(self.PLUGIN_ID)
             current_title = ""
@@ -383,7 +392,6 @@ class NotebookWidget(QWidget):
             self.note_saved.emit()
             return
 
-        # 第一次保存，弹出对话框
         dialog = MessageBoxBase(self)
         dialog.setWindowTitle("保存笔记")
 
@@ -398,7 +406,6 @@ class NotebookWidget(QWidget):
 
         if dialog.exec():
             title = self._save_name_edit.text().strip()
-            # 如果标题为空，使用当前时间作为标题
             if not title:
                 title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -429,29 +436,176 @@ class NotebookWidget(QWidget):
             InfoBar.success("删除成功", "笔记已删除", parent=self)
             self.note_deleted.emit()
     
+    def _delete_note_by_id(self, note_id: int):
+        """通过ID删除笔记"""
+        box = MessageBox("删除笔记", "确定要删除该笔记吗？", self)
+        if box.exec():
+            self.db.delete_note(self.PLUGIN_ID, note_id)
+            if self._current_note_id == note_id:
+                self._current_note_id = None
+                self._editor.clear()
+            self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+            InfoBar.success("删除成功", "笔记已删除", parent=self)
+            self.note_deleted.emit()
+    
+    def _rename_note(self, note_id: int, new_title: str):
+        """重命名笔记"""
+        if self.db.note_exists(self.PLUGIN_ID, new_title):
+            InfoBar.warning("提示", "已存在同名笔记", parent=self)
+            return
+        
+        self.db.update_note(self.PLUGIN_ID, note_id, title=new_title)
+        self._sidebar.update_note_title(note_id, new_title)
+        InfoBar.success("重命名成功", f"笔记已重命名为 '{new_title}'", parent=self)
+    
     def _format_note(self, format_type: str):
         """格式化笔记"""
-        self.core.logger.info(f"格式化笔记：{format_type}")
-        # TODO: 实现格式化逻辑
+        content = self._editor.get_content()
+        
+        if format_type == "ul":
+            self._toggle_unordered_list()
+        elif format_type == "ol":
+            self._toggle_ordered_list()
+        elif format_type == "format":
+            self._format_code()
+    
+    def _toggle_unordered_list(self):
+        """切换无序列表"""
+        cursor = self._editor._editor.textCursor()
+        selected_text = cursor.selectedText()
+        
+        if selected_text:
+            lines = selected_text.split('\u2029')
+            new_lines = []
+            all_have_bullet = all(line.startswith('● ') for line in lines if line.strip())
+            
+            for line in lines:
+                if all_have_bullet and line.startswith('● '):
+                    new_lines.append(line[2:])
+                elif not all_have_bullet and not line.startswith('● '):
+                    new_lines.append('● ' + line)
+                else:
+                    new_lines.append(line)
+            cursor.insertText('\n'.join(new_lines))
+        else:
+            cursor.select(cursor.LineUnderCursor)
+            line = cursor.selectedText()
+            if line.startswith('● '):
+                cursor.insertText(line[2:])
+            else:
+                cursor.insertText('● ' + line)
+    
+    def _toggle_ordered_list(self):
+        """切换有序列表"""
+        cursor = self._editor._editor.textCursor()
+        selected_text = cursor.selectedText()
+        
+        if selected_text:
+            lines = selected_text.split('\u2029')
+            new_lines = []
+            all_numbered = True
+            for i, line in enumerate(lines, 1):
+                if line.strip() and not line.startswith(f'{i}. '):
+                    all_numbered = False
+                    break
+            
+            if all_numbered:
+                for i, line in enumerate(lines, 1):
+                    prefix = f'{i}. '
+                    if line.startswith(prefix):
+                        new_lines.append(line[len(prefix):])
+                    else:
+                        new_lines.append(line)
+            else:
+                for i, line in enumerate(lines, 1):
+                    prefix = f'{i}. '
+                    if not line.startswith(prefix):
+                        new_lines.append(prefix + line)
+                    else:
+                        new_lines.append(line)
+            cursor.insertText('\n'.join(new_lines))
+        else:
+            cursor.select(cursor.LineUnderCursor)
+            line = cursor.selectedText()
+            if line and len(line) >= 3 and line[0].isdigit() and line[1] == '.' and line[2] == ' ':
+                cursor.insertText(line[3:])
+            else:
+                cursor.insertText('1. ' + line)
+    
+    def _format_code(self):
+        """格式化代码"""
+        note_type = self._toolbar.get_note_type()
+        content = self._editor.get_content()
+        
+        try:
+            if note_type == 'json':
+                import json
+                formatted = json.dumps(json.loads(content), indent=2, ensure_ascii=False)
+                self._editor.set_content(formatted)
+            elif note_type == 'sql':
+                try:
+                    import sqlparse
+                    formatted = sqlparse.format(content, reindent=True, indent_width=4)
+                    self._editor.set_content(formatted)
+                except ImportError:
+                    InfoBar.warning("提示", "请安装 sqlparse 库: pip install sqlparse", parent=self)
+            elif note_type == 'xml':
+                try:
+                    import xml.dom.minidom
+                    dom = xml.dom.minidom.parseString(content)
+                    formatted = dom.toprettyxml(indent="  ")
+                    self._editor.set_content(formatted)
+                except Exception as e:
+                    InfoBar.error("格式化失败", str(e), parent=self)
+            elif note_type == 'html':
+                try:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(content, 'html.parser')
+                    formatted = soup.prettify()
+                    self._editor.set_content(formatted)
+                except ImportError:
+                    InfoBar.warning("提示", "请安装 beautifulsoup4 库: pip install beautifulsoup4", parent=self)
+            else:
+                InfoBar.info("提示", f"暂不支持 {note_type} 格式化", parent=self)
+        except Exception as e:
+            InfoBar.error("格式化失败", str(e), parent=self)
     
     def _show_doc_info(self):
         """显示文档信息"""
-        from qfluentwidgets import InfoBar, InfoBarPosition
         content = self._editor.get_content()
         char_count = len(content)
+        char_no_space = len(content.replace(' ', '').replace('\t', '').replace('\n', ''))
         line_count = len(content.splitlines())
+        word_count = len(content.split())
+        
+        notes = self.db.get_notes(self.PLUGIN_ID)
+        created_at = ""
+        updated_at = ""
+        for note in notes:
+            if note['id'] == self._current_note_id:
+                created_at = note.get('created_at', '')
+                updated_at = note.get('updated_at', '')
+                break
+        
+        info_text = f"""字符数：{char_count}
+字符数(不含空白)：{char_no_space}
+单词数：{word_count}
+行数：{line_count}
+创建时间：{created_at}
+更新时间：{updated_at}"""
+        
         InfoBar.info(
             title="文档信息",
-            content=f"字符数：{char_count}\n行数：{line_count}",
+            content=info_text,
             orient=Qt.Vertical,
             isClosable=True,
             position=InfoBarPosition.TOP,
-            duration=3000,
+            duration=5000,
             parent=self
         )
     
     def _find_text(self):
-        """查找文本 - 使用无边框对话框"""
+        """查找文本"""
         from qfluentwidgets import MessageBoxBase
         from PyQt5.QtWidgets import QVBoxLayout
         
@@ -470,7 +624,6 @@ class NotebookWidget(QWidget):
         if dialog.exec():
             text = find_edit.text()
             if text:
-                # 使用 QTextEdit 的 find 方法
                 found = self._editor._editor.find(text)
                 if found:
                     InfoBar.success("查找成功", f"找到 '{text}'", parent=self)
@@ -478,7 +631,7 @@ class NotebookWidget(QWidget):
                     InfoBar.warning("未找到", f"未找到 '{text}'", parent=self)
     
     def _replace_text(self):
-        """替换文本 - 简单实现"""
+        """替换文本"""
         from qfluentwidgets import MessageBoxBase, LineEdit
         from PyQt5.QtWidgets import QVBoxLayout
         
@@ -509,9 +662,28 @@ class NotebookWidget(QWidget):
     
     def _export_note(self):
         """导出笔记"""
-        from qfluentwidgets import MessageBoxBase, ComboBox, InfoBar, PushButton
-        from PyQt5.QtWidgets import QVBoxLayout, QFileDialog
-        from pathlib import Path
+        if not self._current_note_id:
+            InfoBar.warning("提示", "请先选择要导出的笔记", parent=self)
+            return
+        
+        notes = self.db.get_notes(self.PLUGIN_ID)
+        for note in notes:
+            if note['id'] == self._current_note_id:
+                self._do_export_note(note)
+                break
+    
+    def _export_note_by_id(self, note_id: int):
+        """通过ID导出笔记"""
+        notes = self.db.get_notes(self.PLUGIN_ID)
+        for note in notes:
+            if note['id'] == note_id:
+                self._do_export_note(note)
+                break
+    
+    def _do_export_note(self, note: dict):
+        """执行导出"""
+        from qfluentwidgets import ComboBox
+        from PyQt5.QtWidgets import QVBoxLayout
         
         dialog = MessageBoxBase(self)
         dialog.setWindowTitle("导出笔记")
@@ -525,10 +697,10 @@ class NotebookWidget(QWidget):
         
         if dialog.exec():
             format_type = format_combo.currentText()
-            content = self._editor.get_content()
+            content = note['content']
             
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "保存文件", "",
+                self, "保存文件", note['title'],
                 f"{format_type} 文件 (*.{format_type.lower()})"
             )
             
@@ -547,6 +719,49 @@ class NotebookWidget(QWidget):
     def _change_font_size(self, size: int):
         """更改字体大小"""
         self._editor.set_font_size(size)
+    
+    def _toggle_wrap(self, wrapped: bool):
+        """切换自动换行"""
+        self._editor._editor.setLineWrapMode(1 if wrapped else 0)
+    
+    def _toggle_quick_replace(self, visible: bool):
+        """切换快捷替换面板"""
+        self._quick_replace_visible = visible
+        if visible:
+            self._quick_replace_panel.show()
+            self._main_splitter.setSizes([self.width() - 280, 280])
+        else:
+            self._quick_replace_panel.hide()
+    
+    def _toggle_list(self, visible: bool):
+        """切换列表显示"""
+        if visible:
+            self._sidebar.show()
+            self._left_splitter.setSizes([250, self._left_splitter.width() - 250])
+        else:
+            self._sidebar.hide()
+    
+    def _execute_quick_replace(self):
+        """执行快捷替换"""
+        options = self._quick_replace_panel.get_options()
+        
+        if not any(options.values()):
+            InfoBar.warning("提示", "请至少选择一个替换选项", parent=self)
+            return
+        
+        cursor = self._editor._editor.textCursor()
+        selected_text = cursor.selectedText()
+        
+        if selected_text:
+            content = selected_text.replace('\u2029', '\n')
+            result = TextProcessor.process(content, options)
+            cursor.insertText(result)
+        else:
+            content = self._editor.get_content()
+            result = TextProcessor.process(content, options)
+            self._editor.set_content(result)
+        
+        InfoBar.success("替换完成", "快捷替换已执行", parent=self)
     
     def _on_alt_enter_pressed(self):
         """处理 Alt+Enter 键 - 弹出保存对话框"""
