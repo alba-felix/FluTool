@@ -261,7 +261,7 @@ class PasswordWidget(QWidget):
         
         # 密码树形列表
         self.tree = TreeWidget(self)
-        self.tree.setHeaderLabels(["平台/网站", "用户名", "密码", "邮箱/手机号", "备注"])
+        self.tree.setHeaderLabels(["平台/网站", "用户名", "密码", "邮箱/手机号", "备注(双击可跳转)"])
         self.tree.setColumnWidth(0, 150)
         self.tree.setColumnWidth(1, 150)
         self.tree.setColumnWidth(2, 120)
@@ -310,7 +310,7 @@ class PasswordWidget(QWidget):
                     last_time_str = self.config['Password']['last_password_time']
                     try:
                         last_time = datetime.datetime.strptime(last_time_str, '%Y-%m-%d %H:%M:%S')
-                        if (datetime.datetime.now() - last_time).days < 8:
+                        if (datetime.datetime.now() - last_time).days < 30:
                             self.is_decrypted = True
                     except:
                         pass
@@ -493,7 +493,7 @@ class PasswordWidget(QWidget):
             )
     
     def _on_item_double_clicked(self, item, column):
-        """双击项目时根据列复制对应内容"""
+        """双击项目时根据列复制对应内容，备注列支持链接跳转"""
         if not item.parent():
             return
         
@@ -505,6 +505,31 @@ class PasswordWidget(QWidget):
         username = item.text(1)
         encrypted_pwd = item.data(1, Qt.UserRole)
         email = item.text(3)
+        notes = item.text(4)
+        
+        # 双击备注列时检查是否有链接
+        if column == 4:
+            import re
+            import webbrowser
+            
+            # 匹配URL模式（支持 http/https，以及被文本包围的链接）
+            url_pattern = r'https?://[^\s<>"\')\]]+'
+            urls = re.findall(url_pattern, notes)
+            
+            if urls:
+                # 打开第一个找到的链接
+                url = urls[0]
+                webbrowser.open(url)
+                InfoBar.success(
+                    title="正在打开",
+                    content=f"正在浏览器中打开链接",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
         
         password = ""
         if encrypted_pwd and encrypted_pwd.startswith("encrypted:"):
@@ -520,6 +545,7 @@ class PasswordWidget(QWidget):
             1: (username, "用户名"),
             2: (password, "密码"),
             3: (email, "邮箱/手机号"),
+            4: (notes, "备注"),
         }
         
         if column in copy_map:

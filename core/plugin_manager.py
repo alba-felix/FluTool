@@ -20,6 +20,8 @@ class PluginManager:
     """
     
     def __init__(self, core):
+        if core is None:
+            raise ValueError("Core instance cannot be None")
         self._core = core
         self._plugins: Dict[str, PluginInterface] = {}
         self._plugin_dirs: Dict[str, Path] = {}
@@ -36,28 +38,35 @@ class PluginManager:
         Returns:
             发现的插件ID列表
         """
+        if not plugin_path:
+            self._core.logger.warning("Plugin path is empty")
+            return []
+        
         plugin_dir = Path(plugin_path)
         if not plugin_dir.exists():
             self._core.logger.warning(f"Plugin directory not found: {plugin_path}")
             return []
         
-        # 扫描插件并收集优先级信息
-        plugin_info: List[Tuple[int, str]] = []  # (priority, plugin_id)
+        if not plugin_dir.is_dir():
+            self._core.logger.warning(f"Plugin path is not a directory: {plugin_path}")
+            return []
         
-        for item in plugin_dir.iterdir():
-            if item.is_dir() and not item.name.startswith('_'):
-                plugin_id = self._discover_plugin(item)
-                if plugin_id:
-                    self._plugin_dirs[plugin_id] = item
-                    
-                    # 获取插件优先级
-                    priority = self._get_plugin_priority(plugin_id)
-                    plugin_info.append((priority, plugin_id))
+        plugin_info: List[Tuple[int, str]] = []
         
-        # 按优先级排序（数字越小越靠前）
+        try:
+            for item in plugin_dir.iterdir():
+                if item.is_dir() and not item.name.startswith('_'):
+                    plugin_id = self._discover_plugin(item)
+                    if plugin_id:
+                        self._plugin_dirs[plugin_id] = item
+                        priority = self._get_plugin_priority(plugin_id)
+                        plugin_info.append((priority, plugin_id))
+        except PermissionError as e:
+            self._core.logger.error(f"Permission denied accessing plugin directory: {e}")
+        except OSError as e:
+            self._core.logger.error(f"OS error scanning plugins: {e}")
+        
         plugin_info.sort(key=lambda x: x[0])
-        
-        # 返回排序后的插件ID列表
         return [plugin_id for _, plugin_id in plugin_info]
     
     def _get_plugin_priority(self, plugin_id: str) -> int:
@@ -70,11 +79,14 @@ class PluginManager:
         Returns:
             优先级数值（默认999）
         """
+        if not plugin_id:
+            return 999
+        
+        plugin_dir = self._plugin_dirs.get(plugin_id)
+        if not plugin_dir:
+            return 999
+        
         try:
-            plugin_dir = self._plugin_dirs.get(plugin_id)
-            if not plugin_dir:
-                return 999
-            
             module_name = f"plugins.{plugin_dir.name}"
             module = importlib.import_module(module_name)
             
@@ -82,25 +94,29 @@ class PluginManager:
                 if (issubclass(obj, PluginInterface) and 
                     obj is not PluginInterface and
                     obj.__module__ == module.__name__):
-                    # 获取 PLUGIN_PRIORITY 属性，默认为 999
                     priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                    return float(priority)
+                    return int(priority) if priority is not None else 999
         except Exception as e:
             self._core.logger.warning(f"Failed to get priority for {plugin_id}: {e}")
         
         return 999
 
     def _resolve_plugin_id(self, plugin_class) -> str:
+        if plugin_class is None:
+            return ""
+        
         plugin_id = getattr(plugin_class, "PLUGIN_ID", "")
         if plugin_id:
             return plugin_id
         plugin_id = getattr(plugin_class, "_id", "")
         if plugin_id:
             return plugin_id
+        
         try:
             plugin = plugin_class()
             return plugin.get_id()
-        except Exception:
+        except Exception as e:
+            self._core.logger.debug(f"Failed to instantiate plugin class for ID resolution: {e}")
             return ""
 
     def _discover_plugin(self, plugin_dir: Path) -> Optional[str]:
@@ -137,11 +153,15 @@ class PluginManager:
         Returns:
             加载的插件对象或None
         """
+        if not plugin_id:
+            self._core.logger.warning("Plugin ID is empty")
+            return None
+        
         if plugin_id in self._loaded_plugins:
             return self._plugins.get(plugin_id)
         
         if plugin_id in self._failed_plugins:
-            self._core.logger.warning(f"Plugin {plugin_id} already failed to load, skipping")
+            self._core.logger.debug(f"Plugin {plugin_id} already failed to load, skipping")
             return None
         
         plugin_dir = self._plugin_dirs.get(plugin_id)
@@ -162,8 +182,14 @@ class PluginManager:
                     try:
                         plugin = obj()
                         plugin.initialize(self._core)
-                        self._plugins[plugin.get_id()] = plugin
-                        self._loaded_plugins.add(plugin.get_id())
+                        
+                        actual_id = plugin.get_id()
+                        if not actual_id:
+                            self._core.logger.warning(f"Plugin has no ID, using {plugin_id}")
+                            actual_id = plugin_id
+                        
+                        self._plugins[actual_id] = plugin
+                        self._loaded_plugins.add(actual_id)
                         
                         if self._core.search_manager and plugin.supports_search():
                             try:
@@ -180,6 +206,9 @@ class PluginManager:
                         self._core.logger.debug(traceback.format_exc())
                         return None
                         
+        except ImportError as e:
+            self._failed_plugins.add(plugin_id)
+            self._core.logger.error(f"Failed to import plugin {plugin_id}: {e}")
         except Exception as e:
             self._failed_plugins.add(plugin_id)
             self._core.logger.error(f"Failed to load plugin {plugin_id}: {e}")
@@ -241,12 +270,24 @@ class PluginManager:
         Returns:
             是否成功卸载
         """
+        if not plugin_id:
+            return False
+        
         plugin = self._plugins.get(plugin_id)
         if plugin is None:
             return False
-        plugin.shutdown()
+        
+        try:
+            plugin.shutdown()
+        except Exception as e:
+            self._core.logger.error(f"Error during plugin shutdown {plugin_id}: {e}")
+        
         if self._core.search_manager and plugin.supports_search():
-            self._core.search_manager.unregister_plugin(plugin_id)
+            try:
+                self._core.search_manager.unregister_plugin(plugin_id)
+            except Exception as e:
+                self._core.logger.error(f"Error unregistering search for {plugin_id}: {e}")
+        
         del self._plugins[plugin_id]
         self._loaded_plugins.discard(plugin_id)
         self._core.logger.info(f"Unloaded plugin: {plugin_id}")
@@ -283,35 +324,41 @@ class PluginManager:
         扫描内置插件（打包后使用）
         从已导入的 plugins 子模块中发现插件（按优先级排序）
         """
-        plugin_info: List[Tuple[int, str]] = []  # (priority, plugin_id)
+        plugin_info: List[Tuple[int, str]] = []
         
         try:
             import plugins as plugins_pkg
+        except ImportError as e:
+            self._core.logger.error(f"Failed to import plugins package: {e}")
+            return []
+        
+        try:
             for finder, name, ispkg in pkgutil.iter_modules(plugins_pkg.__path__):
-                if not name.startswith('_'):
-                    module_name = f"plugins.{name}"
-                    try:
-                        module = importlib.import_module(module_name)
-                        for attr_name, obj in inspect.getmembers(module, inspect.isclass):
-                            if (issubclass(obj, PluginInterface) and 
-                                obj is not PluginInterface and
-                                obj.__module__ == module.__name__):
-                                plugin_id = self._resolve_plugin_id(obj)
-                                if not plugin_id:
-                                    continue
-                                self._plugin_dirs[plugin_id] = Path(name)
-                                
-                                # 获取优先级
-                                priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                                plugin_info.append((priority, plugin_id))
-                                self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
-                    except Exception as e:
-                        self._core.logger.error(f"Failed to scan builtin plugin {name}: {e}")
+                if name.startswith('_'):
+                    continue
+                    
+                module_name = f"plugins.{name}"
+                try:
+                    module = importlib.import_module(module_name)
+                    for attr_name, obj in inspect.getmembers(module, inspect.isclass):
+                        if (issubclass(obj, PluginInterface) and 
+                            obj is not PluginInterface and
+                            obj.__module__ == module.__name__):
+                            plugin_id = self._resolve_plugin_id(obj)
+                            if not plugin_id:
+                                continue
+                            self._plugin_dirs[plugin_id] = Path(name)
+                            
+                            priority = getattr(obj, "PLUGIN_PRIORITY", 999)
+                            priority = int(priority) if priority is not None else 999
+                            plugin_info.append((priority, plugin_id))
+                            self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
+                except ImportError as e:
+                    self._core.logger.error(f"Failed to import builtin plugin {name}: {e}")
+                except Exception as e:
+                    self._core.logger.error(f"Failed to scan builtin plugin {name}: {e}")
         except Exception as e:
             self._core.logger.error(f"Failed to scan builtin plugins: {e}")
         
-        # 按优先级排序
         plugin_info.sort(key=lambda x: x[0])
-        
-        # 返回排序后的插件ID列表
         return [plugin_id for _, plugin_id in plugin_info]

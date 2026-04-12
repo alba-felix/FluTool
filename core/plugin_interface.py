@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtCore import pyqtSignal, QObject
+import traceback
 
 
 class PluginMeta(ABCMeta, type(QObject)):
@@ -23,11 +24,13 @@ class PluginInterface(QObject, metaclass=PluginMeta):
     PLUGIN_ID = ""
     PLUGIN_NAME = ""
     PLUGIN_ICON = None
+    PLUGIN_PRIORITY = 999
 
     def __init__(self):
         QObject.__init__(self)
         self._widget = None
         self._data_loaded = False
+        self._initialized = False
         self.core = None
 
     def get_id(self) -> str:
@@ -42,7 +45,7 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         plugin_name = getattr(self, "PLUGIN_NAME", "")
         if plugin_name:
             return plugin_name
-        return getattr(self, "_name", "")
+        return getattr(self, "_name", self.get_id())
 
     def get_icon(self):
         """获取插件图标"""
@@ -55,6 +58,11 @@ class PluginInterface(QObject, metaclass=PluginMeta):
     def is_widget_created(self) -> bool:
         """检查界面是否已创建"""
         return self._widget is not None
+    
+    @property
+    def is_initialized(self) -> bool:
+        """检查插件是否已初始化"""
+        return self._initialized
 
     @abstractmethod
     def initialize(self, core) -> None:
@@ -94,10 +102,18 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         Returns:
             插件的 QWidget 界面
         """
-        if self._widget is None:
+        if self._widget is not None:
+            return self._widget
+        
+        try:
             self._widget = self._create_widget(parent)
-            self.widget_created.emit()
-        return self._widget
+            if self._widget is not None:
+                self.widget_created.emit()
+            return self._widget
+        except Exception as e:
+            print(f"[PluginInterface] Failed to create widget for {self.get_id()}: {e}")
+            traceback.print_exc()
+            return None
 
     def load_data(self) -> None:
         """
@@ -108,8 +124,13 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         if self._data_loaded:
             return
         self._data_loaded = True
-        self._do_load_data()
-        self.data_loaded.emit()
+        
+        try:
+            self._do_load_data()
+            self.data_loaded.emit()
+        except Exception as e:
+            print(f"[PluginInterface] Failed to load data for {self.get_id()}: {e}")
+            traceback.print_exc()
 
     def _do_load_data(self) -> None:
         """
@@ -122,7 +143,8 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         return False
 
     def search(self, query: str):
-        """全局搜索接口（子类可选实现）
+        """
+        全局搜索接口（子类可选实现）
         
         Args:
             query: 搜索关键词
@@ -130,4 +152,18 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         Returns:
             List[SearchResult]: 搜索结果列表
         """
+        if not query:
+            return []
         return []
+    
+    def on_activate(self) -> None:
+        """
+        插件被激活时调用（子类可重写）
+        """
+        pass
+    
+    def on_deactivate(self) -> None:
+        """
+        插件被停用时调用（子类可重写）
+        """
+        pass

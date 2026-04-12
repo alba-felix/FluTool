@@ -663,20 +663,35 @@ class PushFluentWindow(FramelessMainWindow):
 	
 	def _start_screen_color_picker(self):
 		"""从托盘启动屏幕取色"""
+		if not self.core or not self.core.plugin_manager:
+			self._show_tray_warning("核心服务未初始化")
+			return
+		
 		plugin = self.core.plugin_manager.get_plugin("color_palette")
-		if plugin:
+		if not plugin:
+			self._show_tray_warning("调色板插件未加载")
+			return
+		
+		try:
 			if plugin._widget is None:
 				plugin.get_widget()
 			if plugin._widget:
 				plugin._widget.start_color_picker()
-				return
-		
-		self.tray_icon.showMessage(
-			"FluTool",
-			"调色板插件未加载，请先启动程序",
-			QSystemTrayIcon.Warning,
-			2000
-		)
+		except Exception as e:
+			self.core.logger.error(f"Failed to start color picker: {e}")
+			self._show_tray_warning("启动取色器失败")
+	
+	def _show_tray_warning(self, message: str) -> None:
+		"""显示托盘警告消息"""
+		try:
+			self.tray_icon.showMessage(
+				"FluTool",
+				message,
+				QSystemTrayIcon.Warning,
+				2000
+			)
+		except Exception:
+			pass
 	
 	def _on_tray_activated(self, reason) -> None:
 		if reason == QSystemTrayIcon.Trigger:
@@ -695,12 +710,17 @@ class PushFluentWindow(FramelessMainWindow):
 	
 	def _show_translator_window(self) -> None:
 		"""显示翻译窗口"""
-		from .translator_window import TranslatorWindow
-		if not hasattr(self, '_translator_window') or self._translator_window is None:
-			self._translator_window = TranslatorWindow()
-		self._translator_window.show()
-		self._translator_window.raise_()
-		self._translator_window.activateWindow()
+		try:
+			from .translator_window import TranslatorWindow
+			if not hasattr(self, '_translator_window') or self._translator_window is None:
+				self._translator_window = TranslatorWindow()
+			self._translator_window.show()
+			self._translator_window.raise_()
+			self._translator_window.activateWindow()
+		except ImportError as e:
+			self.core.logger.error(f"Failed to import TranslatorWindow: {e}")
+		except Exception as e:
+			self.core.logger.error(f"Failed to show translator window: {e}")
 	
 	def _toggle_theme(self) -> None:
 		from qfluentwidgets import qconfig
@@ -710,18 +730,32 @@ class PushFluentWindow(FramelessMainWindow):
 			setTheme(Theme.DARK)
 	
 	def _on_global_search(self) -> None:
-		if not self.core.search_manager:
+		if not self.core or not self.core.search_manager:
 			return
-		dialog = GlobalSearchDialog(self.core.search_manager, self)
-		dialog.result_selected.connect(self._on_search_result_selected)
-		dialog.show()
-	
+		
+		try:
+			dialog = GlobalSearchDialog(self.core.search_manager, self)
+			dialog.result_selected.connect(self._on_search_result_selected)
+			dialog.show()
+		except Exception as e:
+			self.core.logger.error(f"Failed to show global search: {e}")
+
 	def _on_search_result_selected(self, result) -> None:
-		plugin_id = result.plugin_id
+		if result is None:
+			return
+		
+		plugin_id = getattr(result, 'plugin_id', None)
+		if not plugin_id:
+			return
+		
 		if plugin_id in self._plugin_containers:
 			self.switchTo(self._plugin_containers[plugin_id])
-			if hasattr(result, 'action') and callable(result.action):
-				result.action()
+			action = getattr(result, 'action', None)
+			if action and callable(action):
+				try:
+					action()
+				except Exception as e:
+					self.core.logger.error(f"Failed to execute search result action: {e}")
 	
 	def _on_real_close(self) -> None:
 		self.real_close()
@@ -799,6 +833,8 @@ class MainWindow(PushFluentWindow):
 	
 	def __init__(self, core):
 		super().__init__()
+		if core is None:
+			raise ValueError("Core instance cannot be None")
 		self.core = core
 		self.setWindowTitle("FluTool")
 		self.resize(1000, 700)
@@ -808,12 +844,15 @@ class MainWindow(PushFluentWindow):
 		self._plugin_widgets = {}
 		self._plugin_initialized = {}
 		
-		self._setup_home_page()
-		self._setup_more_menu_page()
-		self._setup_settings_interface()
-		self._apply_nav_expanded()
-		self.navigationInterface.moreClicked.connect(self._on_more_clicked)
-		self.stackedWidget.currentChanged.connect(self._on_page_changed)
+		try:
+			self._setup_home_page()
+			self._setup_more_menu_page()
+			self._setup_settings_interface()
+			self._apply_nav_expanded()
+			self.navigationInterface.moreClicked.connect(self._on_more_clicked)
+			self.stackedWidget.currentChanged.connect(self._on_page_changed)
+		except Exception as e:
+			core.logger.error(f"Failed to setup main window: {e}")
 	
 	def _center_window(self) -> None:
 		screen = QApplication.primaryScreen()
@@ -936,6 +975,9 @@ class MainWindow(PushFluentWindow):
 		self._init_plugin_widget(plugin_id)
 	
 	def _init_plugin_widget(self, plugin_id: str) -> bool:
+		if not plugin_id:
+			return False
+		
 		if self._plugin_initialized.get(plugin_id, False):
 			return True
 		
@@ -944,14 +986,18 @@ class MainWindow(PushFluentWindow):
 			self.core.logger.error(f"Plugin not found: {plugin_id}")
 			return False
 		
+		container = self._plugin_containers.get(plugin_id)
+		if container is None:
+			self.core.logger.error(f"Container not found for plugin: {plugin_id}")
+			return False
+		
 		try:
-			widget = plugin.get_widget(self._plugin_containers[plugin_id])
+			widget = plugin.get_widget(container)
 			if widget is None:
+				self.core.logger.warning(f"Plugin widget is None: {plugin_id}")
 				return False
 			
 			widget.setObjectName(plugin_id)
-			
-			container = self._plugin_containers[plugin_id]
 			container.layout().addWidget(widget)
 			
 			self._plugin_widgets[plugin_id] = widget
@@ -965,11 +1011,16 @@ class MainWindow(PushFluentWindow):
 			return False
 	
 	def _on_page_changed(self, index: int) -> None:
+		if index < 0:
+			return
+		
 		widget = self.stackedWidget.widget(index)
 		if widget is None:
 			return
 		
 		object_name = widget.objectName()
+		if not object_name:
+			return
 		
 		if object_name.startswith("container_"):
 			plugin_id = object_name.replace("container_", "")
@@ -978,14 +1029,19 @@ class MainWindow(PushFluentWindow):
 				self._init_plugin_widget(plugin_id)
 			
 			QTimer.singleShot(50, lambda pid=plugin_id: self._load_plugin_data(pid))
-	
+
 	def _load_plugin_data(self, plugin_id: str) -> None:
+		if not plugin_id:
+			return
+		
 		plugin = self.core.plugin_manager.get_plugin(plugin_id)
-		if plugin:
-			try:
-				plugin.load_data()
-			except Exception as e:
-				self.core.logger.error(f"Failed to load plugin data {plugin_id}: {e}")
+		if plugin is None:
+			return
+		
+		try:
+			plugin.load_data()
+		except Exception as e:
+			self.core.logger.error(f"Failed to load plugin data {plugin_id}: {e}")
 	
 	def add_plugin(self, plugin) -> None:
 		plugin_id = plugin.get_id()
@@ -1009,14 +1065,23 @@ class MainWindow(PushFluentWindow):
 			self._plugin_initialized[plugin_id] = True
 	
 	def close_plugin(self, plugin_id: str) -> None:
+		if not plugin_id:
+			return
+		
 		plugin = self.core.plugin_manager.get_plugin(plugin_id)
 		if plugin:
-			plugin.shutdown()
+			try:
+				plugin.shutdown()
+			except Exception as e:
+				self.core.logger.error(f"Plugin shutdown error: {e}")
 		
 		container = self._plugin_containers.get(plugin_id)
 		if container:
-			self.stackedWidget.removeWidget(container)
-			container.setParent(None)
+			try:
+				self.stackedWidget.removeWidget(container)
+				container.setParent(None)
+			except Exception as e:
+				self.core.logger.error(f"Failed to remove container: {e}")
 		
 		self._plugin_containers.pop(plugin_id, None)
 		self._plugin_widgets.pop(plugin_id, None)
@@ -1042,5 +1107,13 @@ class MainWindow(PushFluentWindow):
 						plugin.shutdown()
 					except Exception as e:
 						self.core.logger.error(f"Plugin shutdown error: {e}")
-		self.tray_icon.hide()
-		super().close()
+		
+		try:
+			self.tray_icon.hide()
+		except Exception as e:
+			self.core.logger.error(f"Failed to hide tray icon: {e}")
+		
+		try:
+			super().close()
+		except Exception as e:
+			self.core.logger.error(f"Failed to close window: {e}")

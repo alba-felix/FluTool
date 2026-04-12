@@ -1,9 +1,10 @@
 import sys
 import time
+import traceback
 from pathlib import Path
 from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
-from PyQt5.QtWidgets import QApplication, QSplashScreen
+from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox
 from PyQt5.QtGui import QIcon, QColor
 from qfluentwidgets import setThemeColor, setTheme, Theme, FluentIcon as FIF
 from core.utils import get_resource_path
@@ -16,11 +17,7 @@ _server_name = "FluTool_Server"
 
 
 class SingleInstance(QObject):
-    """单实例检测与激活
-
-    开发模式：允许多实例运行，方便调试
-    打包后：启用单例模式，防止重复启动
-    """
+    """单实例检测与激活"""
 
     def __init__(self, app_name: str = "FluTool", parent=None):
         super().__init__(parent)
@@ -35,43 +32,59 @@ class SingleInstance(QObject):
         if not self._is_frozen:
             return False
 
-        from PyQt5.QtCore import QSharedMemory
-        self._shared_memory = QSharedMemory(self.app_name)
-        if self._shared_memory.attach():
-            return True
-        self._shared_memory.create(1)
-        return False
+        try:
+            from PyQt5.QtCore import QSharedMemory
+            self._shared_memory = QSharedMemory(self.app_name)
+            if self._shared_memory.attach():
+                return True
+            self._shared_memory.create(1)
+            return False
+        except Exception as e:
+            print(f"[SingleInstance] Error checking instance: {e}")
+            return False
 
     def activate_existing_instance(self) -> bool:
         """尝试激活已有实例"""
         if not self._is_frozen:
             return False
 
-        self._socket = QLocalSocket()
-        self._socket.connectToServer(_server_name)
-        if self._socket.waitForConnected(50):
-            self._socket.write(b"activate")
-            self._socket.flush()
-            self._socket.waitForBytesWritten(50)
-            self._socket.disconnectFromServer()
-            return True
+        try:
+            self._socket = QLocalSocket()
+            self._socket.connectToServer(_server_name)
+            if self._socket.waitForConnected(50):
+                self._socket.write(b"activate")
+                self._socket.flush()
+                self._socket.waitForBytesWritten(50)
+                self._socket.disconnectFromServer()
+                return True
+        except Exception as e:
+            print(f"[SingleInstance] Error activating instance: {e}")
         return False
 
-    def start_server(self, on_activate_callback=None) -> None:
+    def start_server(self, on_activate_callback=None) -> bool:
         """启动本地服务器接收激活请求"""
         if not self._is_frozen:
-            return
+            return True
 
-        self._server = QLocalServer(self)
-        if on_activate_callback:
-            self._server.newConnection.connect(on_activate_callback)
-        if not self._server.listen(_server_name):
-            print(f"无法启动本地服务器: {self._server.errorString()}")
+        try:
+            self._server = QLocalServer(self)
+            if on_activate_callback:
+                self._server.newConnection.connect(on_activate_callback)
+            if not self._server.listen(_server_name):
+                print(f"[SingleInstance] Cannot start server: {self._server.errorString()}")
+                return False
+            return True
+        except Exception as e:
+            print(f"[SingleInstance] Error starting server: {e}")
+            return False
 
     def stop_server(self) -> None:
         """停止本地服务器"""
         if self._server:
-            self._server.close()
+            try:
+                self._server.close()
+            except Exception as e:
+                print(f"[SingleInstance] Error stopping server: {e}")
 
 
 def create_splash():
@@ -90,76 +103,175 @@ def create_splash():
     return splash
 
 
+def show_error_and_exit(title: str, message: str, exit_code: int = 1) -> int:
+    """显示错误消息并退出"""
+    try:
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+        QMessageBox.critical(None, title, message)
+    except Exception:
+        print(f"[ERROR] {title}: {message}")
+    return exit_code
+
+
 def main():
     global _start_time
     _start_time = time.time()
     
-    single_instance = SingleInstance()
-    if single_instance.is_running():
-        print("FluTool 已在运行，尝试激活现有窗口...")
-        if single_instance.activate_existing_instance():
-            print("已发送激活请求到现有实例")
-        else:
-            print("无法激活现有实例")
-        return 0
+    # 单实例检测
+    try:
+        single_instance = SingleInstance()
+        if single_instance.is_running():
+            print("FluTool is already running, trying to activate...")
+            if single_instance.activate_existing_instance():
+                print("Activation request sent to existing instance")
+            else:
+                print("Cannot activate existing instance")
+            return 0
+    except Exception as e:
+        print(f"[main] Single instance check failed: {e}")
+        # 继续运行，不因单例检测失败而退出
     
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
-    app = QApplication(sys.argv)
-    setThemeColor("#0078d4")
-    setTheme(Theme.DARK)
+    # 初始化应用
+    try:
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+    except Exception as e:
+        print(f"[main] High DPI setup failed: {e}")
+    
+    try:
+        app = QApplication(sys.argv)
+    except Exception as e:
+        return show_error_and_exit("启动失败", f"无法创建应用程序: {e}")
+    
+    try:
+        setThemeColor("#0078d4")
+        setTheme(Theme.DARK)
+    except Exception as e:
+        print(f"[main] Theme setup failed: {e}")
+    
     splash = create_splash()
     splash.show()
     app.processEvents()
-    from core.app_core import AppCore
-    core = AppCore()
-    core.initialize()
-    splash.showMessage("加载界面...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
-    app.processEvents()
-    from ui.main_window import MainWindow
-    window = MainWindow(core)
-    logo_path = get_resource_path("logo.ico")
-    if logo_path.exists():
-        window.setWindowIcon(QIcon(str(logo_path)))
     
+    # 初始化核心
+    core = None
+    try:
+        splash.showMessage("初始化核心...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
+        app.processEvents()
+        
+        from core.app_core import AppCore
+        core = AppCore()
+        core.initialize()
+    except Exception as e:
+        splash.hide()
+        traceback.print_exc()
+        return show_error_and_exit("初始化失败", f"核心服务初始化失败:\n{e}")
+    
+    # 创建主窗口
+    window = None
+    try:
+        splash.showMessage("加载界面...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
+        app.processEvents()
+        
+        from ui.main_window import MainWindow
+        window = MainWindow(core)
+        
+        logo_path = get_resource_path("logo.ico")
+        if logo_path.exists():
+            window.setWindowIcon(QIcon(str(logo_path)))
+    except Exception as e:
+        splash.hide()
+        traceback.print_exc()
+        return show_error_and_exit("界面加载失败", f"无法创建主窗口:\n{e}")
+    
+    # 设置单实例激活回调
     def on_socket_connection():
-        socket = single_instance._server.nextPendingConnection()
-        if socket:
-            socket.readyRead.connect(lambda: _on_socket_read(socket))
+        if not single_instance._server:
+            return
+        try:
+            socket = single_instance._server.nextPendingConnection()
+            if socket:
+                socket.readyRead.connect(lambda: _on_socket_read(socket))
+        except Exception as e:
+            print(f"[main] Socket connection error: {e}")
     
     def _on_socket_read(socket):
-        data = socket.readAll().data()
-        if data == b"activate":
-            window.show_and_activate()
-            socket.write(b"activated")
-            socket.flush()
-            socket.deleteLater()
+        try:
+            data = socket.readAll().data()
+            if data == b"activate" and window:
+                window.show_and_activate()
+                socket.write(b"activated")
+                socket.flush()
+        except Exception as e:
+            print(f"[main] Socket read error: {e}")
+        finally:
+            if socket:
+                socket.deleteLater()
     
-    single_instance.start_server(on_socket_connection)
+    if not single_instance.start_server(on_socket_connection):
+        print("[main] Warning: Single instance server not started")
     
-    # 打包后插件路径
-    if getattr(sys, 'frozen', False):
-        plugin_path = None
-        discovered = core.plugin_manager.scan_builtin_plugins()
-    else:
-        plugin_path = project_root / "plugins"
-        discovered = core.plugin_manager.scan_plugins(str(plugin_path))
-    for plugin_id in discovered:
-        plugin = core.plugin_manager.load_plugin(plugin_id)
-        if plugin:
-            window.register_plugin(plugin_id, plugin.get_icon() or FIF.DOCUMENT, plugin.get_name())
-    window.show()
-    splash.finish(window)
-    splash.deleteLater()
-    # 记录启动完成时间（首页已显示）
+    # 加载插件
+    loaded_count = 0
+    failed_count = 0
+    try:
+        if getattr(sys, 'frozen', False):
+            plugin_path = None
+            discovered = core.plugin_manager.scan_builtin_plugins()
+        else:
+            plugin_path = project_root / "plugins"
+            discovered = core.plugin_manager.scan_plugins(str(plugin_path))
+        
+        for plugin_id in discovered:
+            try:
+                plugin = core.plugin_manager.load_plugin(plugin_id)
+                if plugin:
+                    icon = plugin.get_icon() or FIF.DOCUMENT
+                    name = plugin.get_name() or plugin_id
+                    window.register_plugin(plugin_id, icon, name)
+                    loaded_count += 1
+                else:
+                    failed_count += 1
+            except Exception as e:
+                failed_count += 1
+                core.logger.error(f"Failed to register plugin {plugin_id}: {e}")
+        
+        if failed_count > 0:
+            core.logger.warning(f"{failed_count} plugin(s) failed to load")
+    except Exception as e:
+        core.logger.error(f"Plugin loading failed: {e}")
+    
+    # 显示窗口
+    try:
+        window.show()
+        splash.finish(window)
+    except Exception as e:
+        splash.hide()
+        core.logger.error(f"Failed to show window: {e}")
+        return show_error_and_exit("启动失败", f"无法显示主窗口: {e}")
+    finally:
+        splash.deleteLater()
+    
+    # 记录启动时间
     if _start_time:
         elapsed = (time.time() - _start_time) * 1000
-        core.logger.info(f"应用启动完成，总耗时: {elapsed:.0f}ms")
-    result = app.exec_()
-    single_instance.stop_server()
-    core.shutdown()
+        core.logger.info(f"Application started in {elapsed:.0f}ms, {loaded_count} plugins loaded")
+    
+    # 运行事件循环
+    try:
+        result = app.exec_()
+    except Exception as e:
+        core.logger.error(f"Application error: {e}")
+        result = 1
+    finally:
+        single_instance.stop_server()
+        if core:
+            core.shutdown()
+    
     return result
 
 

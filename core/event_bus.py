@@ -1,5 +1,6 @@
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, QMutex, QMutexLocker
 from typing import Callable, Dict, List, Any
+import traceback
 
 
 class EventBus(QObject):
@@ -8,6 +9,7 @@ class EventBus(QObject):
     
     支持事件的发布/订阅，实现模块间解耦通信。
     使用 handler 注册表管理回调，支持彻底解绑。
+    线程安全：使用互斥锁保护共享数据。
     """
     
     event_signal = pyqtSignal(str, object)
@@ -16,6 +18,8 @@ class EventBus(QObject):
         super().__init__()
         self._handlers: Dict[str, Dict[int, Callable]] = {}
         self._next_handler_id = 0
+        self._mutex = QMutex()
+        self._connected_events: set = set()
 
     def emit(self, event_name: str, data: Any = None) -> None:
         """
@@ -25,6 +29,8 @@ class EventBus(QObject):
             event_name: 事件名称
             data: 事件数据
         """
+        if not event_name:
+            return
         self.event_signal.emit(event_name, data)
 
     def listen(self, event_name: str, callback: Callable) -> int:
@@ -38,21 +44,39 @@ class EventBus(QObject):
         Returns:
             handler_id: 用于解绑的处理器ID
         """
-        if event_name not in self._handlers:
-            self._handlers[event_name] = {}
-            self.event_signal.connect(self._create_handler(event_name))
+        if not event_name:
+            return -1
         
-        handler_id = self._next_handler_id
-        self._handlers[event_name][handler_id] = callback
-        self._next_handler_id += 1
-        return handler_id
+        if callback is None:
+            return -1
+        
+        with QMutexLocker(self._mutex):
+            if event_name not in self._handlers:
+                self._handlers[event_name] = {}
+                self._connected_events.add(event_name)
+                self.event_signal.connect(self._create_handler(event_name))
+            
+            handler_id = self._next_handler_id
+            self._handlers[event_name][handler_id] = callback
+            self._next_handler_id += 1
+            return handler_id
 
     def _create_handler(self, event_name: str) -> Callable:
         """创建事件处理器"""
         def handler(name: str, data: Any) -> None:
-            if name == event_name:
-                for callback in list(self._handlers.get(event_name, {}).values()):
+            if name != event_name:
+                return
+            
+            with QMutexLocker(self._mutex):
+                handlers = dict(self._handlers.get(event_name, {}))
+            
+            for callback in handlers.values():
+                try:
                     callback(data)
+                except Exception as e:
+                    print(f"[EventBus] Callback error in '{event_name}': {e}")
+                    traceback.print_exc()
+        
         return handler
 
     def disconnect(self, event_name: str, handler_id: int = None) -> None:
@@ -63,17 +87,22 @@ class EventBus(QObject):
             event_name: 事件名称
             handler_id: 处理器ID，如果为None则解绑该事件所有处理器
         """
-        if event_name not in self._handlers:
+        if not event_name:
             return
         
-        if handler_id is None:
-            self._handlers[event_name].clear()
-        elif handler_id in self._handlers[event_name]:
-            del self._handlers[event_name][handler_id]
+        with QMutexLocker(self._mutex):
+            if event_name not in self._handlers:
+                return
+            
+            if handler_id is None:
+                self._handlers[event_name].clear()
+            elif handler_id in self._handlers[event_name]:
+                del self._handlers[event_name][handler_id]
 
     def disconnect_all(self) -> None:
         """解绑所有事件"""
-        self._handlers.clear()
+        with QMutexLocker(self._mutex):
+            self._handlers.clear()
 
     def get_handlers_count(self, event_name: str = None) -> int:
         """
@@ -85,6 +114,20 @@ class EventBus(QObject):
         Returns:
             处理器数量
         """
-        if event_name:
-            return len(self._handlers.get(event_name, {}))
-        return sum(len(handlers) for handlers in self._handlers.values())
+        with QMutexLocker(self._mutex):
+            if event_name:
+                return len(self._handlers.get(event_name, {}))
+            return sum(len(handlers) for handlers in self._handlers.values())
+    
+    def has_handlers(self, event_name: str) -> bool:
+        """
+        检查事件是否有处理器
+        
+        Args:
+            event_name: 事件名称
+            
+        Returns:
+            是否有处理器
+        """
+        with QMutexLocker(self._mutex):
+            return event_name in self._handlers and len(self._handlers[event_name]) > 0
