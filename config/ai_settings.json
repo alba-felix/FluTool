@@ -1,8 +1,16 @@
 {
   "version": "1.0",
-  "default_provider": "ollama",
-  "default_model": "gemma4:e2b",
+  "default_provider": "ollama_cloud",
+  "default_model": "qwen3.5:397b-cloud",
   "providers": {
+    "siliconflow": {
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_key": "sk-mklbvpqftjspuvyimhxoismpmrbpbhwpighbugsovobmfuga",
+      "default_model": "Qwen/Qwen2.5-7B-Instruct",
+      "enabled": true,
+      "timeout_sec": 60,
+      "extra_headers": {}
+    },
     "deepseek": {
       "base_url": "https://api.deepseek.com",
       "api_key": "sk-21c74d7992f54a5089d0eac2d596e9b6",
@@ -35,6 +43,14 @@
       "timeout_sec": 60,
       "extra_headers": {}
     },
+    "ollama_cloud": {
+      "base_url": "https://ollama.com/v1",
+      "api_key": "a066edb347064873b7ca58d376d8f4f4.8IB_brJHS9miZBjNQpKb4Wcr",
+      "default_model": "qwen3.5:397b-cloud",
+      "enabled": true,
+      "timeout_sec": 120,
+      "extra_headers": {}
+    },
     "custom": {
       "base_url": "https://api.openai.com/v1",
       "api_key": "",
@@ -45,6 +61,102 @@
     }
   },
   "models": [
+    {
+      "provider": "siliconflow",
+      "model_id": "Qwen/Qwen2.5-7B-Instruct",
+      "display_name": "Qwen 2.5 7B (免费)",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "Qwen/Qwen3-8B",
+      "display_name": "Qwen 3 8B (免费)",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "THUDM/glm-4-9b-chat",
+      "display_name": "GLM-4 9B (免费)",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "display_name": "Qwen 2.5 Coder 7B (免费)",
+      "enabled": true,
+      "capabilities": [
+        "chat",
+        "code"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+      "display_name": "DeepSeek R1 Qwen3 8B (免费)",
+      "enabled": true,
+      "capabilities": [
+        "chat",
+        "reasoning"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "THUDM/GLM-4.1V-9B-Thinking",
+      "display_name": "GLM-4.1V 9B Thinking (免费)",
+      "enabled": true,
+      "capabilities": [
+        "chat",
+        "reasoning",
+        "vision"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "deepseek-ai/DeepSeek-OCR",
+      "display_name": "DeepSeek OCR (免费)",
+      "enabled": true,
+      "capabilities": [
+        "ocr",
+        "vision"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "PaddlePaddle/PaddleOCR-VL",
+      "display_name": "PaddleOCR VL (免费)",
+      "enabled": true,
+      "capabilities": [
+        "ocr",
+        "vision"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "BAAI/bge-m3",
+      "display_name": "BGE M3 Embedding (免费)",
+      "enabled": true,
+      "capabilities": [
+        "embedding"
+      ]
+    },
+    {
+      "provider": "siliconflow",
+      "model_id": "BAAI/bge-large-zh-v1.5",
+      "display_name": "BGE Large ZH Embedding (免费)",
+      "enabled": true,
+      "capabilities": [
+        "embedding"
+      ]
+    },
     {
       "provider": "deepseek",
       "model_id": "deepseek-chat",
@@ -79,6 +191,34 @@
       "enabled": true,
       "capabilities": [
         "chat"
+      ]
+    },
+    {
+      "provider": "ollama_cloud",
+      "model_id": "qwen3:32b",
+      "display_name": "Qwen 3 32B (Ollama Cloud)",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "ollama_cloud",
+      "model_id": "gemma3:27b",
+      "display_name": "Gemma 3 27B (Ollama Cloud)",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "ollama_cloud",
+      "model_id": "deepseek-r1:32b",
+      "display_name": "DeepSeek R1 32B (Ollama Cloud)",
+      "enabled": true,
+      "capabilities": [
+        "chat",
+        "reasoning"
       ]
     }
   ]

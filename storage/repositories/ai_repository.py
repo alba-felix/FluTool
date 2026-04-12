@@ -153,3 +153,11 @@ class AIRepository:
             cursor = conn.execute(sql, (conversation_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def get_message_count(self, conversation_id: int) -> int:
+        """获取对话的消息数量"""
+        sql = "SELECT COUNT(*) FROM ai_messages WHERE conversation_id = ?"
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(sql, (conversation_id,))
+            row = cursor.fetchone()
+            return row[0] if row else 0

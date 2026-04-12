@@ -28,7 +28,7 @@ class AIChatService:
 
     def _register_default_adapters(self) -> None:
         self._registry.register(OllamaAdapter())
-        for provider_name in ["deepseek", "doubao", "qwen", "custom"]:
+        for provider_name in ["siliconflow", "ollama_cloud", "deepseek", "doubao", "qwen", "custom"]:
             self._registry.register(OpenAICompatibleAdapter(provider_name))
 
     def supports_web_search(self, provider: str, model_id: str) -> bool:
@@ -71,7 +71,7 @@ class AIChatService:
             )
 
         api_key = str(provider_config.get("api_key", "")).strip()
-        is_key_optional = selected_provider in {"ollama"}
+        is_key_optional = selected_provider in {"ollama", "ollama_cloud"}
         if not api_key and not is_key_optional:
             return AIChatResponse(
                 provider=selected_provider,

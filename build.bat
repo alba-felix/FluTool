@@ -25,6 +25,26 @@ pyinstaller --noconfirm --onedir --windowed ^
       --add-data "logo.ico;." ^
       --add-data "ui/resources;ui/resources/" ^
       --exclude-module "tests" ^
+      --exclude-module "WebEngineWidgets" ^
+      --exclude-module "WebEngineCore" ^
+      --exclude-module "numpy" ^
+      --exclude-module "PyQt5.QtWebEngineWidgets" ^
+      --exclude-module "PyQt5.QtWebEngineCore" ^
+      --exclude-module "PyQt5.QtBluetooth" ^
+      --exclude-module "PyQt5.QtNfc" ^
+      --exclude-module "PyQt5.QtSerialPort" ^
+      --exclude-module "PyQt5.QtLocation" ^
+      --exclude-module "PyQt5.QtPositioning" ^
+      --exclude-module "PyQt5.QtMultimedia" ^
+      --exclude-module "PyQt5.QtTextToSpeech" ^
+      --exclude-module "PyQt5.QtQuick3D" ^
+      --exclude-module "PyQt5.QtSensors" ^
+      --exclude-module "PyQt5.Qt3DCore" ^
+      --exclude-module "PyQt5.Qt3DRender" ^
+      --exclude-module "PyQt5.Qt3DInput" ^
+      --exclude-module "PyQt5.Qt3DLogic" ^
+      --exclude-module "PyQt5.Qt3DAnimation" ^
+      --exclude-module "PyQt5.Qt3DExtras" ^
       "main.py"
 
 if %errorlevel% equ 0 (

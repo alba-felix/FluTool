@@ -22,6 +22,7 @@ from qfluentwidgets import (
 
 from core import PluginInterface
 from core.ai import AIChatService, AISettingsBridge, AISearchBridge
+from storage import DatabaseManager
 from storage.repositories import AIRepository
 from .chat_input import ChatInputWidget
 from .chat_message import ChatMessageList
@@ -323,7 +324,7 @@ class AIAssistantWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.repo = AIRepository()
+        self.repo = AIRepository(DatabaseManager())
 
         self.ai_settings = getattr(core, "ai_settings", AISettingsBridge())
         self.chat_service = getattr(core, "ai_chat_service", None)
@@ -662,7 +663,7 @@ class AIAssistantWidget(QWidget):
         self.ai_settings.set_default_provider(provider)
 
     def _load_or_create_conversation(self) -> None:
-        conversations = self.repo.list_conversations(limit=100)
+        conversations = self.repo.get_conversations()
         if not conversations:
             self._create_conversation()
             return
@@ -739,7 +740,7 @@ class AIAssistantWidget(QWidget):
 
     def _refresh_history_list(self) -> None:
         self._sidebar.history_list.clear()
-        conversations = self.repo.list_conversations(limit=100)
+        conversations = self.repo.get_conversations()
         for conv in conversations:
             title = conv.get("title", "新会话") or "新会话"
             conv_id = conv.get("id")
@@ -756,7 +757,7 @@ class AIAssistantWidget(QWidget):
             return
         self.current_conversation_id = int(conversation_id)
         self.chat_view.clear_messages()
-        messages = self.repo.list_messages(self.current_conversation_id)
+        messages = self.repo.get_messages(self.current_conversation_id)
         for message in messages:
             is_user = message.get("role") == "user"
             content = message.get("content", "")

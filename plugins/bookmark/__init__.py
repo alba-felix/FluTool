@@ -10,8 +10,6 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QUrl, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QDesktopWidget
-from PyQt5.Qt import QDesktopServices
 from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit,
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
@@ -827,18 +825,7 @@ class BookmarkWidget(QWidget):
     def _open_website(self, item: QTreeWidgetItem) -> None:
         """打开网站"""
         url = item.text(1)
-        if not url:
-            return
-        
-        qurl = QUrl(url)
-        if not qurl.isValid():
-            encoded_url = QUrl.toPercentEncoding(url)
-            qurl = QUrl.fromEncoded(encoded_url)
-        
-        if qurl.scheme() not in ('http', 'https'):
-            qurl.setScheme('https')
-        
-        if not QDesktopServices.openUrl(qurl):
+        if url:
             webbrowser.open(url)
     
     def _show_context_menu(self, pos) -> None:
@@ -1053,32 +1040,15 @@ class Plugin(PluginInterface):
         results = []
         bookmarks = db.search_bookmarks(self.PLUGIN_ID, query)
         for bm in bookmarks[:20]:
-            url = bm['url']
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,
                 plugin_name=self.get_name(),
                 title=bm['name'],
-                description=f"{url} - {bm.get('notes', '')}",
+                description=f"{bm['url']} - {bm.get('notes', '')}",
                 icon=self.PLUGIN_ICON,
                 relevance=1.0 if query in bm['name'].lower() else 0.5,
-                action=lambda u=url: self._open_url(u),
-                metadata={'bookmark_id': bm['id'], 'url': url}
+                action=lambda url=bm['url']: webbrowser.open(url),
+                metadata={'bookmark_id': bm['id'], 'url': bm['url']}
             )
             results.append(result)
         return results
-    
-    def _open_url(self, url: str) -> None:
-        """打开URL"""
-        if not url:
-            return
-        
-        qurl = QUrl(url)
-        if not qurl.isValid():
-            encoded_url = QUrl.toPercentEncoding(url)
-            qurl = QUrl.fromEncoded(encoded_url)
-        
-        if qurl.scheme() not in ('http', 'https'):
-            qurl.setScheme('https')
-        
-        if not QDesktopServices.openUrl(qurl):
-            webbrowser.open(url)

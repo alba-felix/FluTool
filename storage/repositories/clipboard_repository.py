@@ -18,14 +18,12 @@ class ClipboardRepository(BaseRepository):
     
     def add(self, item_type: str, content: str, format: str = '') -> int:
         """添加剪贴板历史项"""
-        # 注意：原代码中有一个奇怪的 INSERT 语句，包含 plugin_id 和 content_type
-        # 但实际上表结构没有这些字段，这里使用正确的字段
         sql = """
-            INSERT INTO clipboard_history (item_type, content, format) 
-            VALUES (?, ?, ?)
+            INSERT INTO clipboard_history (plugin_id, content_type, item_type, content, format) 
+            VALUES (?, ?, ?, ?, ?)
         """
         with self.db.get_connection() as conn:
-            cursor = conn.execute(sql, (item_type, content, format))
+            cursor = conn.execute(sql, ('clipboard', item_type, item_type, content, format))
             conn.commit()
             return cursor.lastrowid
     

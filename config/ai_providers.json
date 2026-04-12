@@ -1,6 +1,30 @@
 {
   "providers": [
     {
+      "provider_id": "siliconflow",
+      "name": "硅基流动",
+      "provider_type": "siliconflow",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_key": "",
+      "default_model": "Qwen/Qwen2.5-7B-Instruct",
+      "enabled": true,
+      "is_default": true,
+      "timeout_sec": 60,
+      "custom_headers": {},
+      "models": [
+        "Qwen/Qwen2.5-7B-Instruct",
+        "Qwen/Qwen3-8B",
+        "THUDM/glm-4-9b-chat",
+        "Qwen/Qwen2.5-Coder-7B-Instruct",
+        "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "THUDM/GLM-4.1V-9B-Thinking",
+        "deepseek-ai/DeepSeek-OCR",
+        "PaddlePaddle/PaddleOCR-VL",
+        "BAAI/bge-m3",
+        "BAAI/bge-large-zh-v1.5"
+      ]
+    },
+    {
       "provider_id": "custom",
       "name": "自定义",
       "provider_type": "custom",
@@ -20,7 +44,7 @@
       "api_key": "",
       "default_model": "deepseek-chat",
       "enabled": true,
-      "is_default": true,
+      "is_default": false,
       "timeout_sec": 60,
       "custom_headers": {}
     },
@@ -52,6 +76,24 @@
       "is_default": false,
       "timeout_sec": 60,
       "custom_headers": {}
+    },
+    {
+      "provider_id": "ollama_cloud",
+      "name": "Ollama Cloud",
+      "provider_type": "ollama_cloud",
+      "base_url": "https://ollama.com/v1",
+      "api_key": "",
+      "default_model": "qwen3.5:397b-cloud",
+      "enabled": true,
+      "is_default": false,
+      "timeout_sec": 120,
+      "custom_headers": {},
+      "models": [
+        "gpt-oss:20b",
+        "gpt-oss:120b",
+        "gemma4:31b",
+        "qwen3.5:397b-cloud"
+      ]
     },
     {
       "provider_id": "qwen",
