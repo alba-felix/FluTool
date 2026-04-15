@@ -34,10 +34,21 @@ class FolderTreeWidget(QWidget):
         self.current_folder = None
         self.tree_content = ""
         self.custom_rules = {}
-        self.load_custom_rules()
+        # 延迟加载规则，等数据库初始化完成后再加载
+        # self.load_custom_rules()
+        # print(f"[INIT] Loaded {len(self.custom_rules)} rules: {list(self.custom_rules.keys())}")
         self.init_ui()
         self.setup_style()
         qconfig.themeChanged.connect(self.on_theme_changed)
+        
+        # 使用 QTimer 延迟加载规则，确保数据库已初始化
+        QTimer.singleShot(100, self._delayed_load_rules)
+    
+    def _delayed_load_rules(self):
+        """延迟加载规则"""
+        self.load_custom_rules()
+        # 更新下拉框
+        self._update_rules_combo()
 
     def on_theme_changed(self):
         """主题变化时更新样式"""
@@ -231,10 +242,16 @@ class FolderTreeWidget(QWidget):
     def load_custom_rules(self):
         """加载自定义规则"""
         try:
+            # 检查数据库是否已初始化
+            if not hasattr(self.db, '_db_path') or self.db._db_path is None:
+                self.custom_rules = {}
+                return
+            
             rules = self.db.get_all_folder_tree_rules()
             self.custom_rules = {}
             for rule in rules:
-                items = json.loads(rule['exclude_items']) if rule['exclude_items'] else []
+                # exclude_items 从 Repository 返回时已经是 list 类型
+                items = rule['exclude_items'] if rule['exclude_items'] else []
                 self.custom_rules[rule['rule_name']] = items
         except Exception as e:
             self.custom_rules = {}
@@ -268,6 +285,9 @@ class FolderTreeWidget(QWidget):
     
     def open_custom_rule_dialog(self):
         """打开自定义规则对话框"""
+        # 重新加载规则，确保显示最新数据
+        self.load_custom_rules()
+        
         dark = isDarkTheme()
         bg_color = "#1e1e1e" if dark else "#f5f5f5"
         text_color = "#ffffff" if dark else "#333333"
@@ -277,6 +297,9 @@ class FolderTreeWidget(QWidget):
         dialog.setWindowTitle("自定义规则管理")
         dialog.yesButton.setText("关闭")
         dialog.cancelButton.setVisible(False)
+        # 设置对话框最小大小
+        dialog.widget.setMinimumWidth(500)
+        dialog.widget.setMinimumHeight(400)
         
         content_widget = QWidget()
         content_widget.setObjectName("customRuleContent")
@@ -290,17 +313,48 @@ class FolderTreeWidget(QWidget):
         
         self._rule_list = QListWidget()
         self._rule_list.setObjectName("ruleList")
-        self._rule_list.setStyleSheet(f"""
-            QListWidget#ruleList {{
-                background-color: {bg_color};
-                color: {text_color};
-                border: 1px solid {border_color};
-                border-radius: 4px;
-            }}
-        """)
+        # 设置样式表
+        if isDarkTheme():
+            self._rule_list.setStyleSheet("""
+                QListWidget {
+                    background-color: #2d2d2d;
+                    color: #ffffff;
+                    border: 1px solid #3d3d3d;
+                    border-radius: 4px;
+                    padding: 4px;
+                }
+                QListWidget::item {
+                    padding: 8px;
+                    border-bottom: 1px solid #3d3d3d;
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d4;
+                    color: white;
+                }
+            """)
+        else:
+            self._rule_list.setStyleSheet("""
+                QListWidget {
+                    background-color: #ffffff;
+                    color: #333333;
+                    border: 1px solid #d9d9d9;
+                    border-radius: 4px;
+                    padding: 4px;
+                }
+                QListWidget::item {
+                    padding: 8px;
+                    border-bottom: 1px solid #e0e0e0;
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d4;
+                    color: white;
+                }
+            """)
+        # 添加规则到列表
         for rule_name, items in self.custom_rules.items():
-            self._rule_list.addItem(f"{rule_name}: {', '.join(items)}")
-        self._rule_list.setMinimumHeight(150)
+            display_text = f"{rule_name}: {', '.join(items)}"
+            self._rule_list.addItem(display_text)
+        self._rule_list.setMinimumHeight(200)
         content_layout.addWidget(self._rule_list)
         content_layout.addSpacing(8)
         
@@ -348,9 +402,11 @@ class FolderTreeWidget(QWidget):
         content_layout.addSpacing(4)
         
         name_input = LineEdit()
-        if edit_index is not None:
-            rule_names = list(self.custom_rules.keys())
-            name_input.setText(rule_names[edit_index])
+        if edit_index is not None and edit_index >= 0:
+            # 从列表项中提取规则名称（格式："规则名: 项目1, 项目2"）
+            list_item_text = self._rule_list.item(edit_index).text()
+            rule_name = list_item_text.split(":")[0].strip()
+            name_input.setText(rule_name)
         name_input.setPlaceholderText("例如：规则 2")
         content_layout.addWidget(name_input)
         content_layout.addSpacing(16)
@@ -360,10 +416,12 @@ class FolderTreeWidget(QWidget):
         content_layout.addSpacing(4)
         
         items_input = LineEdit()
-        if edit_index is not None:
-            rule_names = list(self.custom_rules.keys())
-            rule_name = rule_names[edit_index]
-            items_input.setText(', '.join(self.custom_rules[rule_name]))
+        if edit_index is not None and edit_index >= 0:
+            # 从列表项中提取规则名称
+            list_item_text = self._rule_list.item(edit_index).text()
+            rule_name = list_item_text.split(":")[0].strip()
+            if rule_name in self.custom_rules:
+                items_input.setText(', '.join(self.custom_rules[rule_name]))
         items_input.setPlaceholderText("例如：node_modules,.git,__pycache__")
         content_layout.addWidget(items_input)
         content_layout.addSpacing(8)
@@ -403,9 +461,21 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        if edit_index is not None:
-            rule_names = list(self.custom_rules.keys())
-            old_name = rule_names[edit_index]
+        if edit_index is not None and edit_index >= 0:
+            # 从列表项中提取旧规则名称
+            rule_list = parent_dialog.findChild(QListWidget)
+            if rule_list and rule_list.count() > edit_index:
+                list_item_text = rule_list.item(edit_index).text()
+                old_name = list_item_text.split(":")[0].strip()
+            else:
+                InfoBar.error(
+                    title="错误",
+                    content="无法找到要编辑的规则",
+                    parent=self,
+                    duration=2000
+                )
+                return
+            
             if old_name != name:
                 if name in self.custom_rules:
                     InfoBar.error(
@@ -415,24 +485,31 @@ class FolderTreeWidget(QWidget):
                         duration=2000
                     )
                     return
+                # 删除旧规则
                 self.db.delete_folder_tree_rule(old_name)
                 del self.custom_rules[old_name]
+                # 添加新规则
+                self.db.add_folder_tree_rule(name, result)
+                self.custom_rules[name] = result
             else:
+                # 名称未变，直接更新
                 self.db.update_folder_tree_rule(name, result)
                 self.custom_rules[name] = result
-                self._update_rules_combo(name)
-                if parent_dialog:
-                    parent_dialog.findChild(QListWidget).clear()
-                    for rule_name, items in self.custom_rules.items():
-                        parent_dialog.findChild(QListWidget).addItem(f"{rule_name}: {', '.join(items)}")
-                InfoBar.success(
-                    title="成功",
-                    content=f"已保存规则：{name}",
-                    parent=self,
-                    duration=2000
-                )
-                editor.accept()
-                return
+            
+            # 更新 UI
+            self._update_rules_combo(name)
+            if parent_dialog:
+                parent_dialog.findChild(QListWidget).clear()
+                for rule_name, items in self.custom_rules.items():
+                    parent_dialog.findChild(QListWidget).addItem(f"{rule_name}: {', '.join(items)}")
+            InfoBar.success(
+                title="成功",
+                content=f"已保存规则：{name}",
+                parent=self,
+                duration=2000
+            )
+            editor.accept()
+            return
         
         if name in self.custom_rules:
             InfoBar.error(
@@ -479,8 +556,10 @@ class FolderTreeWidget(QWidget):
             parent=self
         )
         if w.exec_():
-            rule_names = list(self.custom_rules.keys())
-            rule_name = rule_names[current_row]
+            # 从列表项中提取规则名称
+            list_item_text = self._rule_list.item(current_row).text()
+            rule_name = list_item_text.split(":")[0].strip()
+            
             self.db.delete_folder_tree_rule(rule_name)
             del self.custom_rules[rule_name]
             
@@ -546,7 +625,7 @@ class FolderTreeWidget(QWidget):
         
         if folder:
             self.current_folder = Path(folder)
-            self._status_label.setText(f"已选择: {self.current_folder.name}")
+            self._status_label.setText(f"已选择: {self.current_folder}")
             InfoBar.success(
                 title="选择成功",
                 content=f"已选择文件夹: {self.current_folder.name}",
@@ -571,7 +650,9 @@ class FolderTreeWidget(QWidget):
             QApplication.processEvents()
             
             rule_index = self._rules_combo.currentIndex()
-            self.tree_content = self._get_folder_tree(self.current_folder, '', rule_index)
+            root_name = self.current_folder.name
+            tree_body = self._get_folder_tree(self.current_folder, '', rule_index)
+            self.tree_content = f"{root_name}/\n{tree_body}"
             self._preview_text.setPlainText(self.tree_content)
             self._update_counts()
             self._status_label.setText('树形结构生成完成')
@@ -605,7 +686,9 @@ class FolderTreeWidget(QWidget):
             QApplication.processEvents()
             
             rule_index = self._rules_combo.currentIndex()
-            self.tree_content = self._get_folder_only_tree(self.current_folder, '', rule_index)
+            root_name = self.current_folder.name
+            tree_body = self._get_folder_only_tree(self.current_folder, '', rule_index)
+            self.tree_content = f"{root_name}/\n{tree_body}"
             self._preview_text.setPlainText(self.tree_content)
             self._update_counts()
             self._status_label.setText('文件夹树形结构生成完成')
@@ -844,7 +927,8 @@ class Plugin(PluginInterface):
         results = []
         rules = db.search_folder_tree_rules(query)
         for rule in rules[:20]:
-            exclude_items = json.loads(rule['exclude_items']) if rule['exclude_items'] else []
+            # exclude_items 从 Repository 返回时已经是 list 类型
+            exclude_items = rule['exclude_items'] if rule['exclude_items'] else []
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,
                 plugin_name=self.get_name(),
