@@ -2,7 +2,7 @@
 AI 助手对话消息组件
 左右分布布局：AI在左，用户在右
 """
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import markdown
 
 from PyQt5.QtCore import Qt, QSize, QEvent
@@ -19,14 +19,23 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPainter, QColor, QPainterPath, QFontMetrics
 from qfluentwidgets import isDarkTheme, Theme, FluentIcon as FIF, IconWidget
 
+from .chat_input import AttachmentData
+
 
 class MessageBubble(QWidget):
     """消息气泡组件 - 带顶部状态栏和Markdown渲染"""
 
-    def __init__(self, text: str, is_user: bool = False, parent=None):
+    def __init__(
+        self,
+        text: str,
+        is_user: bool = False,
+        attachments: List[Dict[str, Any]] = None,
+        parent=None
+    ):
         super().__init__(parent)
         self.text = text
         self.is_user = is_user
+        self.attachments = attachments or []
         self._is_markdown_mode = False
         self._rendered_chunks = []
         self._current_chunk_index = 0
@@ -88,6 +97,11 @@ class MessageBubble(QWidget):
 
         content_layout.addWidget(self._header_widget)
 
+        # 附件显示区域
+        if self.attachments:
+            self._attachments_widget = self._create_attachments_widget()
+            content_layout.addWidget(self._attachments_widget)
+
         # 内容区域：使用QStackedWidget切换原文和Markdown
         self._content_stack = QStackedWidget(content_widget)
         self._content_stack.setMaximumWidth(600)
@@ -118,6 +132,79 @@ class MessageBubble(QWidget):
             main_layout.addStretch()
 
         self._apply_style()
+
+    def _create_attachments_widget(self) -> QWidget:
+        """创建附件显示区域"""
+        widget = QWidget(self)
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+
+        for attach in self.attachments:
+            file_name = attach.get('file_name', '未知文件')
+            mime_type = attach.get('mime_type', 'application/octet-stream')
+            is_image = attach.get('is_image', False)
+
+            item_widget = QWidget(widget)
+            item_layout = QHBoxLayout(item_widget)
+            item_layout.setContentsMargins(4, 4, 4, 4)
+            item_layout.setSpacing(6)
+
+            # 文件图标
+            if is_image:
+                icon = FIF.PHOTO
+            elif mime_type.startswith('text/'):
+                icon = FIF.DOCUMENT
+            else:
+                icon = FIF.FILE
+            icon_widget = IconWidget(icon, item_widget)
+            icon_widget.setFixedSize(16, 16)
+            item_layout.addWidget(icon_widget)
+
+            # 文件名
+            name_label = QLabel(file_name, item_widget)
+            name_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            item_layout.addWidget(name_label, 1)
+
+            # 文件类型标签
+            type_label = QLabel(mime_type.split('/')[0], item_widget)
+            type_label.setObjectName("typeLabel")
+            item_layout.addWidget(type_label)
+
+            layout.addWidget(item_widget)
+
+        self._apply_attachments_style(widget)
+        return widget
+
+    def _apply_attachments_style(self, widget: QWidget):
+        """应用附件区域样式"""
+        dark = isDarkTheme()
+        bg = "rgba(255,255,255,0.06)" if dark else "rgba(0,0,0,0.04)"
+        border = "rgba(255,255,255,0.1)" if dark else "rgba(0,0,0,0.08)"
+        text_color = "#aaaaaa" if dark else "#666666"
+
+        widget.setStyleSheet(f"""
+            QWidget {{
+                background: transparent;
+            }}
+            QWidget > QWidget {{
+                background: {bg};
+                border: 1px solid {border};
+                border-radius: 4px;
+            }}
+            QLabel {{
+                background: transparent;
+                color: {text_color};
+                font-size: 12px;
+            }}
+            QLabel#typeLabel {{
+                color: #0078d4;
+                font-size: 10px;
+                padding: 2px 6px;
+                background: {"rgba(0,120,212,0.2)" if dark else "rgba(0,120,212,0.1)"};
+                border-radius: 3px;
+            }}
+        """)
 
     def _copy_content(self):
         """复制消息内容到剪贴板"""
@@ -355,9 +442,9 @@ class ChatMessageContainer(QWidget):
         self._layout.setSpacing(4)
         self._layout.addStretch()
 
-    def add_message(self, text: str, is_user: bool = False):
+    def add_message(self, text: str, is_user: bool = False, attachments: List[Dict[str, Any]] = None):
         """添加消息"""
-        bubble = MessageBubble(text, is_user, self)
+        bubble = MessageBubble(text, is_user, attachments, self)
         self._layout.insertWidget(self._layout.count() - 1, bubble)
 
     def clear_messages(self):
@@ -448,9 +535,9 @@ class ChatMessageList(QWidget):
             }}
         """)
 
-    def add_message(self, text: str, is_user: bool = False) -> 'MessageBubble':
+    def add_message(self, text: str, is_user: bool = False, attachments: List[Dict[str, Any]] = None) -> 'MessageBubble':
         """添加消息，返回消息气泡对象"""
-        self._container.add_message(text, is_user)
+        self._container.add_message(text, is_user, attachments)
         self._scroll_to_bottom()
         # 返回最后添加的消息气泡
         count = self._container._layout.count()

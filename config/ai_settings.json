@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "default_provider": "ollama_cloud",
-  "default_model": "qwen3.5:397b-cloud",
+  "default_provider": "siliconflow",
+  "default_model": "Qwen/Qwen2.5-7B-Instruct",
   "providers": {
     "siliconflow": {
       "base_url": "https://api.siliconflow.cn/v1",

@@ -186,23 +186,40 @@ class ScriptEditor(QWidget):
         
         layout.addLayout(top_layout)
         
+        # 创建垂直分割线，用于脚本编辑器和输出区
+        splitter = QSplitter(Qt.Vertical, self)
+        splitter.setHandleWidth(2)
+        splitter.setChildrenCollapsible(False)
+        
         self.editor = PlainTextEdit(self)
         self.editor.setFont(QFont("Consolas", 10))
         self.editor.setPlaceholderText("在此编写脚本...")
         self.editor.setLineWrapMode(PlainTextEdit.NoWrap)
         self.editor.textChanged.connect(self._on_text_changed)
+        splitter.addWidget(self.editor)
         
-        layout.addWidget(self.editor)
+        # 输出区容器
+        output_container = QWidget()
+        output_layout = QVBoxLayout(output_container)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.setSpacing(4)
         
         self.output_label = CaptionLabel("输出:", self)
-        layout.addWidget(self.output_label)
+        output_layout.addWidget(self.output_label)
         
         self.output = PlainTextEdit(self)
         self.output.setReadOnly(True)
         self.output.setFont(QFont("Consolas", 9))
-        self.output.setMaximumHeight(150)
         self.output.setPlaceholderText("脚本输出将显示在这里...")
-        layout.addWidget(self.output)
+        output_layout.addWidget(self.output)
+        
+        splitter.addWidget(output_container)
+        splitter.setSizes([400, 150])
+        
+        self._apply_splitter_style(splitter)
+        qconfig.themeChangedFinished.connect(lambda: self._apply_splitter_style(splitter))
+        
+        layout.addWidget(splitter)
         
         self._apply_editor_style()
         qconfig.themeChangedFinished.connect(self._apply_editor_style)
@@ -222,6 +239,33 @@ class ScriptEditor(QWidget):
             self.output.setStyleSheet(
                 "PlainTextEdit { background-color: #f5f5f5; color: #1e1e1e; border: 1px solid #e0e0e0; }"
             )
+    
+    def _apply_splitter_style(self, splitter: QSplitter) -> None:
+        """应用垂直分割线样式"""
+        if isDarkTheme():
+            splitter.setStyleSheet("""
+                QSplitter::handle {
+                    background-color: #3d3d3d;
+                }
+                QSplitter::handle:hover {
+                    background-color: #0078d4;
+                }
+                QSplitter::handle:pressed {
+                    background-color: #005a9e;
+                }
+            """)
+        else:
+            splitter.setStyleSheet("""
+                QSplitter::handle {
+                    background-color: #e0e0e0;
+                }
+                QSplitter::handle:hover {
+                    background-color: #0078d4;
+                }
+                QSplitter::handle:pressed {
+                    background-color: #005a9e;
+                }
+            """)
     
     def _on_text_changed(self) -> None:
         if self._current_script_id:

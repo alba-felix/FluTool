@@ -810,7 +810,7 @@ class AIAssistantWidget(QWidget):
         # 显示用户消息（右侧）- 简化显示
         if attach_files:
             display_content = text + "\n" + ", ".join([f"[{f}]" for f in attach_files])
-        self.chat_view.add_message(display_content, is_user=True)
+        self.chat_view.add_message(display_content, is_user=True, attachments=attachments)
 
         # 判断是否是第一次对话（在保存消息之前判断）
         self._is_first_message = self.repo.get_message_count(self.current_conversation_id) == 0

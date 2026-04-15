@@ -9,18 +9,184 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from PyQt5.QtCore import Qt, QBuffer, QByteArray, QIODevice, QUrl, QTimer
-from PyQt5.QtGui import QImage, QPixmap, QIcon
-from PyQt5.QtWidgets import QFileDialog, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem, QHeaderView
+from PyQt5.QtCore import Qt, QBuffer, QByteArray, QIODevice, QUrl, QTimer, QSize
+from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter, QColor, QFont
+from PyQt5.QtWidgets import QFileDialog, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem, QLabel, QFrame, QSplitter
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
-    InfoBar, InfoBarPosition, TreeWidget, StrongBodyLabel,
+    InfoBar, InfoBarPosition, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig, TextEdit,
     MessageBox, TransparentToolButton, CaptionLabel,
-    RoundMenu
+    RoundMenu, SubtitleLabel, BodyLabel, ScrollArea
 )
 from core import PluginInterface, get_app_data_path
 from storage.database import DatabaseManager
+
+
+THUMBNAIL_SIZE = 80
+
+
+class ClipboardItemWidget(QWidget):
+    """剪切板列表项组件"""
+    
+    def __init__(self, item_data: Dict[str, Any], parent=None):
+        super().__init__(parent)
+        self.item_data = item_data
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        """构建界面"""
+        self.setFixedHeight(90)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)
+        
+        content_type = self.item_data.get("type", "text")
+        
+        # 缩略图/图标区域
+        self.thumb_label = QLabel(self)
+        self.thumb_label.setFixedSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+        self.thumb_label.setAlignment(Qt.AlignCenter)
+        self.thumb_label.setObjectName("thumbLabel")
+        
+        if content_type == "image":
+            thumbnail = self._create_thumbnail(self.item_data.get("content", ""))
+            if thumbnail:
+                self.thumb_label.setPixmap(thumbnail)
+            else:
+                self.thumb_label.setText("📷")
+                self.thumb_label.setStyleSheet("font-size: 32px;")
+        elif content_type == "text":
+            self.thumb_label.setText("📝")
+            self.thumb_label.setStyleSheet("font-size: 32px;")
+        elif content_type == "urls":
+            self.thumb_label.setText("📁")
+            self.thumb_label.setStyleSheet("font-size: 32px;")
+        
+        layout.addWidget(self.thumb_label)
+        
+        # 信息区域
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(4)
+        
+        # 时间和类型
+        header_layout = QHBoxLayout()
+        time_label = CaptionLabel(self.item_data.get("timestamp", ""), self)
+        time_label.setObjectName("timeLabel")
+        header_layout.addWidget(time_label)
+        
+        type_label = CaptionLabel(self._get_type_text(), self)
+        type_label.setObjectName("typeLabel")
+        header_layout.addWidget(type_label)
+        header_layout.addStretch()
+        
+        info_layout.addLayout(header_layout)
+        
+        # 预览内容
+        preview_text = self._get_preview_text()
+        self.preview_label = BodyLabel(preview_text, self)
+        self.preview_label.setObjectName("previewLabel")
+        self.preview_label.setWordWrap(True)
+        self.preview_label.setMaximumHeight(40)
+        info_layout.addWidget(self.preview_label, 1)
+        
+        layout.addLayout(info_layout, 1)
+        
+        self._apply_style()
+    
+    def _create_thumbnail(self, base64_data: str) -> Optional[QPixmap]:
+        """从 base64 数据创建缩略图"""
+        try:
+            image_data = base64.b64decode(base64_data)
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data, "PNG")
+            
+            if pixmap.isNull():
+                return None
+            
+            return pixmap.scaled(
+                THUMBNAIL_SIZE, THUMBNAIL_SIZE,
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+        except Exception:
+            return None
+    
+    def _get_type_text(self) -> str:
+        """获取类型文本"""
+        content_type = self.item_data.get("type", "text")
+        type_map = {
+            "text": "文本",
+            "image": "图片",
+            "urls": "文件"
+        }
+        return type_map.get(content_type, "未知")
+    
+    def _get_preview_text(self) -> str:
+        """获取预览文本"""
+        content_type = self.item_data.get("type", "text")
+        
+        if content_type == "text":
+            text = self.item_data.get("content", "")
+            return text[:100] + "..." if len(text) > 100 else text
+        elif content_type == "image":
+            size_info = self._get_image_size(self.item_data.get("content", ""))
+            return f"图片尺寸: {size_info}" if size_info else "图片"
+        elif content_type == "urls":
+            content = self.item_data.get("content", [])
+            if isinstance(content, list):
+                if len(content) == 1:
+                    return os.path.basename(content[0])
+                return f"{len(content)} 个文件"
+        return ""
+    
+    def _get_image_size(self, base64_data: str) -> str:
+        """获取图片尺寸"""
+        try:
+            image_data = base64.b64decode(base64_data)
+            pixmap = QPixmap()
+            pixmap.loadFromData(image_data, "PNG")
+            return f"{pixmap.width()}x{pixmap.height()}"
+        except Exception:
+            return ""
+    
+    def _apply_style(self):
+        """应用样式"""
+        dark = isDarkTheme()
+        
+        bg = "#2d2d2d" if dark else "#ffffff"
+        border = "#3d3d3d" if dark else "#e0e0e0"
+        text_color = "#ffffff" if dark else "#1f1f1f"
+        secondary_color = "#888888" if dark else "#666666"
+        accent_bg = "rgba(0,120,212,0.15)" if dark else "rgba(0,120,212,0.1)"
+        
+        self.setStyleSheet(f"""
+            ClipboardItemWidget {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: 8px;
+            }}
+            #thumbLabel {{
+                background-color: {"#1e1e1e" if dark else "#f5f5f5"};
+                border-radius: 6px;
+            }}
+            #timeLabel {{
+                color: {secondary_color};
+                font-size: 11px;
+            }}
+            #typeLabel {{
+                color: #0078d4;
+                font-size: 11px;
+                background: {accent_bg};
+                padding: 2px 8px;
+                border-radius: 4px;
+            }}
+            #previewLabel {{
+                color: {text_color};
+                font-size: 13px;
+            }}
+        """)
 
 
 class ClipboardWidget(QWidget):
@@ -35,11 +201,19 @@ class ClipboardWidget(QWidget):
         self.clipboard_data: List[Dict[str, Any]] = []
         self.max_history = 100
         self._is_monitoring = True
+        self._monitor_initialized = False
         
         self._init_paths()
         self._setup_ui()
-        self._load_clipboard_history()
-        self._setup_clipboard_monitor()
+    
+    def showEvent(self, event):
+        """窗口显示时初始化"""
+        super().showEvent(event)
+        if not self._monitor_initialized:
+            self._load_clipboard_history()
+            self._setup_clipboard_monitor()
+            self._update_list_view()
+            self._monitor_initialized = True
     
     def _init_paths(self):
         """初始化路径"""
@@ -64,7 +238,7 @@ class ClipboardWidget(QWidget):
         self.search_input.textChanged.connect(self._search_clipboard)
         header_layout.addWidget(self.search_input, 1)
         
-        self.monitor_btn = TransparentToolButton(FIF.PLAY, self)
+        self.monitor_btn = TransparentToolButton(FIF.PAUSE, self)
         self.monitor_btn.setToolTip("暂停监控")
         self.monitor_btn.clicked.connect(self._toggle_monitor)
         header_layout.addWidget(self.monitor_btn)
@@ -96,104 +270,112 @@ class ClipboardWidget(QWidget):
         
         main_layout.addLayout(input_layout)
         
-        self.tree = TreeWidget(self)
-        self.tree.setHeaderLabels(["时间", "类型", "内容"])
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.tree.setColumnWidth(0, 140)
-        self.tree.setColumnWidth(1, 60)
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._show_context_menu)
-        self.tree.itemDoubleClicked.connect(self._copy_to_clipboard)
-        self.tree.setSelectionMode(self.tree.ExtendedSelection)
-        self.tree.setAlternatingRowColors(True)
+        # 使用 QListWidget 显示缩略图列表
+        self.list_widget = QListWidget(self)
+        self.list_widget.setSpacing(8)
+        self.list_widget.setResizeMode(QListWidget.Adjust)
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list_widget.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.list_widget.setSelectionMode(QListWidget.SingleSelection)
+        self.list_widget.itemClicked.connect(self._on_item_clicked)
+        self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         
-        self._apply_tree_style()
-        qconfig.themeChangedFinished.connect(self._apply_tree_style)
+        self._apply_list_style()
+        qconfig.themeChangedFinished.connect(self._apply_list_style)
         
-        main_layout.addWidget(self.tree)
+        main_layout.addWidget(self.list_widget)
         
         self.status_label = CaptionLabel("就绪", self)
         main_layout.addWidget(self.status_label)
     
-    def _apply_tree_style(self):
-        """应用树形列表样式"""
-        header = self.tree.header()
+    def _apply_list_style(self):
+        """应用列表样式"""
+        dark = isDarkTheme()
         
-        if isDarkTheme():
-            self.tree.setStyleSheet("""
-                QTreeWidget {
-                    background-color: transparent;
-                    alternate-background-color: #252525;
-                    border: none;
-                }
-                QTreeWidget::item {
-                    padding: 6px;
-                    border-radius: 4px;
-                }
-                QTreeWidget::item:selected {
-                    background-color: #0078d4;
-                    color: white;
-                }
-                QTreeWidget::item:hover {
-                    background-color: #3d3d3d;
-                }
-            """)
-            header.setStyleSheet("""
-                QHeaderView::section {
-                    background-color: #2d2d2d;
-                    color: #ffffff;
-                    border: none;
-                    border-bottom: 1px solid #3d3d3d;
-                    padding: 8px;
-                    font-weight: 500;
-                }
-            """)
-        else:
-            self.tree.setStyleSheet("""
-                QTreeWidget {
-                    background-color: transparent;
-                    alternate-background-color: #f5f5f5;
-                    border: none;
-                }
-                QTreeWidget::item {
-                    padding: 6px;
-                    border-radius: 4px;
-                }
-                QTreeWidget::item:selected {
-                    background-color: #0078d4;
-                    color: white;
-                }
-                QTreeWidget::item:hover {
-                    background-color: #e5e5e5;
-                }
-            """)
-            header.setStyleSheet("""
-                QHeaderView::section {
-                    background-color: #ffffff;
-                    color: #000000;
-                    border: none;
-                    border-bottom: 1px solid #e0e0e0;
-                    padding: 8px;
-                    font-weight: 500;
-                }
-            """)
+        bg = "transparent" if dark else "transparent"
+        scroll_bg = "#2d2d2d" if dark else "#f0f0f0"
+        scroll_handle = "#4d4d4d" if dark else "#c0c0c0"
+        
+        self.list_widget.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {bg};
+                border: none;
+                outline: none;
+            }}
+            QListWidget::item {{
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }}
+            QListWidget::item:selected {{
+                background-color: transparent;
+            }}
+            QScrollBar:vertical {{
+                background-color: {scroll_bg};
+                width: 10px;
+                border-radius: 5px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {scroll_handle};
+                min-height: 30px;
+                border-radius: 5px;
+            }}
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+        """)
     
     def _setup_clipboard_monitor(self):
         """设置剪切板监控"""
         self.clipboard = QApplication.clipboard()
         self.clipboard.dataChanged.connect(self._on_clipboard_change)
+        self._last_clipboard_hash = None
+        self._clipboard_check_timer = QTimer(self)
+        self._clipboard_check_timer.timeout.connect(self._check_clipboard_content)
+        self._clipboard_check_timer.start(500)
+    
+    def _check_clipboard_content(self):
+        """定时检查剪切板内容（确保最小化时也能捕获）"""
+        if not self._is_monitoring:
+            return
+        
+        mime_data = self.clipboard.mimeData()
+        if not mime_data:
+            return
+        
+        current_hash = self._calculate_mime_hash(mime_data)
+        if current_hash and current_hash != self._last_clipboard_hash:
+            self._last_clipboard_hash = current_hash
+            self._on_clipboard_change()
+    
+    def _calculate_mime_hash(self, mime_data) -> Optional[str]:
+        """计算剪切板内容的哈希值"""
+        if mime_data.hasImage():
+            image = mime_data.imageData()
+            if isinstance(image, QImage):
+                return f"img_{image.width()}_{image.height()}_{image.sizeInBytes()}"
+        elif mime_data.hasText():
+            text = mime_data.text()
+            return f"text_{hash(text)}"
+        elif mime_data.hasUrls():
+            urls = mime_data.urls()
+            return f"urls_{hash(tuple(str(u.toString()) for u in urls))}"
+        return None
     
     def _toggle_monitor(self):
         """切换监控状态"""
         self._is_monitoring = not self._is_monitoring
         if self._is_monitoring:
-            self.monitor_btn.setIcon(FIF.PLAY)
+            self.monitor_btn.setIcon(FIF.PAUSE)
             self.monitor_btn.setToolTip("暂停监控")
             self.status_label.setText("监控已开启")
         else:
-            self.monitor_btn.setIcon(FIF.PAUSE)
+            self.monitor_btn.setIcon(FIF.PLAY)
             self.monitor_btn.setToolTip("继续监控")
             self.status_label.setText("监控已暂停")
     
@@ -203,6 +385,12 @@ class ClipboardWidget(QWidget):
             return
         
         mime_data = self.clipboard.mimeData()
+        current_hash = self._calculate_mime_hash(mime_data)
+        
+        if current_hash and current_hash == self._last_clipboard_hash:
+            return
+        
+        self._last_clipboard_hash = current_hash
         
         if mime_data.hasImage():
             image = mime_data.imageData()
@@ -234,7 +422,7 @@ class ClipboardWidget(QWidget):
             if 'id' in removed:
                 self.db.delete_clipboard_item(removed['id'])
         
-        self._update_tree_view()
+        self._update_list_view()
     
     def _add_image_to_history(self, image):
         """添加图片到剪切板历史"""
@@ -265,7 +453,7 @@ class ClipboardWidget(QWidget):
             if 'id' in removed:
                 self.db.delete_clipboard_item(removed['id'])
         
-        self._update_tree_view()
+        self._update_list_view()
     
     def _add_urls_to_history(self, urls):
         """添加URLs到剪切板历史"""
@@ -290,44 +478,31 @@ class ClipboardWidget(QWidget):
             if 'id' in removed:
                 self.db.delete_clipboard_item(removed['id'])
         
-        self._update_tree_view()
+        self._update_list_view()
     
-    def _update_tree_view(self):
-        """更新树形视图"""
-        self.tree.clear()
+    def _update_list_view(self):
+        """更新列表视图"""
+        self.list_widget.clear()
         
         for item_data in self.clipboard_data:
-            tree_item = QTreeWidgetItem()
-            tree_item.setText(0, item_data["timestamp"])
-            
-            content_type = item_data.get("type", "text")
-            if content_type == "text":
-                preview = item_data["content"][:80] + "..." if len(item_data["content"]) > 80 else item_data["content"]
-                type_text = "文本"
-            elif content_type == "image":
-                preview = "[图片]"
-                type_text = "图片"
-            elif content_type == "urls":
-                if isinstance(item_data["content"], list) and item_data["content"]:
-                    if len(item_data["content"]) == 1:
-                        preview = os.path.basename(item_data['content'][0])
-                    else:
-                        preview = f"{len(item_data['content'])} 个文件"
-                else:
-                    preview = "[文件]"
-                type_text = "文件"
-            else:
-                preview = "[未知]"
-                type_text = "未知"
-            
-            tree_item.setText(1, type_text)
-            tree_item.setText(2, preview.replace('\n', ' '))
-            tree_item.setData(0, Qt.UserRole, item_data)
-            self.tree.addTopLevelItem(tree_item)
+            list_item = QListWidgetItem(self.list_widget)
+            item_widget = ClipboardItemWidget(item_data, self)
+            list_item.setSizeHint(item_widget.sizeHint())
+            list_item.setData(Qt.UserRole, item_data)
+            self.list_widget.addItem(list_item)
+            self.list_widget.setItemWidget(list_item, item_widget)
     
-    def _copy_to_clipboard(self, item: QTreeWidgetItem, column: int):
-        """复制选中项到剪切板"""
-        item_data = item.data(0, Qt.UserRole)
+    def _on_item_clicked(self, item: QListWidgetItem):
+        """单击项"""
+        pass
+    
+    def _on_item_double_clicked(self, item: QListWidgetItem):
+        """双击项 - 复制到剪切板"""
+        self._copy_item_to_clipboard(item)
+    
+    def _copy_item_to_clipboard(self, item: QListWidgetItem):
+        """复制项到剪切板"""
+        item_data = item.data(Qt.UserRole)
         
         if not isinstance(item_data, dict):
             return
@@ -376,13 +551,13 @@ class ClipboardWidget(QWidget):
         from PyQt5.QtGui import QCursor
         from PyQt5.QtWidgets import QAction
         
-        item = self.tree.itemAt(pos)
+        item = self.list_widget.itemAt(pos)
         if not item:
             return
         
         menu = RoundMenu(parent=self)
         copy_action = QAction("复制", self)
-        copy_action.triggered.connect(lambda: self._copy_to_clipboard(item, 0))
+        copy_action.triggered.connect(lambda: self._copy_item_to_clipboard(item))
         menu.addAction(copy_action)
         
         pin_action = QAction("置顶", self)
@@ -397,23 +572,23 @@ class ClipboardWidget(QWidget):
         
         menu.exec(QCursor.pos())
     
-    def _pin_item(self, item: QTreeWidgetItem):
+    def _pin_item(self, item: QListWidgetItem):
         """置顶选中项"""
-        index = self.tree.indexOfTopLevelItem(item)
-        if index > 0:
-            item_data = self.clipboard_data.pop(index)
+        row = self.list_widget.row(item)
+        if row > 0:
+            item_data = self.clipboard_data.pop(row)
             self.clipboard_data.insert(0, item_data)
-            self._update_tree_view()
+            self._update_list_view()
             self.status_label.setText("已置顶")
     
-    def _delete_item(self, item: QTreeWidgetItem):
+    def _delete_item(self, item: QListWidgetItem):
         """删除选中项"""
-        index = self.tree.indexOfTopLevelItem(item)
-        if index >= 0:
-            item_data = self.clipboard_data.pop(index)
+        row = self.list_widget.row(item)
+        if row >= 0:
+            item_data = self.clipboard_data.pop(row)
             if 'id' in item_data:
                 self.db.delete_clipboard_item(item_data['id'])
-            self.tree.takeTopLevelItem(index)
+            self.list_widget.takeItem(row)
             self.status_label.setText("已删除")
     
     def _clear_history(self):
@@ -422,7 +597,7 @@ class ClipboardWidget(QWidget):
         if box.exec():
             self.db.clear_clipboard_history()
             self.clipboard_data.clear()
-            self._update_tree_view()
+            self._update_list_view()
             self.status_label.setText("已清空剪切板历史")
             InfoBar.success(
                 title="清空成功",
@@ -488,7 +663,7 @@ class ClipboardWidget(QWidget):
         """搜索剪切板历史"""
         search_text = self.search_input.text().lower()
         
-        self.tree.clear()
+        self.list_widget.clear()
         
         for item_data in self.clipboard_data:
             content_type = item_data.get("type", "text")
@@ -508,29 +683,12 @@ class ClipboardWidget(QWidget):
                         match = True
             
             if match or not search_text:
-                tree_item = QTreeWidgetItem()
-                tree_item.setText(0, item_data["timestamp"])
-                
-                if content_type == "text":
-                    preview = item_data["content"][:80] + "..." if len(item_data["content"]) > 80 else item_data["content"]
-                    type_text = "文本"
-                elif content_type == "image":
-                    preview = "[图片]"
-                    type_text = "图片"
-                elif content_type == "urls":
-                    if isinstance(item_data["content"], list) and item_data["content"]:
-                        preview = os.path.basename(item_data['content'][0]) if len(item_data['content']) == 1 else f"{len(item_data['content'])} 个文件"
-                    else:
-                        preview = "[文件]"
-                    type_text = "文件"
-                else:
-                    preview = "[未知]"
-                    type_text = "未知"
-                
-                tree_item.setText(1, type_text)
-                tree_item.setText(2, preview.replace('\n', ' '))
-                tree_item.setData(0, Qt.UserRole, item_data)
-                self.tree.addTopLevelItem(tree_item)
+                list_item = QListWidgetItem(self.list_widget)
+                item_widget = ClipboardItemWidget(item_data, self)
+                list_item.setSizeHint(item_widget.sizeHint())
+                list_item.setData(Qt.UserRole, item_data)
+                self.list_widget.addItem(list_item)
+                self.list_widget.setItemWidget(list_item, item_widget)
     
     def _add_and_pin_text(self):
         """添加并置顶文本"""
@@ -541,10 +699,6 @@ class ClipboardWidget(QWidget):
         self._add_text_to_history(text)
         self.edit_input.clear()
         self.status_label.setText("已添加文本")
-    
-    def _save_clipboard_history(self):
-        """保存剪切板历史到数据库"""
-        pass
     
     def _load_clipboard_history(self):
         """从数据库加载剪切板历史"""
@@ -569,14 +723,9 @@ class ClipboardWidget(QWidget):
     
     def load_data(self) -> None:
         """加载数据"""
-        self._load_clipboard_history()
-        self._update_tree_view()
-    
-    def showEvent(self, event):
-        """窗口显示时刷新"""
-        super().showEvent(event)
-        self._load_clipboard_history()
-        self._update_tree_view()
+        if self._monitor_initialized:
+            self._load_clipboard_history()
+            self._update_list_view()
 
 
 class Plugin(PluginInterface):
