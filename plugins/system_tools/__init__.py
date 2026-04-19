@@ -221,6 +221,8 @@ class SystemToolsWidget(QWidget):
             ("回收站", "explorer shell:RecycleBinFolder", CFIF.RECYCLE_BIN, False, ["回收站", "recycle", "垃圾桶"]),
             ("组策略", "gpedit.msc", CFIF.GROUP_POLICY, True, ["组策略", "gpedit", "策略", "gpo"]),
             ("任务计划程序", "taskschd.msc", FIF.STOP_WATCH, True, ["任务计划", "taskschd", "计划任务", "task"]),
+            ("可靠性历史记录", "perfmon /rel", FIF.INFO, False, ["可靠性历史记录", "reliability", "监视", "稳定性", "perfmon"]),
+
         ]
         
         # 创建按钮

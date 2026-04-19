@@ -22,6 +22,7 @@ from storage import DatabaseManager
 from functools import partial
 from ui.custom_icon import CustomFluentIcon
 from core import SearchResult
+from ui.common import InputDialog
 
 
 def get_app_data_path(relative_path: str) -> Path:
@@ -31,34 +32,6 @@ def get_app_data_path(relative_path: str) -> Path:
     else:
         base_path = Path(__file__).parent.parent.parent
     return base_path / relative_path
-
-
-class InputDialog(MessageBoxBase):
-    """Fluent 风格输入对话框"""
-    
-    def __init__(self, title: str, label: str, default_text: str = "", parent=None):
-        super().__init__(parent)
-        self.titleLabel = SubtitleLabel(title, self)
-        self.viewLayout.addWidget(self.titleLabel)
-        
-        self.input_edit = LineEdit(self)
-        self.input_edit.setText(default_text)
-        self.input_edit.setPlaceholderText(label)
-        self.input_edit.setClearButtonEnabled(True)
-        self.input_edit.returnPressed.connect(lambda: self.yesButton.click())
-        self.viewLayout.addWidget(self.input_edit)
-
-        self.yesButton.setText("确定")
-        self.cancelButton.setText("取消")
-        self.widget.setMinimumWidth(350)
-
-        self.input_edit.setFocus()
-    
-    def get_text(self) -> str:
-        return self.input_edit.text().strip()
-
-    def validate(self) -> bool:
-        return True
 
 
 class AddBookmarkDialog(MessageBoxBase):

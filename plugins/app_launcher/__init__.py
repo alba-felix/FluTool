@@ -20,13 +20,14 @@ from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, CardWidget, StrongBodyLabel,
     TransparentToolButton, BodyLabel, IconWidget, CaptionLabel,
-    MessageBox, MessageBoxBase, SubtitleLabel, setCustomStyleSheet,
+    MessageBox, setCustomStyleSheet,
     StyleSheetBase, Theme, qconfig, isDarkTheme, PrimaryPushButton,
     ScrollArea, SmoothScrollArea
 )
 
 from core import PluginInterface, get_app_data_path, SearchResult
 from storage import DatabaseManager
+from ui.common import InputDialog
 
 
 CARD_WIDTH = 120
@@ -283,32 +284,6 @@ DARK_STYLES = {
         }
     """
 }
-
-
-# ==================== 对话框组件 ====================
-class InputDialog(MessageBoxBase):
-    """Fluent 风格输入对话框"""
-    
-    def __init__(self, title: str, label: str, default_text: str = "", parent=None):
-        super().__init__(parent)
-        self.titleLabel = SubtitleLabel(title, self)
-        self.viewLayout.addWidget(self.titleLabel)
-        
-        self.input_edit = LineEdit(self)
-        self.input_edit.setText(default_text)
-        self.input_edit.setPlaceholderText(label)
-        self.input_edit.setClearButtonEnabled(True)
-        self.input_edit.returnPressed.connect(lambda: self.yesButton.click())
-        self.viewLayout.addWidget(self.input_edit)
-        
-        self.yesButton.setText("确定")
-        self.cancelButton.setText("取消")
-        self.widget.setMinimumWidth(350)
-        
-        self.input_edit.setFocus()
-    
-    def get_text(self) -> str:
-        return self.input_edit.text().strip()
 
 
 # ==================== 卡片组件 ====================

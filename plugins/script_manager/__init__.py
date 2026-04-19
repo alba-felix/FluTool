@@ -19,6 +19,7 @@ from core import PluginInterface
 from storage import DatabaseManager
 from functools import partial
 from core import SearchResult
+from ui.common import InputDialog
 
 
 def get_powershell_path() -> str:
@@ -27,31 +28,6 @@ def get_powershell_path() -> str:
     if os.path.exists(pwsh7_path):
         return pwsh7_path
     return "powershell"
-
-
-class InputDialog(MessageBoxBase):
-    """Fluent 风格输入对话框"""
-    
-    def __init__(self, title: str, label: str, default_text: str = "", parent=None):
-        super().__init__(parent)
-        self.titleLabel = SubtitleLabel(title, self)
-        self.viewLayout.addWidget(self.titleLabel)
-        
-        self.input_edit = LineEdit(self)
-        self.input_edit.setText(default_text)
-        self.input_edit.setPlaceholderText(label)
-        self.input_edit.setClearButtonEnabled(True)
-        self.input_edit.returnPressed.connect(lambda: self.yesButton.click())
-        self.viewLayout.addWidget(self.input_edit)
-        
-        self.yesButton.setText("确定")
-        self.cancelButton.setText("取消")
-        self.widget.setMinimumWidth(350)
-        
-        self.input_edit.setFocus()
-    
-    def get_text(self) -> str:
-        return self.input_edit.text().strip()
 
 
 class ScriptDialog(MessageBoxBase):

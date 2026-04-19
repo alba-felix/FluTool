@@ -17,13 +17,14 @@ from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit, TextEdit, BodyLabel,
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     setCustomStyleSheet, isDarkTheme, qconfig, MessageBoxBase, SubtitleLabel,
-    MessageBox
+    MessageBox, PlainTextEdit
 )
 
 from core import PluginInterface
 from storage import DatabaseManager
 from utils import CharCryptoTool
 from core import get_app_data_path, SearchResult
+from ui.common import InputDialog
 
 # 尝试导入定时密码功能，失败时优雅处理
 try:
@@ -32,33 +33,6 @@ try:
 except ImportError:
     TimeLockDialog = None
     HAS_TIME_LOCK = False
-
-
-class InputDialog(MessageBoxBase):
-    """Fluent 风格输入对话框"""
-    
-    def __init__(self, title: str, label: str, default_text: str = "", 
-                 is_password: bool = False, parent=None):
-        super().__init__(parent)
-        self.titleLabel = SubtitleLabel(title, self)
-        self.viewLayout.addWidget(self.titleLabel)
-        
-        self.input_edit = LineEdit(self)
-        self.input_edit.setText(default_text)
-        self.input_edit.setPlaceholderText(label)
-        self.input_edit.setClearButtonEnabled(True)
-        if is_password:
-            self.input_edit.setEchoMode(LineEdit.Password)
-        self.viewLayout.addWidget(self.input_edit)
-        
-        self.yesButton.setText("确定")
-        self.cancelButton.setText("取消")
-        self.widget.setMinimumWidth(350)
-        
-        self.input_edit.setFocus()
-    
-    def get_text(self) -> str:
-        return self.input_edit.text().strip()
 
 
 class SetMasterPasswordDialog(MessageBoxBase):
