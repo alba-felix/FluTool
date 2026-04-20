@@ -116,9 +116,11 @@ class AppCore:
         
         try:
             self._logger = LogManager()
+            self._logger.setup_main_logger()
+            self._logger.info("AppCore logger initialized")
         except Exception as e:
             print(f"[AppCore] Failed to initialize logger: {e}")
-            raise RuntimeError(f"日志管理器初始化失败: {e}")
+            raise RuntimeError(f"日志管理器初始化失败：{e}")
         
         try:
             self._event_bus = EventBus()

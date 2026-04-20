@@ -181,6 +181,11 @@ class PluginManager:
                     
                     try:
                         plugin = obj()
+                        
+                        # 为插件设置专用日志记录器
+                        plugin_logger = self._core.logger.get_plugin_logger(plugin_id)
+                        plugin._set_logger(plugin_logger)
+                        
                         plugin.initialize(self._core)
                         
                         actual_id = plugin.get_id()
@@ -197,7 +202,7 @@ class PluginManager:
                             except Exception as e:
                                 self._core.logger.error(f"Failed to register search for {plugin_id}: {e}")
                         
-                        self._core.logger.info(f"Loaded plugin: {plugin.get_name()}")
+                        plugin_logger.info(f"Plugin '{plugin.get_name()}' initialized")
                         return plugin
                         
                     except Exception as e:

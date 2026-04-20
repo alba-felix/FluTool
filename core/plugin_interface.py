@@ -32,6 +32,40 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         self._data_loaded = False
         self._initialized = False
         self.core = None
+        self._logger = None
+    
+    def _set_logger(self, logger):
+        """设置插件专用日志记录器"""
+        self._logger = logger
+    
+    def log(self, level: str, message: str):
+        """
+        记录插件日志
+        
+        Args:
+            level: 日志级别 (debug, info, warning, error, critical)
+            message: 日志消息
+        """
+        if self._logger:
+            getattr(self._logger, level)(message)
+        elif self.core and hasattr(self.core, 'logger'):
+            getattr(self.core.logger, level)(f"[{self.get_id()}] {message}")
+    
+    def info(self, message: str):
+        """记录 INFO 级别日志"""
+        self.log('info', message)
+    
+    def debug(self, message: str):
+        """记录 DEBUG 级别日志"""
+        self.log('debug', message)
+    
+    def warning(self, message: str):
+        """记录 WARNING 级别日志"""
+        self.log('warning', message)
+    
+    def error(self, message: str):
+        """记录 ERROR 级别日志"""
+        self.log('error', message)
 
     def get_id(self) -> str:
         """获取插件ID"""
