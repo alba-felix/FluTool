@@ -313,6 +313,7 @@ class DatabaseManager:
             ("clipboard_history", "item_type", "TEXT NOT NULL DEFAULT 'text'"),
             ("clipboard_history", "format", "TEXT DEFAULT ''"),
             ("todos", "sort_order", "INTEGER DEFAULT 0"),
+            ("notebook", "color", "TEXT DEFAULT ''"),
             ("ai_conversations", "provider_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("ai_conversations", "provider", "TEXT NOT NULL DEFAULT 'default'"),
             ("ai_conversations", "model_id", "TEXT NOT NULL DEFAULT 'default'"),
