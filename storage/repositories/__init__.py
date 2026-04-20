@@ -17,6 +17,7 @@ from .quick_copy_repository import QuickCopyRepository
 from .todo_repository import TodoRepository
 from .ai_repository import AIRepository
 from .category_repository import CategoryRepository
+from .notebook_repository import NotebookRepository
 
 __all__ = [
     'BaseRepository',
@@ -33,4 +34,5 @@ __all__ = [
     'TodoRepository',
     'AIRepository',
     'CategoryRepository',
+    'NotebookRepository',
 ]

@@ -16,6 +16,7 @@ from storage.repositories.quick_copy_repository import QuickCopyRepository
 from storage.repositories.todo_repository import TodoRepository
 from storage.repositories.ai_repository import AIRepository
 from storage.repositories.category_repository import CategoryRepository
+from storage.repositories.notebook_repository import NotebookRepository
 
 
 class DatabaseManager:
@@ -64,6 +65,7 @@ class DatabaseManager:
         self.quick_copy = QuickCopyRepository(self)
         self.todos = TodoRepository(self)
         self.ai = AIRepository(self)
+        self.notebooks = NotebookRepository(self)
     
     @contextmanager
     def get_connection(self):
@@ -678,6 +680,32 @@ class DatabaseManager:
     
     def delete_ai_message(self, message_id: int) -> bool:
         return self.ai.delete_message(message_id)
+    
+    # Notebook 方法
+    def add_note(self, plugin_id: str, title: str, content: str,
+                 category_name: str = None, note_type: str = 'markdown',
+                 sort_order: int = 0, color: str = None) -> int:
+        category_id = self._resolve_category_id(plugin_id, category_name)
+        return self.notebooks.add(
+            plugin_id=plugin_id, category_id=category_id,
+            title=title, content=content, note_type=note_type,
+            sort_order=sort_order, color=color
+        )
+    
+    def get_notes(self, plugin_id: str, category_id: int = None) -> list:
+        return self.notebooks.get_by_plugin(plugin_id, category_id)
+    
+    def update_note(self, plugin_id: str, note_id: int, **kwargs) -> bool:
+        return self.notebooks.update(note_id, **kwargs)
+    
+    def delete_note(self, plugin_id: str, note_id: int) -> bool:
+        return self.notebooks.delete(note_id)
+    
+    def search_notes(self, plugin_id: str, keyword: str, limit: int = 20) -> list:
+        return self.notebooks.search(plugin_id, keyword, limit)
+    
+    def note_exists(self, plugin_id: str, title: str) -> bool:
+        return self.notebooks.exists(plugin_id, title)
     
     # 辅助方法
     def _resolve_category_id(self, plugin_id: str, category_name: str = None) -> Optional[int]:

@@ -87,7 +87,7 @@ class QuickCopyRepository:
         set_clause = ', '.join(f"{k} = ?" for k in filtered.keys())
         sql = f"""
             UPDATE quick_copy_items 
-            SET {set_clause}, updated_at = CURRENT_TIMESTAMP 
+            SET {set_clause}
             WHERE id = ?
         """
         values = list(filtered.values()) + [item_id]
