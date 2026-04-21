@@ -6,6 +6,7 @@ pyinstaller --noconfirm --onedir --windowed ^
       --name "FluTool" ^
       --clean ^
       --collect-all qfluentwidgets ^
+      --collect-all qframelesswindow ^
       --collect-all plugins ^
       --collect-submodules ui ^
       --collect-submodules core ^
@@ -20,6 +21,7 @@ pyinstaller --noconfirm --onedir --windowed ^
       --hidden-import "qframelesswindow" ^
       --hidden-import "charset_normalizer" ^
       --hidden-import "bs4" ^
+      --hidden-import "loguru" ^
       --add-data "data;data/" ^
       --add-data "config;config/" ^
       --add-data "logo.ico;." ^
@@ -28,6 +30,7 @@ pyinstaller --noconfirm --onedir --windowed ^
       --exclude-module "WebEngineWidgets" ^
       --exclude-module "WebEngineCore" ^
       --exclude-module "numpy" ^
+      --exclude-module "scipy" ^
       --exclude-module "PyQt5.QtWebEngineWidgets" ^
       --exclude-module "PyQt5.QtWebEngineCore" ^
       --exclude-module "PyQt5.QtBluetooth" ^

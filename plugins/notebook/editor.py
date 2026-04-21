@@ -153,7 +153,7 @@ class NotebookEditor(QWidget):
         layout.setObjectName("notebookEditorLayout")
 
         self._editor = CustomTextEdit(self)
-        self._editor.setPlaceholderText("开始输入笔记内容...")
+        self._editor.setPlaceholderText("开始输入笔记内容...（按Enter保存，按Alt+Enter换行）")
         self._editor.setObjectName("noteTextEdit")
         self._editor.enter_pressed.connect(self.enter_pressed.emit)
         self._editor.alt_enter_pressed.connect(self.alt_enter_pressed.emit)
@@ -262,11 +262,13 @@ class CustomTextEdit(QPlainTextEdit):
 
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             if event.modifiers() == Qt.AltModifier:
-                self.alt_enter_pressed.emit()
-                event.accept()
+                # Alt+Enter 换行
+                super().keyPressEvent(event)
                 return
             else:
-                super().keyPressEvent(event)
+                # Enter 键触发保存（首次保存弹出命名对话框，或覆盖保存）
+                self.enter_pressed.emit()
+                event.accept()
                 return
 
         super().keyPressEvent(event)

@@ -361,7 +361,7 @@ class ChatInputWidget(QWidget):
         # 输入框
         self._input_edit = ChatTextEdit(self)
         self._input_edit.setObjectName("chatInputEdit")
-        self._input_edit.setPlaceholderText("有问题，尽管问。可用 @搜索 关键词 联动全局搜索")
+        self._input_edit.setPlaceholderText("有问题，尽管问。可用 @ 联动全局搜索。（按 Enter 发送，按 Alt+Enter 换行）")
         self._input_edit.setMaximumHeight(80)
         self._input_edit.setMinimumHeight(40)
         self._input_edit.send_requested.connect(self._on_send)

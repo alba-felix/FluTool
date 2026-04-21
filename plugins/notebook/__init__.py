@@ -336,6 +336,7 @@ class NotebookWidget(QWidget):
         self._toolbar.quick_replace_toggled.connect(self._toggle_quick_replace)
         self._toolbar.list_toggled.connect(self._toggle_list)
         
+        self._editor.enter_pressed.connect(self._on_enter_pressed)
         self._editor.alt_enter_pressed.connect(self._on_alt_enter_pressed)
         self._editor.save_signal.connect(self._save_note)
         
@@ -763,9 +764,14 @@ class NotebookWidget(QWidget):
         
         InfoBar.success("替换完成", "快捷替换已执行", parent=self)
     
-    def _on_alt_enter_pressed(self):
-        """处理 Alt+Enter 键 - 弹出保存对话框"""
+    def _on_enter_pressed(self):
+        """处理 Enter 键 - 触发保存（首次保存弹出命名对话框）"""
         self._save_note()
+    
+    def _on_alt_enter_pressed(self):
+        """处理 Alt+Enter 键 - 换行"""
+        # Alt+Enter 已经在编辑器中处理为换行
+        pass
 
 
 class Plugin(PluginInterface):

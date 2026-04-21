@@ -93,8 +93,9 @@ class AIChatService:
         clean_text = user_text.strip()
         messages.append(AIMessage(role="user", content=clean_text))
 
-        if clean_text.startswith("@搜索 "):
-            query = clean_text.replace("@搜索 ", "", 1).strip()
+        # 检测 @ 前缀，触发全局搜索
+        if clean_text.startswith("@"):
+            query = clean_text[1:].strip()
             search_context = self._search_bridge.search_context(query) if self._search_bridge else ""
             if search_context:
                 messages.append(

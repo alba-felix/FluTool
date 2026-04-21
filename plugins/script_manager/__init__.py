@@ -33,7 +33,7 @@ def get_powershell_path() -> str:
 class ScriptDialog(MessageBoxBase):
     """脚本添加/编辑对话框"""
     
-    SCRIPT_TYPES = ['bat', 'cmd', 'ps1', 'py']
+    SCRIPT_TYPES = ['bat', 'cmd', 'ps1', 'py', 'html']
     
     def __init__(self, parent=None, script_name: str = "", 
                  script_content: str = "", script_type: str = "bat",
@@ -835,6 +835,25 @@ class ScriptWidget(QWidget):
         
         import tempfile
         import os
+        import webbrowser
+        
+        # HTML 文件直接在浏览器中打开
+        if script_type == 'html':
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+                f.write(content)
+                temp_path = f.name
+            
+            webbrowser.open(temp_path)
+            InfoBar.success(
+                title="已打开",
+                content=f"HTML 文件已在默认浏览器中打开",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+            return
         
         suffix_map = {
             'bat': '.bat',
@@ -850,7 +869,7 @@ class ScriptWidget(QWidget):
             temp_path = f.name
         
         self.editor.output.clear()
-        self.editor.output.appendPlainText(f"运行脚本: {temp_path}\n")
+        self.editor.output.appendPlainText(f"运行脚本：{temp_path}\n")
         
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.MergedChannels)
@@ -862,7 +881,11 @@ class ScriptWidget(QWidget):
             ps_path = get_powershell_path()
             self._process.start(ps_path, ['-ExecutionPolicy', 'Bypass', '-File', temp_path])
         elif script_type == 'py':
+            # Python 脚本：先尝试全局环境，失败则使用应用解释器
+            import sys
             self._process.start('python', [temp_path])
+            # 如果启动失败，在 finished 信号中重试
+            self._py_script_path = temp_path
         else:
             self._process.start('cmd', ['/c', temp_path])
         
@@ -885,13 +908,35 @@ class ScriptWidget(QWidget):
         self.editor.output.appendPlainText(f"[错误] {text}")
     
     def _on_process_finished(self, exit_code: int, exit_status: int) -> None:
-        self.editor.output.appendPlainText(f"\n进程结束，退出码: {exit_code}")
+        # 如果是 Python 脚本且全局解释器失败，尝试使用应用解释器
+        if hasattr(self, '_py_script_path') and exit_code != 0:
+            import sys
+            self.editor.output.appendPlainText(f"\n全局 Python 解释器失败，尝试使用应用解释器...\n")
+            
+            process = QProcess(self)
+            process.setProcessChannelMode(QProcess.MergedChannels)
+            process.finished.connect(lambda code, status: self._on_process_finished(code, status))
+            process.readyReadStandardOutput.connect(self._on_process_output)
+            process.readyReadStandardError.connect(self._on_process_error)
+            
+            # 使用当前应用的 Python 解释器
+            process.start(sys.executable, [self._py_script_path])
+            process.waitForFinished(-1)  # 等待完成
+            
+            delattr(self, '_py_script_path')
+            return
+        
+        self.editor.output.appendPlainText(f"\n进程结束，退出码：{exit_code}")
         
         if hasattr(self, '_temp_file') and os.path.exists(self._temp_file):
             try:
                 os.unlink(self._temp_file)
             except Exception:
                 pass
+        
+        # 清理 Python 脚本路径
+        if hasattr(self, '_py_script_path'):
+            delattr(self, '_py_script_path')
 
 
 class Plugin(PluginInterface):
@@ -983,11 +1028,24 @@ class Plugin(PluginInterface):
         """运行脚本"""
         import tempfile
         import os
+        import webbrowser
 
         script_type = script.get('script_type', 'bat')
         content = script.get('content', '')
+        
+        # 调试输出
+        print(f"[DEBUG] Running script: type={script_type}, name={script.get('name', 'unknown')}")
 
         if not content.strip():
+            return
+
+        # HTML 文件直接在浏览器中打开
+        if script_type == 'html':
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+                f.write(content)
+                temp_path = f.name
+            
+            webbrowser.open(temp_path)
             return
 
         suffix_map = {

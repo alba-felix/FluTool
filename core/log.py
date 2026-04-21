@@ -16,17 +16,16 @@ class LogManager:
     5. 日志级别过滤
     """
     
-    _initialized = False
     _instance = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self, log_dir: str = None, log_level: str = "INFO"):
-        if self._initialized:
+        # 检查是否已经初始化过
+        if hasattr(self, '_initialized') and self._initialized:
             return
         
         # 打包后使用正确的路径
@@ -48,16 +47,20 @@ class LogManager:
         logger.remove()
         
         # 添加控制台处理器
-        handler_id = logger.add(
-            sys.stdout,
-            level=log_level,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            colorize=True,
-            backtrace=True,
-            diagnose=True,
-        )
-        self._handler_ids.append(handler_id)
+        try:
+            handler_id = logger.add(
+                sys.stdout,
+                level=log_level,
+                format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+                colorize=True,
+                backtrace=True,
+                diagnose=True,
+            )
+            self._handler_ids.append(handler_id)
+        except Exception as e:
+            print(f"Failed to add console handler: {e}")
         
+        # 标记为已初始化
         self._initialized = True
         
     def _ensure_log_dir(self):
@@ -77,7 +80,7 @@ class LogManager:
     
     def setup_main_logger(self):
         """设置主日志文件处理器"""
-        if not self._initialized:
+        if not hasattr(self, '_initialized') or not self._initialized:
             raise RuntimeError("LogManager not initialized")
         
         log_path = self._get_main_log_path()
@@ -120,7 +123,7 @@ class LogManager:
         Returns:
             配置好的插件 logger 实例
         """
-        if not self._initialized:
+        if not hasattr(self, '_initialized') or not self._initialized:
             raise RuntimeError("LogManager not initialized")
         
         # 如果已有该插件的处理器，直接返回

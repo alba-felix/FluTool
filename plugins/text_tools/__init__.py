@@ -18,8 +18,8 @@ from qfluentwidgets import (
 from core import PluginInterface
 
 from .page_interface import TabPageInterface
-from .mcp_manager import MCPManagerPage
 from .translator_manager import TranslatorPage
+from .hex_converter import HexConverterPage
 
 
 class TabPageInterface:
@@ -349,10 +349,10 @@ class SubPluginWidget(QWidget):
 
 
 class Plugin(PluginInterface):
-    """子插件"""
+    """文本类工具 - 翻译、语法检查等"""
 
-    PLUGIN_ID = "sub_plugin"
-    PLUGIN_NAME = "子插件"
+    PLUGIN_ID = "text_tools"
+    PLUGIN_NAME = "文本工具"
     PLUGIN_ICON = FIF.TILES
     PLUGIN_PRIORITY = 8.2
 
@@ -362,7 +362,7 @@ class Plugin(PluginInterface):
 
         self._tab_manager = TabManager()
         self._tab_manager.register(TranslatorPage)
-        self._tab_manager.register(MCPManagerPage)
+        self._tab_manager.register(HexConverterPage)
 
         self._widget = None
 
