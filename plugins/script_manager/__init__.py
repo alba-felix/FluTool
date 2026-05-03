@@ -1,6 +1,5 @@
-import os
 from typing import Optional, Dict, Any, List
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
     QMenu, QAction, QFormLayout, QHeaderView, QApplication,
@@ -16,6 +15,7 @@ from qfluentwidgets import (
     SubtitleLabel, ComboBox, CaptionLabel, MessageBox, PlainTextEdit
 )
 from core import PluginInterface
+from core.async_loader import BaseAsyncLoader
 from storage import DatabaseManager
 from functools import partial
 from core import SearchResult
@@ -101,31 +101,15 @@ class ScriptDialog(MessageBoxBase):
         return data
 
 
-class ScriptLoader(QThread):
+class ScriptLoader(BaseAsyncLoader):
     """异步脚本加载器"""
     
-    load_finished = pyqtSignal(list)
-    load_progress = pyqtSignal(int)
-    load_error = pyqtSignal(str)
+    def load_data(self) -> List[Dict[str, Any]]:
+        """加载脚本数据"""
+        return self.db.get_scripts(self.plugin_id)
     
-    def __init__(self, db: DatabaseManager, plugin_id: str):
-        super().__init__()
-        self.db = db
-        self.plugin_id = plugin_id
-    
-    def run(self):
-        try:
-            self.load_progress.emit(10)
-            self.load_progress.emit(30)
-            
-            scripts = self.db.get_scripts(self.plugin_id)
-            self.load_progress.emit(60)
-            
-            self.load_progress.emit(100)
-            
-            self.load_finished.emit(scripts)
-        except Exception as e:
-            self.load_error.emit(f"加载脚本数据时出错: {e}")
+    def get_data_name(self) -> str:
+        return "脚本"
 
 
 class ScriptEditor(QWidget):
