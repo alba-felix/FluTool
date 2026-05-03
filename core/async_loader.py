@@ -5,13 +5,18 @@
 通过模板方法模式让子类实现具体的加载逻辑。
 """
 
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import List, Dict, Any, Optional
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, QObject
 from storage import DatabaseManager
 
 
-class BaseAsyncLoader(QThread, ABC):
+class AsyncLoaderMeta(ABCMeta, type(QObject)):
+    """统一的元类，解决 ABC 和 QObject 的元类冲突"""
+    pass
+
+
+class BaseAsyncLoader(QThread, metaclass=AsyncLoaderMeta):
     """异步加载器基类
     
     提供统一的异步加载框架，子类只需实现 load_data() 方法。
@@ -72,7 +77,7 @@ class BaseAsyncLoader(QThread, ABC):
         return ""
 
 
-class NetworkAsyncLoader(QThread, ABC):
+class NetworkAsyncLoader(QThread, metaclass=AsyncLoaderMeta):
     """网络异步加载器基类
     
     在 QThread 基础上增加可停止机制，适用于网络请求等耗时操作。
