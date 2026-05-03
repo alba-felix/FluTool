@@ -236,9 +236,8 @@ class QuickCopyWidget(QWidget):
     
     def _init_paths(self) -> None:
         """初始化路径"""
-        self.data_dir = get_app_data_path("data")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.json_file = self.data_dir / "quick_copy.json"
+        # 此方法当前未使用，保留以备后续扩展
+        pass
 
     def _setup_ui(self) -> None:
         """构建界面"""
@@ -276,7 +275,7 @@ class QuickCopyWidget(QWidget):
         self._scroll_layout.setContentsMargins(5, 5, 5, 5)
         self._scroll_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
-        # 占位符
+        # 临时占位符（将在加载数据时被替换）
         placeholder = QLabel("暂无快速复制项目", scroll_content)
         placeholder.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self._scroll_layout.addWidget(placeholder, 0, 0, 1, 3)
@@ -290,27 +289,20 @@ class QuickCopyWidget(QWidget):
 
     def _add_item(self) -> None:
         """添加快速复制项"""
-        if self._item_count == 0:
-            item = self._scroll_layout.itemAt(0)
-            if item:
-                widget = item.widget()
-                if isinstance(widget, QLabel):
-                    self._scroll_layout.removeItem(item)
-
-        card_id = self.db.add_quick_copy_card(f"卡片 {self._item_count + 1}", self._item_count)
-        
+        # 直接在数据库添加新卡片（无内容项）
+        card_id = self.db.add_quick_copy_card(
+            f"卡片 {len(self.cards_data) + 1}", 
+            len(self.cards_data)
+        )
         new_card = {
             "id": card_id,
-            "title": f"卡片 {self._item_count + 1}",
+            "title": f"卡片 {len(self.cards_data) + 1}",
             "items": []
         }
         self.cards_data.append(new_card)
-        
-        card = QuickCopyCard(new_card, self)
-        card.edit_clicked.connect(self._on_card_edit)
-        self._scroll_layout.addWidget(card, self._item_count // 4, self._item_count % 4, 1, 1)
-        self._cards.append(card)
-        self._item_count += 1
+
+        # 统一刷新界面（内部会清除旧控件并重建）
+        self._display_cards()
     
     def _load_cards(self) -> None:
         """从数据库加载卡片数据"""
@@ -331,16 +323,26 @@ class QuickCopyWidget(QWidget):
         self._display_cards()
     
     def _display_cards(self) -> None:
-        """显示卡片列表"""
-        # 移除占位符
-        if len(self.cards_data) > 0:
-            item = self._scroll_layout.itemAt(0)
-            if item:
-                widget = item.widget()
-                if isinstance(widget, QLabel):
-                    self._scroll_layout.removeItem(item)
-        
-        # 创建卡片
+        """显示卡片列表（每次调用先清空现有控件）"""
+        # 1. 彻底移除布局中所有已有控件
+        while self._scroll_layout.count():
+            item = self._scroll_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        # 2. 重置内部状态
+        self._cards = []
+        self._item_count = 0
+
+        # 3. 无数据时显示占位符
+        if not self.cards_data:
+            placeholder = QLabel("暂无快速复制项目")
+            placeholder.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            self._scroll_layout.addWidget(placeholder, 0, 0, 1, 3)
+            return
+
+        # 4. 重新创建所有卡片
         for i, card_data in enumerate(self.cards_data):
             card = QuickCopyCard(card_data, self)
             card.edit_clicked.connect(self._on_card_edit)
@@ -396,7 +398,7 @@ class QuickCopyWidget(QWidget):
             )
 
     def load_data(self) -> None:
-        """加载数据"""
+        """加载数据（通常由插件框架调用）"""
         self._load_cards()
 
 

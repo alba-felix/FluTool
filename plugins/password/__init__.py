@@ -186,9 +186,20 @@ class PasswordWidget(QWidget):
         self.settings_file = str(get_app_data_path("config/local_settings.ini"))
         self.config = configparser.ConfigParser()
         self._need_set_password = False
-        
+
         self._load_master_password()
         self._setup_ui()
+        self._setup_event_listeners()
+
+    def _setup_event_listeners(self):
+        """设置事件监听器"""
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'event_bus'):
+            self.core.event_bus.listen("data_restored", lambda _: self._on_data_restored())
+
+    def _on_data_restored(self):
+        """数据恢复后刷新"""
+        self._load_master_password()
+        self._load_passwords()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -425,12 +436,15 @@ class PasswordWidget(QWidget):
                     orient=Qt.Horizontal, isClosable=True,
                     position=InfoBarPosition.TOP, duration=2000, parent=self
                 )
+                # 记录操作日志
+                if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                    self.core.logger.log_operation("CREATE", f"添加密码分类: {name}")
     
     def _add_password(self):
         """添加密码"""
         selected = self.tree.selectedItems()
         category_id = None
-        
+
         if selected:
             item = selected[0]
             if item.parent():
@@ -443,12 +457,12 @@ class PasswordWidget(QWidget):
                 category_id = categories[0]['id']
             else:
                 category_id = self.db.add_category(self.PLUGIN_ID, "默认分类")
-        
+
         dialog = AddPasswordDialog(self)
         if dialog.exec():
             data = dialog.get_data()
             encrypted = self.crypto_tool.shift_encrypt(data['password'], self.encryption_key)
-            
+
             self.db.add_password(
                 plugin_id=self.PLUGIN_ID,
                 username=data['username'],
@@ -458,13 +472,16 @@ class PasswordWidget(QWidget):
                 email=data['email'],
                 notes=data['notes']
             )
-            
+
             self._load_passwords()
             InfoBar.success(
                 title="成功", content="已添加密码",
                 orient=Qt.Horizontal, isClosable=True,
                 position=InfoBarPosition.TOP, duration=2000, parent=self
             )
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("CREATE", f"添加密码: {data['platform']} ({data['username']})")
     
     def _on_item_double_clicked(self, item, column):
         """双击项目时根据列复制对应内容，备注列支持链接跳转"""
@@ -629,7 +646,8 @@ class PasswordWidget(QWidget):
         """编辑密码"""
         password_id = item.data(0, Qt.UserRole)
         encrypted_pwd = item.data(1, Qt.UserRole)
-        
+        old_platform = item.text(0)
+
         password = encrypted_pwd
         if encrypted_pwd and encrypted_pwd.startswith("encrypted:"):
             try:
@@ -638,7 +656,7 @@ class PasswordWidget(QWidget):
                 )
             except:
                 password = ""
-        
+
         dialog = AddPasswordDialog(self)
         dialog.set_data({
             "platform": item.text(0),
@@ -647,11 +665,11 @@ class PasswordWidget(QWidget):
             "email": item.text(3),
             "notes": item.text(4)
         })
-        
+
         if dialog.exec():
             data = dialog.get_data()
             new_encrypted = self.crypto_tool.shift_encrypt(data['password'], self.encryption_key)
-            
+
             self.db.update_password(
                 self.PLUGIN_ID, password_id,
                 platform=data['platform'],
@@ -660,33 +678,44 @@ class PasswordWidget(QWidget):
                 email=data['email'],
                 notes=data['notes']
             )
-            
+
             self._load_passwords()
             InfoBar.success(
                 title="成功", content="密码已更新",
                 orient=Qt.Horizontal, isClosable=True,
                 position=InfoBarPosition.TOP, duration=2000, parent=self
             )
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("UPDATE", f"编辑密码: {old_platform} -> {data['platform']}")
     
     def _delete_password(self, item):
         """删除密码"""
+        platform = item.text(0)
         if MessageBox(
-            "确认删除", 
-            f"确定要删除密码 '{item.text(0)}' 吗？",
+            "确认删除",
+            f"确定要删除密码 '{platform}' 吗？",
             self
         ).exec():
             self.db.delete_password(self.PLUGIN_ID, item.data(0, Qt.UserRole))
             self._load_passwords()
-    
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除密码: {platform}")
+
     def _delete_category(self, item):
         """删除分类"""
+        category_name = item.text(0)
         if MessageBox(
-            "确认删除", 
-            f"确定要删除分类 '{item.text(0)}' 吗？",
+            "确认删除",
+            f"确定要删除分类 '{category_name}' 吗？",
             self
         ).exec():
             self.db.delete_category(self.PLUGIN_ID, item.data(0, Qt.UserRole))
             self._load_passwords()
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除密码分类: {category_name}")
     
     def _filter_passwords(self, text):
         """搜索过滤"""

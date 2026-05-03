@@ -560,9 +560,21 @@ class SettingsInterface(ScrollArea):
                     if member.startswith('data/'):
                         zipf.extract(member, self.project_root)
             
+            # 发布数据恢复事件，通知各插件热刷新
+            try:
+                self.core.event_bus.emit("data_restored")
+            except Exception:
+                pass
+            
+            # 记录操作日志
+            try:
+                self.core.logger.log_operation("RESTORE", f"从备份文件恢复数据: {os.path.basename(file_path)}")
+            except Exception:
+                pass
+            
             InfoBar.success(
                 title="恢复成功",
-                content="数据已恢复，部分功能可能需要重启应用生效",
+                content="数据已恢复，各插件已自动刷新",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,

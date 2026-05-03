@@ -1,10 +1,10 @@
 from PyQt5.QtCore import pyqtSignal, QEasingCurve, QPoint, QRect, QSize, Qt, QTimer, QVariantAnimation
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (QAbstractButton, QAction, QApplication, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon,
-                             QVBoxLayout, QWidget)
+                             QVBoxLayout, QWidget, QFrame, QScrollArea)
 from qfluentwidgets import (BodyLabel, CaptionLabel, FluentIcon as FIF, FluentStyleSheet, HyperlinkLabel, isDarkTheme,
                             NavigationWidget, setCustomStyleSheet, setTheme, SmoothScrollArea, StrongBodyLabel, Theme,
-                            TransparentToolButton)
+                            TransparentToolButton, SubtitleLabel, qconfig)
 from qfluentwidgets.common.font import setFont
 from qfluentwidgets.common.icon import drawIcon, toQIcon
 from qfluentwidgets.window.stacked_widget import StackedWidget
@@ -530,27 +530,27 @@ class PushFluentWindow(FramelessMainWindow):
 	def _init_navigation(self) -> None:
 		self._central_widget = QWidget(self)
 		self.setCentralWidget(self._central_widget)
-		
+
 		self.hBoxLayout = QHBoxLayout(self._central_widget)
 		self.hBoxLayout.setSpacing(0)
 		self.hBoxLayout.setContentsMargins(0, 0, 0, 0)
-		
+
 		self.navigationInterface = ScrollableNavigationPanel(self._central_widget)
 		self.navigationInterface.setExpandWidth(150)
-		
+
 		self.stackedWidget = StackedWidget(self._central_widget)
 		self.stackedWidget.setAnimationEnabled(False)
 		FluentStyleSheet.FLUENT_WINDOW.apply(self.stackedWidget)
-		
+
 		self._content_widget = QWidget(self)
 		self._content_layout = QHBoxLayout(self._content_widget)
 		self._content_layout.setContentsMargins(0, 38, 0, 0)
 		self._content_layout.setSpacing(0)
 		self._content_layout.addWidget(self.stackedWidget, 1)
-		
+
 		self.hBoxLayout.addWidget(self.navigationInterface)
 		self.hBoxLayout.addWidget(self._content_widget, 1)
-		
+
 		self.stackedWidget.currentChanged.connect(self._on_current_interface_changed)
 	
 	def _setup_title_bar(self) -> None:
@@ -863,52 +863,175 @@ class MainWindow(PushFluentWindow):
 	def _setup_home_page(self) -> None:
 		home = QWidget()
 		home.setObjectName("home")
-		layout = QVBoxLayout(home)
-		layout.setAlignment(Qt.AlignCenter)
-		layout.setSpacing(20)
+		
+		main_layout = QVBoxLayout(home)
+		main_layout.setAlignment(Qt.AlignTop)
+		main_layout.setSpacing(0)
+		main_layout.setContentsMargins(0, 0, 0, 0)
+		
+		# 顶部标题区域
+		header_widget = QWidget()
+		header_layout = QVBoxLayout(header_widget)
+		header_layout.setContentsMargins(30, 30, 30, 20)
+		header_layout.setSpacing(8)
+		
+		title_layout = QHBoxLayout()
+		title_layout.setSpacing(12)
 		
 		logo_path = get_resource_path("logo.ico")
 		if logo_path.exists():
 			logo_label = QLabel()
 			logo_pixmap = QPixmap(str(logo_path))
-			logo_label.setPixmap(logo_pixmap.scaled(96, 96, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-			logo_label.setAlignment(Qt.AlignCenter)
-			layout.addWidget(logo_label)
+			logo_label.setPixmap(logo_pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+			title_layout.addWidget(logo_label)
 		
 		title = StrongBodyLabel("FluTool")
-		title.setAlignment(Qt.AlignCenter)
-		title.setStyleSheet("font-size: 28px;")
-		layout.addWidget(title)
+		title.setStyleSheet("font-size: 24px; font-weight: bold;")
+		title_layout.addWidget(title)
 		
-		version = CaptionLabel("版本 0.1.0")
-		version.setAlignment(Qt.AlignCenter)
-		layout.addWidget(version)
+		version = CaptionLabel("v0.1.0")
+		title_layout.addWidget(version)
+		title_layout.addStretch()
 		
-		desc = BodyLabel("一款基于 PyQt5 的 Fluent Design 风格工具集")
-		desc.setAlignment(Qt.AlignCenter)
-		layout.addWidget(desc)
+		header_layout.addLayout(title_layout)
 		
-		layout.addSpacing(20)
+		desc = SubtitleLabel("一款基于 PyQt5 的 Fluent Design 风格工具集")
+		header_layout.addWidget(desc)
 		
-		info_layout = QVBoxLayout()
-		info_layout.setSpacing(8)
+		main_layout.addWidget(header_widget)
 		
-		author_label = BodyLabel("作者:alba-felix ")
-		author_label.setAlignment(Qt.AlignCenter)
-		info_layout.addWidget(author_label)
+		# 菜单卡片区域
+		scroll = QScrollArea()
+		scroll.setWidgetResizable(True)
+		scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+		scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+		scroll.setFrameShape(QScrollArea.NoFrame)
+		scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+		scroll.viewport().setStyleSheet("background: transparent; border: none;")
 		
-		github_container = QWidget()
-		github_layout = QVBoxLayout(github_container)
-		github_layout.setContentsMargins(0, 0, 0, 0)
-		github_layout.setAlignment(Qt.AlignCenter)
-		github_label = HyperlinkLabel("GitHub", "https://github.com")
-		github_layout.addWidget(github_label)
-		info_layout.addWidget(github_container)
+		content_widget = QWidget()
+		content_layout = QVBoxLayout(content_widget)
+		content_layout.setContentsMargins(30, 10, 30, 30)
+		content_layout.setSpacing(16)
 		
-		layout.addLayout(info_layout)
-		layout.addStretch()
+		# 菜单卡片数据
+		menu_items = [
+			{"icon": FIF.INFO, "title": "关于", "desc": "查看应用信息、作者、许可证等"},
+			{"icon": FIF.UPDATE, "title": "检查更新", "desc": "检查是否有新版本可用"},
+			{"icon": FIF.DOCUMENT, "title": "使用文档", "desc": "查看功能说明和使用指南"},
+			{"icon": FIF.FEEDBACK, "title": "问题反馈", "desc": "报告 Bug 或提出建议"},
+			{"icon": FIF.CODE, "title": "源代码", "desc": "访问 GitHub 仓库"},
+		]
+		
+		for item in menu_items:
+			card = self._create_menu_card(item["icon"], item["title"], item["desc"])
+			content_layout.addWidget(card)
+		
+		content_layout.addStretch()
+		
+		scroll.setWidget(content_widget)
+		main_layout.addWidget(scroll, 1)
 		
 		self.addSubInterface(home, FIF.HOME, "首页")
+	
+	def _create_menu_card(self, icon, title: str, desc: str) -> QWidget:
+		"""创建菜单卡片"""
+		card = QFrame()
+		card.setObjectName("homeMenuCard")
+		card.setFixedHeight(80)
+		card.setCursor(Qt.PointingHandCursor)
+		
+		layout = QHBoxLayout(card)
+		layout.setContentsMargins(20, 15, 20, 15)
+		layout.setSpacing(16)
+		
+		# 图标
+		icon_btn = TransparentToolButton(icon, card)
+		icon_btn.setFixedSize(48, 48)
+		icon_btn.setIconSize(QSize(24, 24))
+		layout.addWidget(icon_btn)
+		
+		# 文字区域
+		text_widget = QWidget(card)
+		text_layout = QVBoxLayout(text_widget)
+		text_layout.setContentsMargins(0, 0, 0, 0)
+		text_layout.setSpacing(4)
+		
+		title_label = BodyLabel(title)
+		title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
+		text_layout.addWidget(title_label)
+		
+		desc_label = CaptionLabel(desc)
+		desc_label.setStyleSheet("color: #888;")
+		text_layout.addWidget(desc_label)
+		
+		layout.addWidget(text_widget, 1)
+		
+		# 箭头
+		arrow = TransparentToolButton(FIF.CHEVRON_RIGHT, card)
+		arrow.setFixedSize(32, 32)
+		arrow.setIconSize(QSize(14, 14))
+		arrow.setStyleSheet("color: #888;")
+		layout.addWidget(arrow)
+		
+		# 主题样式
+		dark = isDarkTheme()
+		if dark:
+			card.setStyleSheet("""
+				QFrame#homeMenuCard {
+					background-color: #2d2d2d;
+					border-radius: 8px;
+					border: 1px solid #3d3d3d;
+				}
+				QFrame#homeMenuCard:hover {
+					background-color: #3d3d3d;
+					border: 1px solid #5d5d5d;
+				}
+			""")
+		else:
+			card.setStyleSheet("""
+				QFrame#homeMenuCard {
+					background-color: #ffffff;
+					border-radius: 8px;
+					border: 1px solid #e0e0e0;
+				}
+				QFrame#homeMenuCard:hover {
+					background-color: #f5f5f5;
+					border: 1px solid #d0d0d0;
+				}
+			""")
+		
+		qconfig.themeChanged.connect(lambda: self._update_menu_card_style(card))
+		
+		return card
+	
+	def _update_menu_card_style(self, card: QFrame) -> None:
+		"""更新菜单卡片样式"""
+		dark = isDarkTheme()
+		if dark:
+			card.setStyleSheet("""
+				QFrame#homeMenuCard {
+					background-color: #2d2d2d;
+					border-radius: 8px;
+					border: 1px solid #3d3d3d;
+				}
+				QFrame#homeMenuCard:hover {
+					background-color: #3d3d3d;
+					border: 1px solid #5d5d5d;
+				}
+			""")
+		else:
+			card.setStyleSheet("""
+				QFrame#homeMenuCard {
+					background-color: #ffffff;
+					border-radius: 8px;
+					border: 1px solid #e0e0e0;
+				}
+				QFrame#homeMenuCard:hover {
+					background-color: #f5f5f5;
+					border: 1px solid #d0d0d0;
+				}
+			""")
 	
 	def _setup_settings_interface(self) -> None:
 		self.settings_interface = SettingsInterface(self.core)

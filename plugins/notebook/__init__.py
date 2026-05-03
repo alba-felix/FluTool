@@ -321,7 +321,7 @@ class NotebookWidget(QWidget):
         self._sidebar.note_deleted.connect(self._delete_note_by_id)
         self._sidebar.note_renamed.connect(self._rename_note)
         self._sidebar.note_exported.connect(self._export_note_by_id)
-        
+
         self._toolbar.new_note_signal.connect(self._create_new_note)
         self._toolbar.save_note_signal.connect(self._save_note)
         self._toolbar.delete_note_signal.connect(self._delete_note)
@@ -335,12 +335,22 @@ class NotebookWidget(QWidget):
         self._toolbar.wrap_toggled.connect(self._toggle_wrap)
         self._toolbar.quick_replace_toggled.connect(self._toggle_quick_replace)
         self._toolbar.list_toggled.connect(self._toggle_list)
-        
+
         self._editor.enter_pressed.connect(self._on_enter_pressed)
         self._editor.alt_enter_pressed.connect(self._on_alt_enter_pressed)
         self._editor.save_signal.connect(self._save_note)
-        
+
         self._quick_replace_panel.replace_triggered.connect(self._execute_quick_replace)
+
+        # 监听数据恢复事件，实现热刷新
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'event_bus'):
+            self.core.event_bus.listen("data_restored", lambda _: self._on_data_restored())
+
+    def _on_data_restored(self):
+        """数据恢复后刷新"""
+        self._current_note_id = None
+        self._editor.clear()
+        self.load_data()
     
     def load_data(self):
         """加载数据"""
@@ -391,6 +401,9 @@ class NotebookWidget(QWidget):
             InfoBar.success("保存成功", f"笔记 '{current_title}' 已更新", parent=self)
             self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
             self.note_saved.emit()
+            # 记录操作日志
+            if self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("UPDATE", f"更新笔记: {current_title}")
             return
 
         dialog = MessageBoxBase(self)
@@ -421,26 +434,48 @@ class NotebookWidget(QWidget):
 
             self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
             self.note_saved.emit()
+            # 记录操作日志
+            if self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("CREATE", f"创建笔记: {title}")
     
     def _delete_note(self):
         """删除笔记"""
         if not self._current_note_id:
             InfoBar.warning("提示", "没有可删除的笔记", parent=self)
             return
-        
+
         box = MessageBox("删除笔记", "确定要删除当前笔记吗？", self)
         if box.exec():
+            # 获取笔记标题用于日志
+            notes = self.db.get_notes(self.PLUGIN_ID)
+            note_title = ""
+            for note in notes:
+                if note['id'] == self._current_note_id:
+                    note_title = note['title']
+                    break
+
             self.db.delete_note(self.PLUGIN_ID, self._current_note_id)
             self._current_note_id = None
             self._editor.clear()
             self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
             InfoBar.success("删除成功", "笔记已删除", parent=self)
             self.note_deleted.emit()
-    
+            # 记录操作日志
+            if self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除笔记: {note_title}")
+
     def _delete_note_by_id(self, note_id: int):
         """通过ID删除笔记"""
         box = MessageBox("删除笔记", "确定要删除该笔记吗？", self)
         if box.exec():
+            # 获取笔记标题用于日志
+            notes = self.db.get_notes(self.PLUGIN_ID)
+            note_title = ""
+            for note in notes:
+                if note['id'] == note_id:
+                    note_title = note['title']
+                    break
+
             self.db.delete_note(self.PLUGIN_ID, note_id)
             if self._current_note_id == note_id:
                 self._current_note_id = None
@@ -448,16 +483,22 @@ class NotebookWidget(QWidget):
             self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
             InfoBar.success("删除成功", "笔记已删除", parent=self)
             self.note_deleted.emit()
-    
+            # 记录操作日志
+            if self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除笔记: {note_title}")
+
     def _rename_note(self, note_id: int, new_title: str):
         """重命名笔记"""
         if self.db.note_exists(self.PLUGIN_ID, new_title):
             InfoBar.warning("提示", "已存在同名笔记", parent=self)
             return
-        
+
         self.db.update_note(self.PLUGIN_ID, note_id, title=new_title)
         self._sidebar.update_note_title(note_id, new_title)
         InfoBar.success("重命名成功", f"笔记已重命名为 '{new_title}'", parent=self)
+        # 记录操作日志
+        if self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("UPDATE", f"重命名笔记为: {new_title}")
     
     def _format_note(self, format_type: str):
         """格式化笔记"""

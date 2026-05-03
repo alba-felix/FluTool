@@ -7,15 +7,16 @@ from loguru import logger
 class LogManager:
     """
     日志管理器（基于 loguru）
-    
+
     支持：
-    1. 主日志文件（logs/flutool.log）
-    2. 插件独立日志文件（logs/plugins/{plugin_id}.log）
+    1. 主日志文件（logs/flutool.log）- 系统日志、错误信息
+    2. 操作日志文件（logs/operations.log）- 增删改等关键操作
     3. 控制台输出
     4. 日志轮转（按天）
     5. 日志级别过滤
+    6. 保留最近7天日志，不保留压缩包
     """
-    
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -27,7 +28,7 @@ class LogManager:
         # 检查是否已经初始化过
         if hasattr(self, '_initialized') and self._initialized:
             return
-        
+
         # 打包后使用正确的路径
         if log_dir is None:
             if getattr(sys, 'frozen', False):
@@ -37,15 +38,14 @@ class LogManager:
             else:
                 # 开发环境使用相对路径
                 log_dir = Path("logs")
-        
+
         self._log_dir = Path(log_dir)
         self._log_level = log_level
-        self._plugin_handlers = {}
         self._handler_ids = []
-        
+
         # 移除 loguru 默认处理器
         logger.remove()
-        
+
         # 添加控制台处理器
         try:
             handler_id = logger.add(
@@ -59,111 +59,100 @@ class LogManager:
             self._handler_ids.append(handler_id)
         except Exception as e:
             print(f"Failed to add console handler: {e}")
-        
+
         # 标记为已初始化
         self._initialized = True
-        
+
     def _ensure_log_dir(self):
         """确保日志目录存在"""
         self._log_dir.mkdir(parents=True, exist_ok=True)
-        
+
     def _get_main_log_path(self) -> Path:
         """获取主日志文件路径"""
         self._ensure_log_dir()
         return self._log_dir / "flutool.log"
-    
-    def _get_plugin_log_path(self, plugin_id: str) -> Path:
-        """获取插件日志文件路径"""
-        plugins_dir = self._log_dir / "plugins"
-        plugins_dir.mkdir(parents=True, exist_ok=True)
-        return plugins_dir / f"{plugin_id}.log"
-    
+
+    def _get_operation_log_path(self) -> Path:
+        """获取操作日志文件路径"""
+        self._ensure_log_dir()
+        return self._log_dir / "operations.log"
+
     def setup_main_logger(self):
-        """设置主日志文件处理器"""
+        """设置主日志文件处理器（系统日志、错误信息）"""
         if not hasattr(self, '_initialized') or not self._initialized:
             raise RuntimeError("LogManager not initialized")
-        
+
         log_path = self._get_main_log_path()
-        
+
         handler_id = logger.add(
             log_path,
             level=self._log_level,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
             rotation="00:00",
             retention="7 days",
-            compression="zip",
             encoding="utf-8",
             backtrace=True,
             diagnose=True,
         )
         self._handler_ids.append(handler_id)
-    
+
+    def setup_operation_logger(self):
+        """设置操作日志文件处理器（增删改等关键操作）"""
+        if not hasattr(self, '_initialized') or not self._initialized:
+            raise RuntimeError("LogManager not initialized")
+
+        log_path = self._get_operation_log_path()
+
+        handler_id = logger.add(
+            log_path,
+            level="INFO",
+            format="{time:YYYY-MM-DD HH:mm:ss} | {extra[operation_type]: <10} | {message}",
+            rotation="00:00",
+            retention="7 days",
+            encoding="utf-8",
+            filter=lambda record: "operation_type" in record["extra"],
+        )
+        self._handler_ids.append(handler_id)
+
     def get_logger(self, name: str = None):
         """
         获取日志记录器
-        
+
         Args:
             name: 日志名称，如果为 None 则返回主日志
-            
+
         Returns:
             配置好的 logger 实例
         """
         if name is None:
             return logger
-        
+
         return logger.bind(name=name)
-    
-    def get_plugin_logger(self, plugin_id: str):
+
+    def log_operation(self, operation_type: str, message: str) -> None:
         """
-        获取插件专用日志记录器
-        
+        记录操作日志
+
         Args:
-            plugin_id: 插件 ID
-            
-        Returns:
-            配置好的插件 logger 实例
+            operation_type: 操作类型（如 CREATE, UPDATE, DELETE, READ 等）
+            message: 操作描述
         """
-        if not hasattr(self, '_initialized') or not self._initialized:
-            raise RuntimeError("LogManager not initialized")
-        
-        # 如果已有该插件的处理器，直接返回
-        if plugin_id in self._plugin_handlers:
-            return logger.bind(plugin_id=plugin_id)
-        
-        # 添加插件专用的文件处理器
-        plugin_log_path = self._get_plugin_log_path(plugin_id)
-        
-        handler_id = logger.add(
-            plugin_log_path,
-            level=self._log_level,
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[plugin_id]} - {message}",
-            rotation="00:00",
-            retention="7 days",
-            compression="zip",
-            encoding="utf-8",
-            backtrace=True,
-            diagnose=True,
-            filter=lambda record: record["extra"].get("plugin_id") == plugin_id,
-        )
-        
-        self._plugin_handlers[plugin_id] = handler_id
-        
-        return logger.bind(plugin_id=plugin_id)
-    
+        logger.bind(operation_type=operation_type).info(message)
+
     def debug(self, msg: str) -> None:
         logger.debug(msg)
-    
+
     def info(self, msg: str) -> None:
         logger.info(msg)
-    
+
     def warning(self, msg: str) -> None:
         logger.warning(msg)
-    
+
     def error(self, msg: str) -> None:
         logger.error(msg)
-    
+
     def critical(self, msg: str) -> None:
         logger.critical(msg)
-    
+
     def success(self, msg: str) -> None:
         logger.success(msg)

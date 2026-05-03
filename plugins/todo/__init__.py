@@ -220,10 +220,20 @@ class TodoWidget(QWidget):
         self.core = core
         self.db = DatabaseManager()
         self.todos: List[Dict[str, Any]] = []
-        
+
         self._setup_ui()
         self._load_todos()
         self._setup_timer()
+        self._setup_event_listeners()
+
+    def _setup_event_listeners(self):
+        """设置事件监听器"""
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'event_bus'):
+            self.core.event_bus.listen("data_restored", lambda _: self._on_data_restored())
+
+    def _on_data_restored(self):
+        """数据恢复后刷新"""
+        self._load_todos()
     
     def _setup_ui(self):
         """构建界面"""
@@ -508,6 +518,9 @@ class TodoWidget(QWidget):
                     duration=2000,
                     parent=self
                 )
+                # 记录操作日志
+                if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                    self.core.logger.log_operation("CREATE", f"添加待办事项: {todo_data['title']}")
             else:
                 InfoBar.warning(
                     title="输入错误",
@@ -555,6 +568,9 @@ class TodoWidget(QWidget):
                     duration=2000,
                     parent=self
                 )
+                # 记录操作日志
+                if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                    self.core.logger.log_operation("UPDATE", f"更新待办事项: {updated_data['title']}")
             else:
                 InfoBar.warning(
                     title="输入错误",
@@ -572,20 +588,20 @@ class TodoWidget(QWidget):
         if todo_idx is None or todo_idx >= len(self.todos):
             return
         todo = self.todos[todo_idx]
-        
+
         todo["completed"] = not todo.get("completed", False)
         if todo["completed"]:
             todo["completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             todo.pop("completed_at", None)
-        
+
         todo_id = todo.get("id")
         if todo_id:
             self.db.toggle_todo_completed(todo_id)
-        
+
         self._display_todos()
         self._update_stats()
-        
+
         status_msg = "已完成" if todo["completed"] else "未完成"
         InfoBar.success(
             title="状态变更",
@@ -596,6 +612,9 @@ class TodoWidget(QWidget):
             duration=2000,
             parent=self
         )
+        # 记录操作日志
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("UPDATE", f"标记待办事项为{status_msg}: {todo.get('title', '未命名')}")
     
     def _toggle_pin(self, item: QTreeWidgetItem):
         """切换置顶状态"""
@@ -630,10 +649,11 @@ class TodoWidget(QWidget):
         if todo_idx is None or todo_idx >= len(self.todos):
             return
         todo = self.todos[todo_idx]
-        
+
         box = MessageBoxBase("删除代办事项", f"确定要删除 '{todo.get('title', '未命名')}' 吗？", self)
         if box.exec():
             todo_id = todo.get("id")
+            todo_title = todo.get('title', '未命名')
             if todo_id:
                 self.db.delete_todo(todo_id)
             del self.todos[todo_idx]
@@ -641,13 +661,16 @@ class TodoWidget(QWidget):
             self._update_stats()
             InfoBar.success(
                 title="删除成功",
-                content=f"已删除代办事项 '{todo.get('title', '未命名')}'",
+                content=f"已删除代办事项 '{todo_title}'",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=2000,
                 parent=self
             )
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除待办事项: {todo_title}")
     
     def _show_context_menu(self, pos):
         """显示右键菜单"""
@@ -728,7 +751,7 @@ class TodoWidget(QWidget):
                     todo_id = todo.get("id")
                     if todo_id:
                         self.db.update_todo(todo_id, completed=0)
-            
+
             self._display_todos()
             self._update_stats()
             InfoBar.success(
@@ -740,6 +763,9 @@ class TodoWidget(QWidget):
                 duration=2000,
                 parent=self
             )
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("UPDATE", f"批量标记{completed_count}个任务为未完成")
     
     def load_data(self) -> None:
         """加载数据"""

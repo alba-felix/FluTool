@@ -733,7 +733,7 @@ class Plugin(PluginInterface):
     
     PLUGIN_ID = "clipboard"
     PLUGIN_NAME = "剪切板"
-    PLUGIN_ICON = FIF.COPY
+    PLUGIN_ICON = FIF.PASTE
     PLUGIN_PRIORITY = 10
     
     def initialize(self, core) -> None:

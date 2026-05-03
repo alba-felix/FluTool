@@ -51,8 +51,8 @@ class PluginManager:
             self._core.logger.warning(f"Plugin path is not a directory: {plugin_path}")
             return []
         
-        plugin_info: List[Tuple[int, str]] = []
-        
+        plugin_info: List[Tuple[float, str]] = []
+
         try:
             for item in plugin_dir.iterdir():
                 if item.is_dir() and not item.name.startswith('_'):
@@ -65,11 +65,11 @@ class PluginManager:
             self._core.logger.error(f"Permission denied accessing plugin directory: {e}")
         except OSError as e:
             self._core.logger.error(f"OS error scanning plugins: {e}")
-        
+
         plugin_info.sort(key=lambda x: x[0])
         return [plugin_id for _, plugin_id in plugin_info]
     
-    def _get_plugin_priority(self, plugin_id: str) -> int:
+    def _get_plugin_priority(self, plugin_id: str) -> float:
         """
         获取插件优先级
         
@@ -77,14 +77,14 @@ class PluginManager:
             plugin_id: 插件ID
             
         Returns:
-            优先级数值（默认999）
+            优先级数值（默认999.0）
         """
         if not plugin_id:
-            return 999
+            return 999.0
         
         plugin_dir = self._plugin_dirs.get(plugin_id)
         if not plugin_dir:
-            return 999
+            return 999.0
         
         try:
             module_name = f"plugins.{plugin_dir.name}"
@@ -95,11 +95,11 @@ class PluginManager:
                     obj is not PluginInterface and
                     obj.__module__ == module.__name__):
                     priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                    return int(priority) if priority is not None else 999
+                    return float(priority) if priority is not None else 999.0
         except Exception as e:
             self._core.logger.warning(f"Failed to get priority for {plugin_id}: {e}")
         
-        return 999
+        return 999.0
 
     def _resolve_plugin_id(self, plugin_class) -> str:
         if plugin_class is None:
@@ -181,28 +181,24 @@ class PluginManager:
                     
                     try:
                         plugin = obj()
-                        
-                        # 为插件设置专用日志记录器
-                        plugin_logger = self._core.logger.get_plugin_logger(plugin_id)
-                        plugin._set_logger(plugin_logger)
-                        
+
                         plugin.initialize(self._core)
-                        
+
                         actual_id = plugin.get_id()
                         if not actual_id:
                             self._core.logger.warning(f"Plugin has no ID, using {plugin_id}")
                             actual_id = plugin_id
-                        
+
                         self._plugins[actual_id] = plugin
                         self._loaded_plugins.add(actual_id)
-                        
+
                         if self._core.search_manager and plugin.supports_search():
                             try:
                                 self._core.search_manager.register_plugin(plugin)
                             except Exception as e:
                                 self._core.logger.error(f"Failed to register search for {plugin_id}: {e}")
-                        
-                        plugin_logger.info(f"Plugin '{plugin.get_name()}' initialized")
+
+                        self._core.logger.info(f"Plugin '{plugin.get_name()}' initialized")
                         return plugin
                         
                     except Exception as e:
@@ -329,7 +325,7 @@ class PluginManager:
         扫描内置插件（打包后使用）
         从已导入的 plugins 子模块中发现插件（按优先级排序）
         """
-        plugin_info: List[Tuple[int, str]] = []
+        plugin_info: List[Tuple[float, str]] = []
         
         try:
             import plugins as plugins_pkg
@@ -355,7 +351,7 @@ class PluginManager:
                             self._plugin_dirs[plugin_id] = Path(name)
                             
                             priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                            priority = int(priority) if priority is not None else 999
+                            priority = float(priority) if priority is not None else 999.0
                             plugin_info.append((priority, plugin_id))
                             self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
                 except ImportError as e:

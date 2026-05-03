@@ -1,38 +1,21 @@
-"""子插件 - 支持标签页管理和溢出处理"""
+"""开发工具插件 - 底层模板"""
 
-from typing import Optional, Dict, Any, List, Type
+from typing import Dict, Any, List, Type
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QScrollArea, QApplication, QStackedWidget,
-    QFrame, QLabel
+    QFrame
 )
 from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal
 from PyQt5.QtGui import QCursor
 from qfluentwidgets import (
     isDarkTheme, FluentIcon as FIF,
-    PushButton, TransparentToolButton, StrongBodyLabel,
-    LineEdit, ComboBox, MessageBoxBase, SubtitleLabel,
-    TextEdit, SpinBox
+    PushButton, TransparentToolButton
 )
 
 from core import PluginInterface
-
-from .page_interface import TabPageInterface
-from .translator_manager import TranslatorPage
-from .hex_converter import HexConverterPage
-
-
-class TabPageInterface:
-    """标签页接口 - 所有标签页必须实现此接口"""
-    
-    page_id: str = ""
-    page_name: str = ""
-    page_icon: Optional[FIF] = None
-    
-    @classmethod
-    def create(cls, parent=None) -> QWidget:
-        """创建标签页内容"""
-        raise NotImplementedError
+from plugins.text_tools.page_interface import TabPageInterface
+from .cron_tool import CronToolPage
 
 
 class OverflowPopup(QWidget):
@@ -303,10 +286,10 @@ class TabManager:
         return [page.create(parent) for page in self._pages]
 
 
-class SubPluginWidget(QWidget):
-    """子插件主界面"""
+class DevToolsWidget(QWidget):
+    """开发工具主界面"""
 
-    PLUGIN_ID = "sub_plugin"
+    PLUGIN_ID = "dev_tools"
 
     def __init__(self, core, tab_manager: TabManager, parent=None):
         super().__init__(parent)
@@ -319,8 +302,8 @@ class SubPluginWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.setObjectName("subPluginView")
-        self.setStyleSheet("QWidget#subPluginView { background-color: transparent; }")
+        self.setObjectName("devToolsView")
+        self.setStyleSheet("QWidget#devToolsView { background-color: transparent; }")
 
         self.tab_bar = CustomTabBar(self)
         self.tab_bar.currentChanged.connect(self._on_tab_changed)
@@ -368,26 +351,26 @@ class SubPluginWidget(QWidget):
 
 
 class Plugin(PluginInterface):
-    """文本类工具 - 翻译、语法检查等"""
+    """开发工具插件 - 底层模板"""
 
-    PLUGIN_ID = "text_tools"
-    PLUGIN_NAME = "文本工具"
-    PLUGIN_ICON = FIF.TILES
-    PLUGIN_PRIORITY = 8.2
+    PLUGIN_ID = "dev_tools"
+    PLUGIN_NAME = "开发工具"
+    PLUGIN_ICON = FIF.DEVELOPER_TOOLS
+    PLUGIN_PRIORITY = 8.3
 
     def initialize(self, core) -> None:
         self.core = core
         core.logger.info(f"Plugin '{self.PLUGIN_NAME}' initialized")
 
         self._tab_manager = TabManager()
-        self._tab_manager.register(TranslatorPage)
-        self._tab_manager.register(HexConverterPage)
+        # 在这里注册开发工具的标签页
+        self._tab_manager.register(CronToolPage)
 
         self._widget = None
 
     def _create_widget(self, parent=None) -> QWidget:
         if self._widget is None:
-            self._widget = SubPluginWidget(self.core, self._tab_manager, parent)
+            self._widget = DevToolsWidget(self.core, self._tab_manager, parent)
         return self._widget
 
     def shutdown(self) -> None:

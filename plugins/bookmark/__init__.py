@@ -262,6 +262,16 @@ class BookmarkWidget(QWidget):
         self._batch_mode = False
         self._init_paths()
         self._setup_ui()
+        self._setup_event_listeners()
+
+    def _setup_event_listeners(self) -> None:
+        """设置事件监听器"""
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'event_bus'):
+            self.core.event_bus.listen("data_restored", lambda _: self._on_data_restored())
+
+    def _on_data_restored(self) -> None:
+        """数据恢复后刷新"""
+        self.load_data()
     
     def _init_paths(self) -> None:
         """初始化路径"""
@@ -492,6 +502,9 @@ class BookmarkWidget(QWidget):
                 duration=2000,
                 parent=self
             )
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除分类: {category['name']}")
     
     def _load_bookmarks(self) -> None:
         """加载书签列表"""
@@ -627,6 +640,10 @@ class BookmarkWidget(QWidget):
             parent=self
         )
 
+        # 记录操作日志
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("CREATE", f"添加书签: {name} ({url})")
+
     def _add_website(self) -> None:
         """添加网站（右键菜单用）"""
         dialog = InputDialog("添加网站", "请输入网站URL", parent=self)
@@ -707,14 +724,14 @@ class BookmarkWidget(QWidget):
         """网站信息获取完成"""
         self.progress_bar.setVisible(False)
         self._set_ui_enabled(True)
-        
+
         dialog = InputDialog("备注", "请输入备注（可选）", parent=self)
         notes = ""
         if dialog.exec():
             notes = dialog.get_text()
-        
+
         category_name = self._current_category_name if self._current_category_name != "全部" else None
-        
+
         self.db.add_bookmark(
             plugin_id=self.PLUGIN_ID,
             name=title,
@@ -723,9 +740,9 @@ class BookmarkWidget(QWidget):
             icon=icon_path,
             notes=notes
         )
-        
+
         self._load_bookmarks()
-        
+
         InfoBar.success(
             title="添加成功",
             content=f"已添加 {title}",
@@ -735,7 +752,11 @@ class BookmarkWidget(QWidget):
             duration=2000,
             parent=self
         )
-        
+
+        # 记录操作日志
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("CREATE", f"添加书签: {title} ({url})")
+
         if self._fetcher:
             self._fetcher.deleteLater()
             self._fetcher = None
@@ -757,10 +778,10 @@ class BookmarkWidget(QWidget):
             name = dialog.get_text()
             if not name:
                 return
-            
+
             self.db.add_category(self.PLUGIN_ID, name)
             self._load_categories()
-            
+
             InfoBar.success(
                 title="添加成功",
                 content=f"已添加分类 {name}",
@@ -770,6 +791,9 @@ class BookmarkWidget(QWidget):
                 duration=2000,
                 parent=self
             )
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("CREATE", f"添加分类: {name}")
     
     def _show_all(self) -> None:
         """显示全部书签"""
@@ -839,22 +863,27 @@ class BookmarkWidget(QWidget):
     def _edit_bookmark(self, item: QTreeWidgetItem) -> None:
         """编辑书签"""
         bm_id = item.data(0, Qt.UserRole)
-        
+        old_name = item.text(0)
+
         dialog = InputDialog("编辑名称", "名称:", default_text=item.text(0), parent=self)
         if not dialog.exec():
             return
         name = dialog.get_text()
-        
+
         dialog = InputDialog("编辑网址", "网址:", default_text=item.text(1), parent=self)
         if not dialog.exec():
             return
         url = dialog.get_text()
-        
+
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
-        
+
         self.db.update_bookmark(self.PLUGIN_ID, bm_id, name=name, url=url)
         self._load_bookmarks()
+
+        # 记录操作日志
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("UPDATE", f"编辑书签: {old_name} -> {name}")
     
     def _edit_notes(self, item: QTreeWidgetItem) -> None:
         """编辑备注"""
@@ -907,10 +936,13 @@ class BookmarkWidget(QWidget):
         """删除书签"""
         bm_id = item.data(0, Qt.UserRole)
         name = item.text(0)
-        
+
         if MessageBox("确认删除", f"确定要删除 '{name}' 吗？", self).exec():
             self.db.delete_bookmark(self.PLUGIN_ID, bm_id)
             self._load_bookmarks()
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.log_operation("DELETE", f"删除书签: {name}")
     
     def _toggle_batch_mode(self) -> None:
         """切换批量删除模式"""
@@ -960,17 +992,19 @@ class BookmarkWidget(QWidget):
             return
         
         if MessageBox(
-            "确认批量删除", 
-            f"确定要删除选中的 {len(selected_items)} 个书签吗？", 
+            "确认批量删除",
+            f"确定要删除选中的 {len(selected_items)} 个书签吗？",
             self
         ).exec():
+            deleted_names = []
             for item in selected_items:
                 bm_id = item.data(0, Qt.UserRole)
+                deleted_names.append(item.text(0))
                 self.db.delete_bookmark(self.PLUGIN_ID, bm_id)
-            
+
             self._exit_batch_mode()
             self._load_bookmarks()
-            
+
             InfoBar.success(
                 title="删除成功",
                 content=f"已删除 {len(selected_items)} 个书签",
@@ -980,6 +1014,13 @@ class BookmarkWidget(QWidget):
                 duration=2000,
                 parent=self
             )
+
+            # 记录操作日志
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                names_str = ", ".join(deleted_names[:5])
+                if len(deleted_names) > 5:
+                    names_str += f" 等共{len(deleted_names)}个"
+                self.core.logger.log_operation("DELETE", f"批量删除书签: {names_str}")
 
 
 class Plugin(PluginInterface):

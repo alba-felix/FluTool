@@ -117,6 +117,7 @@ class AppCore:
         try:
             self._logger = LogManager()
             self._logger.setup_main_logger()
+            self._logger.setup_operation_logger()
             self._logger.info("AppCore logger initialized")
         except Exception as e:
             print(f"[AppCore] Failed to initialize logger: {e}")

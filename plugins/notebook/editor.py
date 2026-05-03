@@ -213,6 +213,54 @@ class CustomTextEdit(QPlainTextEdit):
 
         self.update_line_number_area_width()
         self.highlighter = NotebookHighlighter(self.document())
+        
+        # 设置 Fluent 风格滚动条
+        self._setup_scrollbar_style()
+    
+    def _setup_scrollbar_style(self):
+        """设置 Fluent 风格滚动条"""
+        scrollbar_style = """
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                border-radius: 5px;
+                margin: 0px;
+            }
+            QScrollBar:horizontal {
+                background: transparent;
+                height: 10px;
+                border-radius: 5px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(150, 150, 150, 0.5);
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgba(150, 150, 150, 0.5);
+                border-radius: 5px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(150, 150, 150, 0.8);
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: rgba(150, 150, 150, 0.8);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                height: 0px;
+                width: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
+        """
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setStyleSheet(scrollbar_style)
     
     def line_number_area_width(self):
         """计算行号区域宽度 - 优化版本"""
@@ -254,16 +302,21 @@ class CustomTextEdit(QPlainTextEdit):
     
     def keyPressEvent(self, event: QKeyEvent):
         """处理按键事件"""
-        if event.modifiers() == Qt.ControlModifier:
-            if event.key() == Qt.Key_S:
-                self.save_signal.emit()
-                event.accept()
-                return
+        # Ctrl+S 保存
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_S:
+            self.save_signal.emit()
+            event.accept()
+            return
 
+        # Enter 或 Return 键
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
-            if event.modifiers() == Qt.AltModifier:
-                # Alt+Enter 换行
-                super().keyPressEvent(event)
+            # Alt+Enter 换行
+            if event.modifiers() & Qt.AltModifier:
+                # 插入换行符
+                cursor = self.textCursor()
+                cursor.insertText("\n")
+                self.setTextCursor(cursor)
+                event.accept()
                 return
             else:
                 # Enter 键触发保存（首次保存弹出命名对话框，或覆盖保存）
