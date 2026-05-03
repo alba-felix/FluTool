@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any, List
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
     QMenu, QAction,
@@ -14,6 +14,7 @@ from qfluentwidgets import (
     SubtitleLabel, ComboBox, CaptionLabel, MessageBox
 )
 from core import PluginInterface
+from core.async_loader import BaseAsyncLoader
 from storage import DatabaseManager
 from functools import partial
 from core import SearchResult
@@ -94,33 +95,15 @@ class CommandDialog(MessageBoxBase):
         return data
 
 
-class CommandLoader(QThread):
+class CommandLoader(BaseAsyncLoader):
     """异步命令加载器"""
     
-    load_finished = pyqtSignal(list)
-    load_progress = pyqtSignal(int)
-    load_error = pyqtSignal(str)
+    def load_data(self) -> List[Dict[str, Any]]:
+        """加载命令数据"""
+        return self.db.get_commands(self.plugin_id)
     
-    def __init__(self, db: DatabaseManager, plugin_id: str):
-        super().__init__()
-        self.db = db
-        self.plugin_id = plugin_id
-    
-    def run(self):
-        """异步加载命令数据"""
-        try:
-            self.load_progress.emit(10)
-            self.load_progress.emit(30)
-            
-            commands = self.db.get_commands(self.plugin_id)
-            self.load_progress.emit(60)
-            
-            categories = self.db.get_categories(self.plugin_id)
-            self.load_progress.emit(100)
-            
-            self.load_finished.emit(commands)
-        except Exception as e:
-            self.load_error.emit(f"加载命令数据时出错: {e}")
+    def get_data_name(self) -> str:
+        return "命令"
 
 
 class CommandWidget(QWidget):
