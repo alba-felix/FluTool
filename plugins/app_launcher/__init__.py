@@ -1,8 +1,10 @@
 """
 应用启动插件
 提供应用程序快捷启动功能，支持分类、拖拽、图标提取
+支持多种文件类型：exe、py、bat、cmd、ps1、vbs、文件夹等
 """
 import os
+import sys
 import json
 import subprocess
 from typing import List, Dict, Any, Optional
@@ -35,10 +37,109 @@ CARD_HEIGHT = 35
 ICON_SIZE = 24
 
 
+def get_python_executable() -> str:
+    """
+    获取项目 Python 解释器路径
+    开发环境：使用 .venv 中的解释器
+    打包环境：使用系统 Python 或打包的解释器
+    """
+    if getattr(sys, 'frozen', False):
+        base_path = Path(sys.executable).parent
+        python_exe = base_path / "python.exe"
+        if python_exe.exists():
+            return str(python_exe)
+        python_exe = base_path / "Scripts" / "python.exe"
+        if python_exe.exists():
+            return str(python_exe)
+        return "python"
+    else:
+        venv_python = Path(sys.prefix) / "Scripts" / "python.exe"
+        if venv_python.exists():
+            return str(venv_python)
+        return sys.executable
+
+
+def get_menu_style() -> str:
+    """获取菜单样式"""
+    if isDarkTheme():
+        return """
+            QMenu {
+                background-color: #2d2d2d;
+                border: 1px solid #3d3d3d;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                background-color: transparent;
+                color: #ffffff;
+                padding: 6px 30px 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #3d3d3d;
+            }
+            QMenu::item:pressed {
+                background-color: #009faa;
+            }
+        """
+    else:
+        return """
+            QMenu {
+                background-color: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QMenu::item {
+                background-color: transparent;
+                color: #333333;
+                padding: 6px 30px 6px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #f0f0f0;
+            }
+            QMenu::item:pressed {
+                background-color: #009faa;
+                color: #ffffff;
+            }
+        """
+
+
 class CustomTabBar(QTabBar):
     """自定义标签栏，为第一个标签添加特殊样式"""
     
     category_context_menu_requested = pyqtSignal(int, object)
+    
+    DARK_FIRST_TAB_COLORS = {
+        'selected_bg': '#009faa',
+        'selected_text': '#ffffff',
+        'hovered_bg': '#234e50',
+        'hovered_text': '#4dd0e1',
+        'normal_bg': '#1a3a3c',
+        'normal_text': '#4dd0e1',
+    }
+    
+    LIGHT_FIRST_TAB_COLORS = {
+        'selected_bg': '#009faa',
+        'selected_text': '#ffffff',
+        'hovered_bg': '#d4eaec',
+        'hovered_text': '#00787f',
+        'normal_bg': '#e8f4f5',
+        'normal_text': '#00787f',
+    }
+    
+    DARK_NORMAL_TAB_COLORS = {
+        'selected_text': '#009faa',
+        'normal_text': '#ffffff',
+        'hover_bg': (255, 255, 255, 25),
+    }
+    
+    LIGHT_NORMAL_TAB_COLORS = {
+        'selected_text': '#009faa',
+        'normal_text': '#333333',
+        'hover_bg': (0, 0, 0, 12),
+    }
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -97,26 +198,17 @@ class CustomTabBar(QTabBar):
     
     def _draw_first_tab(self, painter, rect, is_selected, is_hovered):
         """绘制第一个标签（全部）"""
-        if isDarkTheme():
-            if is_selected:
-                bg_color = QColor("#009faa")
-                text_color = QColor("#ffffff")
-            elif is_hovered:
-                bg_color = QColor("#234e50")
-                text_color = QColor("#4dd0e1")
-            else:
-                bg_color = QColor("#1a3a3c")
-                text_color = QColor("#4dd0e1")
+        colors = self.DARK_FIRST_TAB_COLORS if isDarkTheme() else self.LIGHT_FIRST_TAB_COLORS
+        
+        if is_selected:
+            bg_color = QColor(colors['selected_bg'])
+            text_color = QColor(colors['selected_text'])
+        elif is_hovered:
+            bg_color = QColor(colors['hovered_bg'])
+            text_color = QColor(colors['hovered_text'])
         else:
-            if is_selected:
-                bg_color = QColor("#009faa")
-                text_color = QColor("#ffffff")
-            elif is_hovered:
-                bg_color = QColor("#d4eaec")
-                text_color = QColor("#00787f")
-            else:
-                bg_color = QColor("#e8f4f5")
-                text_color = QColor("#00787f")
+            bg_color = QColor(colors['normal_bg'])
+            text_color = QColor(colors['normal_text'])
         
         painter.setBrush(QBrush(bg_color))
         painter.setPen(Qt.NoPen)
@@ -131,12 +223,10 @@ class CustomTabBar(QTabBar):
     
     def _draw_normal_tab(self, painter, rect, is_selected, is_hovered):
         """绘制普通标签"""
-        if isDarkTheme():
-            text_color = QColor("#ffffff") if not is_selected else QColor("#009faa")
-            hover_bg = QColor(255, 255, 255, 25)
-        else:
-            text_color = QColor("#333333") if not is_selected else QColor("#009faa")
-            hover_bg = QColor(0, 0, 0, 12)
+        colors = self.DARK_NORMAL_TAB_COLORS if isDarkTheme() else self.LIGHT_NORMAL_TAB_COLORS
+        
+        text_color = QColor(colors['selected_text']) if is_selected else QColor(colors['normal_text'])
+        hover_bg = QColor(*colors['hover_bg'])
         
         if is_hovered and not is_selected:
             painter.setBrush(QBrush(hover_bg))
@@ -149,19 +239,8 @@ class CustomTabBar(QTabBar):
         font.setWeight(50)
         painter.setFont(font)
         
-        tab_index = 0
-        for i in range(self.currentIndex()):
-            if i == 0:
-                continue
-            tab_index = i
-        
-        actual_index = rect.x() > self.tabRect(0).right() and 1 or 0
-        for i in range(self.count()):
-            if self.tabRect(i) == rect:
-                actual_index = i
-                break
-        
-        painter.drawText(rect, Qt.AlignCenter, self.tabText(actual_index))
+        tab_index = self._find_tab_index(rect)
+        painter.drawText(rect, Qt.AlignCenter, self.tabText(tab_index))
         
         if is_selected:
             pen = QPen(QColor("#009faa"), 2)
@@ -169,6 +248,13 @@ class CustomTabBar(QTabBar):
             painter.setPen(pen)
             y = rect.bottom() - 1
             painter.drawLine(rect.left() + 10, y, rect.right() - 10, y)
+    
+    def _find_tab_index(self, rect) -> int:
+        """根据 rect 查找标签索引"""
+        for i in range(self.count()):
+            if self.tabRect(i) == rect:
+                return i
+        return 0
 
 
 # ==================== 样式定义 ====================
@@ -189,7 +275,7 @@ LIGHT_STYLES = {
     "tab_bar": """
         QTabBar::tab {
             background: transparent;
-            #padding: 8px 20px;
+            padding: 8px 20px;
             margin: 0;
             font-size: 14px;
             font-weight: 500;
@@ -293,10 +379,21 @@ class AppCard(CardWidget):
     app_clicked = pyqtSignal(dict)
     app_deleted = pyqtSignal(dict)
     
+    DARK_COLORS = {
+        'text': '#ffffff',
+        'hover_bg': (255, 255, 255, 20),
+    }
+    
+    LIGHT_COLORS = {
+        'text': '#333333',
+        'hover_bg': (0, 0, 0, 10),
+    }
+    
     def __init__(self, app_data: Dict[str, Any], parent=None):
         super().__init__(parent)
         self.app_data = app_data
         self._is_hover = False
+        self._name_label = None
         self._setup_ui()
     
     def _setup_ui(self):
@@ -304,23 +401,27 @@ class AppCard(CardWidget):
         self.setCursor(Qt.PointingHandCursor)
         self.setBorderRadius(8)
         
-        # 设置 CardWidget 背景透明
         self.setStyleSheet("CardWidget { background: transparent; border: none; }")
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(8)
         
-        # 图标
         icon_label = self._load_icon()
         layout.addWidget(icon_label)
         
-        # 名称
-        name_label = BodyLabel(self.app_data.get('name', 'Unknown'), self)
-        name_label.setWordWrap(False)
-        name_label.setAlignment(Qt.AlignCenter)
-        name_label.setStyleSheet("background: transparent; color: inherit;")
-        layout.addWidget(name_label, 1)
+        self._name_label = BodyLabel(self.app_data.get('name', 'Unknown'), self)
+        self._name_label.setWordWrap(False)
+        self._name_label.setAlignment(Qt.AlignCenter)
+        self._update_text_color()
+        layout.addWidget(self._name_label, 1)
+    
+    def _update_text_color(self):
+        """更新文字颜色"""
+        if self._name_label is None:
+            return
+        colors = self.DARK_COLORS if isDarkTheme() else self.LIGHT_COLORS
+        self._name_label.setStyleSheet(f"background: transparent; color: {colors['text']};")
     
     def _load_icon(self) -> QLabel:
         """加载图标"""
@@ -328,7 +429,6 @@ class AppCard(CardWidget):
         icon_label.setFixedSize(ICON_SIZE, ICON_SIZE)
         icon_label.setStyleSheet("background: transparent;")
         
-        # 获取设备像素比，用于高 DPI 支持
         dpr = self.devicePixelRatioF()
         target_size = int(ICON_SIZE * dpr)
         
@@ -388,14 +488,11 @@ class AppCard(CardWidget):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             
-            # 根据主题选择悬停背景色
-            if isDarkTheme():
-                painter.setBrush(QBrush(QColor(255, 255, 255, 20)))
-                painter.setPen(Qt.NoPen)
-            else:
-                painter.setBrush(QBrush(QColor(0, 0, 0, 10)))
-                painter.setPen(Qt.NoPen)
+            colors = self.DARK_COLORS if isDarkTheme() else self.LIGHT_COLORS
+            hover_bg = QColor(*colors['hover_bg'])
             
+            painter.setBrush(QBrush(hover_bg))
+            painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(self.rect(), 8, 8)
     
     def mousePressEvent(self, event):
@@ -408,6 +505,7 @@ class AppCard(CardWidget):
     def _show_context_menu(self):
         """显示右键菜单"""
         menu = QMenu(self)
+        menu.setStyleSheet(get_menu_style())
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(lambda: self.app_deleted.emit(self.app_data))
         menu.addAction(delete_action)
@@ -419,18 +517,30 @@ class AddAppCard(CardWidget):
     
     clicked = pyqtSignal()
     
+    DARK_COLORS = {
+        'text': '#808080',
+        'border': '#505050',
+        'hover_bg': (0, 159, 170, 30),
+        'hover_border': (0, 159, 170),
+    }
+    
+    LIGHT_COLORS = {
+        'text': '#999999',
+        'border': '#cccccc',
+        'hover_bg': (0, 159, 170, 20),
+        'hover_border': (0, 159, 170),
+    }
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_hover = False
+        self._text_label = None
         self._setup_ui()
     
     def _setup_ui(self):
         self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
         self.setCursor(Qt.PointingHandCursor)
         self.setBorderRadius(8)
-        
-        # 设置背景透明
-        self.setStyleSheet("CardWidget { background: transparent; border: none; }")
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -441,32 +551,25 @@ class AddAppCard(CardWidget):
         icon_label.setStyleSheet("background: transparent;")
         layout.addWidget(icon_label)
         
-        text_label = CaptionLabel("添加应用", self)
-        text_label.setAlignment(Qt.AlignCenter)
-        text_label.setStyleSheet("background: transparent; color: inherit;")
-        layout.addWidget(text_label, 1)
-        
-        # 设置边框
-        self._update_border()
+        self._text_label = CaptionLabel("添加应用", self)
+        self._text_label.setAlignment(Qt.AlignCenter)
+        self._update_style()
+        layout.addWidget(self._text_label, 1)
     
-    def _update_border(self):
-        """更新边框样式"""
-        if isDarkTheme():
-            self.setStyleSheet("""
-                CardWidget {
-                    background: transparent;
-                    border: 1px dashed #505050;
-                    border-radius: 8px;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                CardWidget {
-                    background: transparent;
-                    border: 1px dashed #cccccc;
-                    border-radius: 8px;
-                }
-            """)
+    def _update_style(self):
+        """更新样式"""
+        colors = self.DARK_COLORS if isDarkTheme() else self.LIGHT_COLORS
+        
+        self.setStyleSheet(f"""
+            CardWidget {{
+                background: transparent;
+                border: 1px dashed {colors['border']};
+                border-radius: 8px;
+            }}
+        """)
+        
+        if self._text_label:
+            self._text_label.setStyleSheet(f"background: transparent; color: {colors['text']};")
     
     def enterEvent(self, event):
         """鼠标进入"""
@@ -488,14 +591,12 @@ class AddAppCard(CardWidget):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             
-            # 根据主题选择悬停背景色
-            if isDarkTheme():
-                painter.setBrush(QBrush(QColor(0, 159, 170, 30)))
-                painter.setPen(QPen(QColor(0, 159, 170), 1))
-            else:
-                painter.setBrush(QBrush(QColor(0, 159, 170, 20)))
-                painter.setPen(QPen(QColor(0, 159, 170), 1))
+            colors = self.DARK_COLORS if isDarkTheme() else self.LIGHT_COLORS
+            hover_bg = QColor(*colors['hover_bg'])
+            hover_border = QColor(*colors['hover_border'])
             
+            painter.setBrush(QBrush(hover_bg))
+            painter.setPen(QPen(hover_border, 1))
             painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 8, 8)
     
     def mousePressEvent(self, event):
@@ -600,6 +701,7 @@ class CategoryTab(QScrollArea):
     def _show_context_menu(self, pos):
         """显示右键菜单"""
         menu = QMenu(self)
+        menu.setStyleSheet(get_menu_style())
         add_action = QAction("添加应用", self)
         add_action.triggered.connect(self.add_app_clicked.emit)
         menu.addAction(add_action)
@@ -768,6 +870,7 @@ class AppLauncherWidget(QWidget):
         
         # 向上滚动按钮
         self._up_btn_container = QWidget()
+        self._up_btn_container.setObjectName("scrollBtnContainer")
         up_layout = QHBoxLayout(self._up_btn_container)
         up_layout.setContentsMargins(0, 0, 0, 0)
         up_layout.addStretch()
@@ -785,6 +888,7 @@ class AppLauncherWidget(QWidget):
         
         # 向下滚动按钮
         self._down_btn_container = QWidget()
+        self._down_btn_container.setObjectName("scrollBtnContainer")
         down_layout = QHBoxLayout(self._down_btn_container)
         down_layout.setContentsMargins(0, 0, 0, 0)
         down_layout.addStretch()
@@ -807,8 +911,14 @@ class AppLauncherWidget(QWidget):
                 QWidget#appLauncherWidget {
                     background-color: #1a1a1a;
                 }
+                QWidget#scrollBtnContainer {
+                    background-color: transparent;
+                }
                 QTabWidget::pane {
                     border: none;
+                    background-color: #1a1a1a;
+                }
+                QTabWidget::tab-bar {
                     background-color: #1a1a1a;
                 }
             """)
@@ -817,8 +927,14 @@ class AppLauncherWidget(QWidget):
                 QWidget#appLauncherWidget {
                     background-color: #f5f5f5;
                 }
+                QWidget#scrollBtnContainer {
+                    background-color: transparent;
+                }
                 QTabWidget::pane {
                     border: none;
+                    background-color: #f5f5f5;
+                }
+                QTabWidget::tab-bar {
                     background-color: #f5f5f5;
                 }
             """)
@@ -917,9 +1033,8 @@ class AppLauncherWidget(QWidget):
     
     def _show_category_menu(self, category_id: int, pos):
         """显示分类右键菜单"""
-        from PyQt5.QtGui import QCursor
-        
         menu = QMenu(self)
+        menu.setStyleSheet(get_menu_style())
         
         edit_action = QAction("编辑分类", self)
         edit_action.triggered.connect(lambda: self._edit_category(category_id))
@@ -929,7 +1044,7 @@ class AppLauncherWidget(QWidget):
         delete_action.triggered.connect(lambda: self._delete_category(category_id))
         menu.addAction(delete_action)
         
-        menu.exec_(QCursor.pos())
+        menu.exec_(pos)
     
     def _edit_category(self, category_id: int):
         """编辑分类"""
@@ -1007,7 +1122,13 @@ class AppLauncherWidget(QWidget):
         """添加应用"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "选择应用", "",
-            "可执行文件 (*.exe);;所有文件 (*.*)"
+            "所有支持的文件 (*.exe *.py *.bat *.cmd *.ps1 *.vbs);;"
+            "可执行文件 (*.exe);;"
+            "Python 脚本 (*.py);;"
+            "批处理文件 (*.bat *.cmd);;"
+            "PowerShell 脚本 (*.ps1);;"
+            "VBScript (*.vbs);;"
+            "所有文件 (*.*)"
         )
         
         if file_path:
@@ -1093,10 +1214,7 @@ class AppLauncherWidget(QWidget):
                 )
                 return
             
-            if arguments:
-                subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
-            else:
-                os.startfile(target_path)
+            self._launch_by_type(target_path, arguments)
             
             InfoBar.success(
                 title="启动成功",
@@ -1118,6 +1236,41 @@ class AppLauncherWidget(QWidget):
                 duration=3000,
                 parent=self
             )
+    
+    def _launch_by_type(self, target_path: str, arguments: str = ''):
+        """根据文件类型选择启动方式"""
+        if os.path.isdir(target_path):
+            os.startfile(target_path)
+            return
+        
+        ext = os.path.splitext(target_path)[1].lower()
+        
+        if ext == '.py':
+            python_exe = get_python_executable()
+            if arguments:
+                subprocess.Popen(f'"{python_exe}" "{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'"{python_exe}" "{target_path}"', shell=True)
+        elif ext in ('.bat', '.cmd'):
+            if arguments:
+                subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'"{target_path}"', shell=True)
+        elif ext == '.ps1':
+            if arguments:
+                subprocess.Popen(f'powershell -ExecutionPolicy Bypass -File "{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'powershell -ExecutionPolicy Bypass -File "{target_path}"', shell=True)
+        elif ext == '.vbs':
+            if arguments:
+                subprocess.Popen(f'wscript "{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'wscript "{target_path}"', shell=True)
+        else:
+            if arguments:
+                subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
+            else:
+                os.startfile(target_path)
     
     def _delete_app(self, app_data: Dict[str, Any]):
         """删除应用"""
@@ -1232,14 +1385,41 @@ class Plugin(PluginInterface):
         return results
 
     def _launch_app(self, app: Dict[str, Any]) -> None:
-        """启动应用"""
-        import os
-        import subprocess
+        """启动应用（全局搜索调用）"""
         target_path = app.get('target_path', '')
         if not target_path or not os.path.exists(target_path):
             return
         arguments = app.get('arguments', '') or ''
-        if arguments:
-            subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
-        else:
+        
+        if os.path.isdir(target_path):
             os.startfile(target_path)
+            return
+        
+        ext = os.path.splitext(target_path)[1].lower()
+        
+        if ext == '.py':
+            python_exe = get_python_executable()
+            if arguments:
+                subprocess.Popen(f'"{python_exe}" "{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'"{python_exe}" "{target_path}"', shell=True)
+        elif ext in ('.bat', '.cmd'):
+            if arguments:
+                subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'"{target_path}"', shell=True)
+        elif ext == '.ps1':
+            if arguments:
+                subprocess.Popen(f'powershell -ExecutionPolicy Bypass -File "{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'powershell -ExecutionPolicy Bypass -File "{target_path}"', shell=True)
+        elif ext == '.vbs':
+            if arguments:
+                subprocess.Popen(f'wscript "{target_path}" {arguments}', shell=True)
+            else:
+                subprocess.Popen(f'wscript "{target_path}"', shell=True)
+        else:
+            if arguments:
+                subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
+            else:
+                os.startfile(target_path)

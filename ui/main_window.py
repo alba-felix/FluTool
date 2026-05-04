@@ -3,8 +3,8 @@ from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (QAbstractButton, QAction, QApplication, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon,
                              QVBoxLayout, QWidget, QFrame, QScrollArea)
 from qfluentwidgets import (BodyLabel, CaptionLabel, FluentIcon as FIF, FluentStyleSheet, HyperlinkLabel, isDarkTheme,
-                            NavigationWidget, setCustomStyleSheet, setTheme, SmoothScrollArea, StrongBodyLabel, Theme,
-                            TransparentToolButton, SubtitleLabel, qconfig)
+                           NavigationWidget, setCustomStyleSheet, setTheme, SmoothScrollArea, StrongBodyLabel, Theme,
+                           TransparentToolButton, SubtitleLabel, qconfig, MessageBox)
 from qfluentwidgets.common.font import setFont
 from qfluentwidgets.common.icon import drawIcon, toQIcon
 from qfluentwidgets.window.stacked_widget import StackedWidget
@@ -14,6 +14,8 @@ from core import get_resource_path
 from .more_menu import MoreMenu
 from .settings_interface import SettingsInterface
 from .global_search_dialog import GlobalSearchDialog
+from .plugin_docs_interface import PluginDocsInterface
+from .about_interfaces import AboutInterface, CheckUpdateInterface, FeedbackInterface
 
 
 class ScrollableNavButton(NavigationWidget):
@@ -616,25 +618,7 @@ class PushFluentWindow(FramelessMainWindow):
 		self.tray_icon.setToolTip("FluTool - 多功能工具箱")
 		
 		self._tray_menu = QMenu()
-		self._tray_menu.setStyleSheet("""
-            QMenu {
-                background-color: #f5f5f5;
-                border: 1px solid #ccc;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 24px 6px 12px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #e0e0e0;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #ccc;
-                margin: 4px 8px;
-            }
-        """)
+		self._apply_tray_menu_style()
 		
 		show_action = QAction("显示主窗口", self._tray_menu)
 		show_action.triggered.connect(self.show_and_activate)
@@ -660,6 +644,62 @@ class PushFluentWindow(FramelessMainWindow):
 		self.tray_icon.activated.connect(self._on_tray_activated)
 		self.tray_icon.messageClicked.connect(self.show_and_activate)
 		self.tray_icon.show()
+	
+	def _apply_tray_menu_style(self) -> None:
+		"""应用托盘菜单样式"""
+		if isDarkTheme():
+			self._tray_menu.setStyleSheet("""
+				QMenu {
+					background-color: #2d2d2d;
+					border: 1px solid #3d3d3d;
+					border-radius: 8px;
+					padding: 4px;
+				}
+				QMenu::item {
+					background-color: transparent;
+					color: #ffffff;
+					padding: 6px 24px 6px 12px;
+					border-radius: 4px;
+				}
+				QMenu::item:selected {
+					background-color: #3d3d3d;
+				}
+				QMenu::item:pressed {
+					background-color: #009faa;
+				}
+				QMenu::separator {
+					height: 1px;
+					background-color: #3d3d3d;
+					margin: 4px 8px;
+				}
+			""")
+		else:
+			self._tray_menu.setStyleSheet("""
+				QMenu {
+					background-color: #ffffff;
+					border: 1px solid #e0e0e0;
+					border-radius: 8px;
+					padding: 4px;
+				}
+				QMenu::item {
+					background-color: transparent;
+					color: #333333;
+					padding: 6px 24px 6px 12px;
+					border-radius: 4px;
+				}
+				QMenu::item:selected {
+					background-color: #f0f0f0;
+				}
+				QMenu::item:pressed {
+					background-color: #009faa;
+					color: #ffffff;
+				}
+				QMenu::separator {
+					height: 1px;
+					background-color: #e0e0e0;
+					margin: 4px 8px;
+				}
+			""")
 	
 	def _start_screen_color_picker(self):
 		"""从托盘启动屏幕取色"""
@@ -869,7 +909,6 @@ class MainWindow(PushFluentWindow):
 		main_layout.setSpacing(0)
 		main_layout.setContentsMargins(0, 0, 0, 0)
 		
-		# 顶部标题区域
 		header_widget = QWidget()
 		header_layout = QVBoxLayout(header_widget)
 		header_layout.setContentsMargins(30, 30, 30, 20)
@@ -900,7 +939,6 @@ class MainWindow(PushFluentWindow):
 		
 		main_layout.addWidget(header_widget)
 		
-		# 菜单卡片区域
 		scroll = QScrollArea()
 		scroll.setWidgetResizable(True)
 		scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -914,17 +952,16 @@ class MainWindow(PushFluentWindow):
 		content_layout.setContentsMargins(30, 10, 30, 30)
 		content_layout.setSpacing(16)
 		
-		# 菜单卡片数据
 		menu_items = [
-			{"icon": FIF.INFO, "title": "关于", "desc": "查看应用信息、作者、许可证等"},
-			{"icon": FIF.UPDATE, "title": "检查更新", "desc": "检查是否有新版本可用"},
-			{"icon": FIF.DOCUMENT, "title": "使用文档", "desc": "查看功能说明和使用指南"},
-			{"icon": FIF.FEEDBACK, "title": "问题反馈", "desc": "报告 Bug 或提出建议"},
-			{"icon": FIF.CODE, "title": "源代码", "desc": "访问 GitHub 仓库"},
+			{"icon": FIF.INFO, "title": "关于", "desc": "查看应用信息、作者、许可证等", "action": self._show_about},
+			{"icon": FIF.UPDATE, "title": "检查更新", "desc": "检查是否有新版本可用", "action": self._show_check_update},
+			{"icon": FIF.DOCUMENT, "title": "使用文档", "desc": "查看功能说明和使用指南", "action": self._show_plugin_docs},
+			{"icon": FIF.FEEDBACK, "title": "问题反馈", "desc": "报告 Bug 或提出建议", "action": self._show_feedback},
+			{"icon": FIF.CODE, "title": "源代码", "desc": "访问 GitHub 仓库", "action": self._show_source_code},
 		]
 		
 		for item in menu_items:
-			card = self._create_menu_card(item["icon"], item["title"], item["desc"])
+			card = self._create_menu_card(item["icon"], item["title"], item["desc"], item.get("action"))
 			content_layout.addWidget(card)
 		
 		content_layout.addStretch()
@@ -934,24 +971,76 @@ class MainWindow(PushFluentWindow):
 		
 		self.addSubInterface(home, FIF.HOME, "首页")
 	
-	def _create_menu_card(self, icon, title: str, desc: str) -> QWidget:
+	def _show_about(self) -> None:
+		"""显示关于界面"""
+		if not hasattr(self, '_about_interface'):
+			self._about_interface = AboutInterface(self)
+			self._about_interface.setObjectName("about")
+			self._about_interface.backClicked.connect(self._on_interface_back)
+			self.addSubInterface(self._about_interface, FIF.INFO, "关于")
+		self.switchTo(self._about_interface)
+	
+	def _show_check_update(self) -> None:
+		"""显示检查更新界面"""
+		if not hasattr(self, '_check_update_interface'):
+			self._check_update_interface = CheckUpdateInterface(self)
+			self._check_update_interface.setObjectName("checkUpdate")
+			self._check_update_interface.backClicked.connect(self._on_interface_back)
+			self.addSubInterface(self._check_update_interface, FIF.UPDATE, "检查更新")
+		self.switchTo(self._check_update_interface)
+	
+	def _show_feedback(self) -> None:
+		"""显示问题反馈界面"""
+		if not hasattr(self, '_feedback_interface'):
+			self._feedback_interface = FeedbackInterface(self)
+			self._feedback_interface.setObjectName("feedback")
+			self._feedback_interface.backClicked.connect(self._on_interface_back)
+			self.addSubInterface(self._feedback_interface, FIF.FEEDBACK, "问题反馈")
+		self.switchTo(self._feedback_interface)
+	
+	def _show_source_code(self) -> None:
+		"""显示源代码提示"""
+		MessageBox("待开源", "FluTool 项目即将开源，敬请期待！\n\n开源后将在 GitHub 上发布源代码。", self).exec_()
+	
+	def _on_interface_back(self) -> None:
+		"""从子界面返回首页"""
+		home_widget = self.findChild(QWidget, "home")
+		if home_widget:
+			self.switchTo(home_widget)
+	
+	def _show_plugin_docs(self) -> None:
+		"""显示插件使用文档"""
+		if not hasattr(self, '_plugin_docs_interface'):
+			self._plugin_docs_interface = PluginDocsInterface(self)
+			self._plugin_docs_interface.setObjectName("pluginDocs")
+			self._plugin_docs_interface.cardClicked.connect(self._on_plugin_doc_card_clicked)
+			self._plugin_docs_interface.backClicked.connect(self._on_interface_back)
+			self.addSubInterface(self._plugin_docs_interface, FIF.DOCUMENT, "使用文档")
+		self.switchTo(self._plugin_docs_interface)
+	
+	def _on_plugin_doc_card_clicked(self, plugin_id: str) -> None:
+		"""点击插件文档卡片跳转到对应插件"""
+		if plugin_id in self._plugin_containers:
+			self.switchTo(self._plugin_containers[plugin_id])
+	
+	def _create_menu_card(self, icon, title: str, desc: str, action=None) -> QWidget:
 		"""创建菜单卡片"""
 		card = QFrame()
 		card.setObjectName("homeMenuCard")
 		card.setFixedHeight(80)
 		card.setCursor(Qt.PointingHandCursor)
+		card._action = action
+		card.mousePressEvent = lambda e: self._on_menu_card_clicked(e, action) if action else None
 		
 		layout = QHBoxLayout(card)
 		layout.setContentsMargins(20, 15, 20, 15)
 		layout.setSpacing(16)
 		
-		# 图标
 		icon_btn = TransparentToolButton(icon, card)
 		icon_btn.setFixedSize(48, 48)
 		icon_btn.setIconSize(QSize(24, 24))
 		layout.addWidget(icon_btn)
 		
-		# 文字区域
 		text_widget = QWidget(card)
 		text_layout = QVBoxLayout(text_widget)
 		text_layout.setContentsMargins(0, 0, 0, 0)
@@ -962,51 +1051,27 @@ class MainWindow(PushFluentWindow):
 		text_layout.addWidget(title_label)
 		
 		desc_label = CaptionLabel(desc)
-		desc_label.setStyleSheet("color: #888;")
 		text_layout.addWidget(desc_label)
 		
 		layout.addWidget(text_widget, 1)
 		
-		# 箭头
 		arrow = TransparentToolButton(FIF.CHEVRON_RIGHT, card)
 		arrow.setFixedSize(32, 32)
 		arrow.setIconSize(QSize(14, 14))
-		arrow.setStyleSheet("color: #888;")
 		layout.addWidget(arrow)
 		
-		# 主题样式
-		dark = isDarkTheme()
-		if dark:
-			card.setStyleSheet("""
-				QFrame#homeMenuCard {
-					background-color: #2d2d2d;
-					border-radius: 8px;
-					border: 1px solid #3d3d3d;
-				}
-				QFrame#homeMenuCard:hover {
-					background-color: #3d3d3d;
-					border: 1px solid #5d5d5d;
-				}
-			""")
-		else:
-			card.setStyleSheet("""
-				QFrame#homeMenuCard {
-					background-color: #ffffff;
-					border-radius: 8px;
-					border: 1px solid #e0e0e0;
-				}
-				QFrame#homeMenuCard:hover {
-					background-color: #f5f5f5;
-					border: 1px solid #d0d0d0;
-				}
-			""")
-		
-		qconfig.themeChanged.connect(lambda: self._update_menu_card_style(card))
+		self._apply_menu_card_style(card, desc_label, arrow)
+		qconfig.themeChanged.connect(lambda: self._apply_menu_card_style(card, desc_label, arrow))
 		
 		return card
 	
-	def _update_menu_card_style(self, card: QFrame) -> None:
-		"""更新菜单卡片样式"""
+	def _on_menu_card_clicked(self, event, action) -> None:
+		"""菜单卡片点击事件"""
+		if event.button() == Qt.LeftButton and action:
+			action()
+	
+	def _apply_menu_card_style(self, card: QFrame, desc_label: CaptionLabel, arrow: TransparentToolButton) -> None:
+		"""应用菜单卡片样式"""
 		dark = isDarkTheme()
 		if dark:
 			card.setStyleSheet("""
@@ -1020,6 +1085,8 @@ class MainWindow(PushFluentWindow):
 					border: 1px solid #5d5d5d;
 				}
 			""")
+			desc_label.setStyleSheet("color: #888888;")
+			arrow.setStyleSheet("color: #888888;")
 		else:
 			card.setStyleSheet("""
 				QFrame#homeMenuCard {
@@ -1032,6 +1099,8 @@ class MainWindow(PushFluentWindow):
 					border: 1px solid #d0d0d0;
 				}
 			""")
+			desc_label.setStyleSheet("color: #888888;")
+			arrow.setStyleSheet("color: #888888;")
 	
 	def _setup_settings_interface(self) -> None:
 		self.settings_interface = SettingsInterface(self.core)

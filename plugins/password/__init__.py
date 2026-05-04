@@ -25,7 +25,7 @@ from storage import DatabaseManager
 from utils import CharCryptoTool
 from core import get_app_data_path, SearchResult
 from ui.common import InputDialog
-
+from ui.custom_icon import CustomFluentIcon as CFIF
 # 尝试导入定时密码功能，失败时优雅处理
 try:
     from .time_lock import TimeLockDialog
@@ -227,7 +227,7 @@ class PasswordWidget(QWidget):
         top_layout.addWidget(self.add_category_btn)
         
         self.decrypt_btn = PushButton("解密", self)
-        self.decrypt_btn.setIcon(FIF.FINGERPRINT)
+        self.decrypt_btn.setIcon(CFIF.PASSWORD)
         self.decrypt_btn.clicked.connect(self._toggle_decrypt)
         top_layout.addWidget(self.decrypt_btn)
         
@@ -775,7 +775,7 @@ class Plugin(PluginInterface):
     """密码管理插件"""
     PLUGIN_ID = "password"
     PLUGIN_NAME = "密码管理"
-    PLUGIN_ICON = FIF.FINGERPRINT
+    PLUGIN_ICON = CFIF.PASSWORD
     PLUGIN_PRIORITY = 3
     
     def initialize(self, core) -> None:

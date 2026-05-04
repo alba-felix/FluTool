@@ -26,6 +26,7 @@ pyinstaller --noconfirm --onedir --windowed ^
       --add-data "config;config/" ^
       --add-data "logo.ico;." ^
       --add-data "ui/resources;ui/resources/" ^
+      --add-data "plugins_sourcecode;plugins_sourcecode/" ^
       --exclude-module "tests" ^
       --exclude-module "WebEngineWidgets" ^
       --exclude-module "WebEngineCore" ^

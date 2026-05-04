@@ -17,3 +17,4 @@ from . import script_manager
 from . import quick_copy
 from . import ai_assistant
 from . import text_tools
+from . import dev_tools

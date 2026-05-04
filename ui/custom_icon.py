@@ -44,7 +44,8 @@ class CustomFluentIcon(FluentIconBase, Enum):
     NETFW = "netfw"
     GROUP_POLICY = "group_policy"
     BOOKMARK_TAG = "bookmark_tag"  # 书签插件橙色标签图标
-    LINE_WRAPPINGING = "line_wrapping"  # 行换行图标
+    LINE_WRAPPINGING = "line_wrapping" 
+    PASSWORD = "password"  # 行换行图标
     
     def path(self, theme=Theme.AUTO) -> str:
         """获取图标路径"""
