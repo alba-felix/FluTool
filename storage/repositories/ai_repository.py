@@ -14,12 +14,12 @@ class AIRepository:
                         system_prompt: str = '', pinned: int = 0, archived: int = 0) -> int:
         """添加 AI 对话"""
         sql = """
-            INSERT INTO ai_conversations (title, provider, model_id, system_prompt, pinned, archived) 
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO ai_conversations (title, provider_id, provider, model_id, system_prompt, pinned, archived) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
         with self.db.get_connection() as conn:
             cursor = conn.execute(sql, (
-                title, provider, model_id, system_prompt, pinned, archived
+                title, provider, provider, model_id, system_prompt, pinned, archived
             ))
             conn.commit()
             return cursor.lastrowid

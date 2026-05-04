@@ -2,6 +2,7 @@ from typing import Any, Dict, List
 
 from core.settings import AISettingsManager
 from core.ai.types import AIModelInfo
+from core.api_key_manager import get_api_key_manager
 
 
 class AISettingsBridge:
@@ -9,6 +10,7 @@ class AISettingsBridge:
 
     def __init__(self, settings_manager: AISettingsManager = None):
         self._settings = settings_manager or AISettingsManager()
+        self._api_key_manager = get_api_key_manager()
 
     def get_default_provider(self) -> str:
         return self._settings.get_default_provider()
@@ -40,4 +42,15 @@ class AISettingsBridge:
         self._settings.save_models(payload)
 
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
-        return self._settings.get_provider_config(provider)
+        config = self._settings.get_provider_config(provider)
+        if config:
+            config["api_key"] = self._api_key_manager.get(provider)
+        return config
+    
+    def set_api_key(self, provider: str, api_key: str) -> None:
+        """设置提供商的 API Key"""
+        self._api_key_manager.set(provider, api_key)
+    
+    def get_api_key(self, provider: str) -> str:
+        """获取提供商的 API Key"""
+        return self._api_key_manager.get(provider)

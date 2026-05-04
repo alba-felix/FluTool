@@ -221,6 +221,7 @@ identifier.sqlite
 config.ini
 settings.ini
 secrets.json
+config/local_api_key.json
 
 # 资源文件缓存
 resources/cache/

@@ -13,12 +13,10 @@ class OllamaAdapter(AIProviderAdapter):
     Base URL: http://localhost:11434
     端点: /api/chat
     """
-
+    
+    provider_name = "ollama"
     DEFAULT_BASE_URL = "http://localhost:11434"
     DEFAULT_MODEL = "gemma3"
-
-    def __init__(self):
-        self.provider_name = "ollama"
 
     def chat_stream(
         self, request: AIChatRequest, callback: Callable[[str], None]

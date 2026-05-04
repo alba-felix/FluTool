@@ -1,11 +1,10 @@
 {
   "version": "1.0",
-  "default_provider": "ollama_cloud",
-  "default_model": "qwen3.5:397b-cloud",
+  "default_provider": "doubao",
+  "default_model": "doubao-seed-1-6-251015",
   "providers": {
     "siliconflow": {
       "base_url": "https://api.siliconflow.cn/v1",
-      "api_key": "sk-mklbvpqftjspuvyimhxoismpmrbpbhwpighbugsovobmfuga",
       "default_model": "Qwen/Qwen2.5-7B-Instruct",
       "enabled": true,
       "timeout_sec": 60,
@@ -13,23 +12,22 @@
     },
     "deepseek": {
       "base_url": "https://api.deepseek.com",
-      "api_key": "sk-21c74d7992f54a5089d0eac2d596e9b6",
       "default_model": "deepseek-chat",
       "enabled": true,
-      "timeout_sec": 60,
-      "extra_headers": {}
+      "timeout_sec": 120,
+      "extra_headers": {},
+      "api_key": "sk-21c74d7992f54a5089d0eac2d596e9b6"
     },
     "doubao": {
       "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-      "api_key": "0bfe6952-050d-4f5e-a4db-f8e96c601ec6",
       "default_model": "doubao-seed-1-6-251015",
       "enabled": true,
       "timeout_sec": 60,
-      "extra_headers": {}
+      "extra_headers": {},
+      "api_key": "0bfe6952-050d-4f5e-a4db-f8e96c601ec6"
     },
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "api_key": "",
       "default_model": "qwen-plus",
       "enabled": true,
       "timeout_sec": 60,
@@ -37,7 +35,6 @@
     },
     "ollama": {
       "base_url": "http://localhost:11434",
-      "api_key": "",
       "default_model": "qwen2.5:7b",
       "enabled": true,
       "timeout_sec": 60,
@@ -45,7 +42,6 @@
     },
     "ollama_cloud": {
       "base_url": "https://ollama.com/v1",
-      "api_key": "a066edb347064873b7ca58d376d8f4f4.8IB_brJHS9miZBjNQpKb4Wcr",
       "default_model": "qwen3.5:397b-cloud",
       "enabled": true,
       "timeout_sec": 120,
@@ -53,7 +49,6 @@
     },
     "custom": {
       "base_url": "https://api.openai.com/v1",
-      "api_key": "",
       "default_model": "gpt-4o-mini",
       "enabled": false,
       "timeout_sec": 60,
@@ -161,6 +156,25 @@
       "provider": "deepseek",
       "model_id": "deepseek-chat",
       "display_name": "DeepSeek Chat",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ]
+    },
+    {
+      "provider": "deepseek",
+      "model_id": "deepseek-reasoner",
+      "display_name": "DeepSeek Reasoner",
+      "enabled": true,
+      "capabilities": [
+        "chat",
+        "reasoning"
+      ]
+    },
+    {
+      "provider": "deepseek",
+      "model_id": "deepseek-v4-pro",
+      "display_name": "DeepSeek V4 Pro (1M上下文)",
       "enabled": true,
       "capabilities": [
         "chat"

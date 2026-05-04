@@ -1,17 +1,16 @@
 from typing import Callable, List, Optional
 
 from core.ai.provider_base import AIProviderRegistry
-from core.ai.providers import OpenAICompatibleAdapter, OllamaAdapter
+from core.ai.providers import OpenAICompatibleAdapter, OllamaAdapter, DeepSeekAdapter
 from core.ai.settings_bridge import AISettingsBridge
 from core.ai.types import AIChatRequest, AIChatResponse, AIMessage
 from core.ai.search_bridge import AISearchBridge
 
 
-# 支持 web_search 的模型列表
 WEB_SEARCH_MODELS = {
-    "deepseek": ["deepseek-reasoner"],  # deepseek 支持搜索的模型
-    "doubao": [],  # 豆包暂无
-    "qwen": [],  # 通义暂无
+    "deepseek": ["deepseek-reasoner"],
+    "doubao": [],
+    "qwen": [],
     "custom": [],
     "ollama": [],
 }
@@ -28,7 +27,8 @@ class AIChatService:
 
     def _register_default_adapters(self) -> None:
         self._registry.register(OllamaAdapter())
-        for provider_name in ["siliconflow", "ollama_cloud", "deepseek", "doubao", "qwen", "custom"]:
+        self._registry.register(DeepSeekAdapter())
+        for provider_name in ["siliconflow", "ollama_cloud", "doubao", "qwen", "custom"]:
             self._registry.register(OpenAICompatibleAdapter(provider_name))
 
     def supports_web_search(self, provider: str, model_id: str) -> bool:
@@ -55,6 +55,7 @@ class AIChatService:
         model_id: Optional[str] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
         enable_web_search: bool = False,
+        conversation_history: Optional[List[AIMessage]] = None,
     ) -> AIChatResponse:
         if not user_text or not user_text.strip():
             return AIChatResponse(provider="", model_id="", content="", error="消息为空")
@@ -90,10 +91,13 @@ class AIChatService:
             )
 
         messages: List[AIMessage] = []
+        
+        if conversation_history:
+            messages.extend(conversation_history)
+        
         clean_text = user_text.strip()
         messages.append(AIMessage(role="user", content=clean_text))
 
-        # 检测 @ 前缀，触发全局搜索
         if clean_text.startswith("@"):
             query = clean_text[1:].strip()
             search_context = self._search_bridge.search_context(query) if self._search_bridge else ""
@@ -106,11 +110,9 @@ class AIChatService:
                     )
                 )
 
-        # 判断是否启用 web_search
         actual_web_search = False
         if enable_web_search and self.supports_web_search(selected_provider, selected_model):
             actual_web_search = True
-            # 在 provider_config 中标记启用 web_search
             provider_config = dict(provider_config)
             provider_config["web_search"] = True
 
@@ -123,7 +125,6 @@ class AIChatService:
             provider_config=provider_config,
         )
 
-        # 流式处理
         if stream_callback:
             return adapter.chat_stream(request, stream_callback)
         else:

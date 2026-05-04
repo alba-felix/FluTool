@@ -31,17 +31,18 @@ from .chat_message import ChatMessageList
 class AIChatWorker(QThread):
     """AI聊天工作线程 - 防止UI阻塞"""
 
-    stream_update = pyqtSignal(str)  # 流式更新信号
-    finished_signal = pyqtSignal(object)  # 完成信号，传递AIChatResponse
-    error_signal = pyqtSignal(str)  # 错误信号
+    stream_update = pyqtSignal(str)
+    finished_signal = pyqtSignal(object)
+    error_signal = pyqtSignal(str)
 
-    def __init__(self, chat_service, user_text: str, provider: str, model_id: str, enable_web_search: bool = False):
+    def __init__(self, chat_service, user_text: str, provider: str, model_id: str, enable_web_search: bool = False, conversation_history: list = None):
         super().__init__()
         self.chat_service = chat_service
         self.user_text = user_text
         self.provider = provider
         self.model_id = model_id
         self.enable_web_search = enable_web_search
+        self.conversation_history = conversation_history or []
         self._is_running = True
         self._response = None
 
@@ -52,12 +53,25 @@ class AIChatWorker(QThread):
                 if self._is_running:
                     self.stream_update.emit(text)
 
+            from core.ai.types import AIMessage
+            history_messages = None
+            if self.conversation_history:
+                history_messages = [
+                    AIMessage(
+                        role=msg.get("role", "user"),
+                        content=msg.get("content", "")
+                    )
+                    for msg in self.conversation_history
+                    if msg.get("role") in ("user", "assistant") and msg.get("content")
+                ]
+
             self._response = self.chat_service.send_message(
                 user_text=self.user_text,
                 provider=self.provider,
                 model_id=self.model_id,
                 stream_callback=stream_callback,
                 enable_web_search=self.enable_web_search,
+                conversation_history=history_messages,
             )
 
             if self._is_running:
@@ -69,7 +83,7 @@ class AIChatWorker(QThread):
     def stop(self):
         """停止生成"""
         self._is_running = False
-        self.wait(1000)  # 等待1秒让线程结束
+        self.wait(1000)
 
 
 class OllamaModelFetchWorker(QThread):
@@ -554,7 +568,6 @@ class AIAssistantWidget(QWidget):
         self.provider_combo.setEnabled(True)
         self.model_combo.setEnabled(True)
         
-        # 添加空选项
         self.provider_combo.addItem("")
         
         providers = sorted(set(model.provider for model in models))
@@ -691,13 +704,13 @@ class AIAssistantWidget(QWidget):
             model_id = self.ai_settings.get_default_model() or "default"
 
         try:
-            conversation_id = self.repo.create_conversation(
+            conversation_id = self.repo.add_conversation(
                 title="新会话",
                 provider=provider,
                 model_id=model_id,
             )
             self.current_conversation_id = conversation_id
-            self.chat_view.clear_messages()  # 清空聊天视图
+            self.chat_view.clear_messages()
             self._refresh_history_list()
             for i in range(self._sidebar.history_list.count()):
                 item = self._sidebar.history_list.item(i)
@@ -774,6 +787,7 @@ class AIAssistantWidget(QWidget):
 
         provider = self.provider_combo.currentText() or self.ai_settings.get_default_provider()
         model_id = self.model_combo.currentText() or self.ai_settings.get_default_model()
+        
         if not provider:
             QMessageBox.warning(self, "提示", "请先选择AI提供商")
             return
@@ -850,13 +864,23 @@ class AIAssistantWidget(QWidget):
         if search_enabled:
             enable_web_search = self.chat_service.supports_web_search(provider, model_id)
 
-        # 创建工作线程
+        conversation_history = []
+        if self.current_conversation_id:
+            history_messages = self.repo.get_messages(self.current_conversation_id)
+            if history_messages:
+                conversation_history = [
+                    {"role": msg.get("role"), "content": msg.get("content")}
+                    for msg in history_messages
+                    if msg.get("role") in ("user", "assistant") and msg.get("content")
+                ]
+
         self._chat_worker = AIChatWorker(
             self.chat_service,
             content,
             provider,
             model_id,
             enable_web_search=enable_web_search,
+            conversation_history=conversation_history,
         )
         self._chat_worker.stream_update.connect(self._on_stream_update)
         self._chat_worker.finished_signal.connect(self._on_chat_finished)
@@ -918,6 +942,7 @@ class AIAssistantWidget(QWidget):
         # 第一次对话完成后自动生成标题
         if hasattr(self, '_is_first_message') and self._is_first_message and not response.error:
             self._auto_generate_title()
+            self._is_first_message = False  # 重置标志
 
         self._chat_worker = None
         self._current_ai_bubble = None
@@ -937,10 +962,8 @@ class AIAssistantWidget(QWidget):
         if len(content) > 20:
             title += "..."
         
-        # 更新标题
-        self.repo.update_conversation_title(self.current_conversation_id, title)
+        self.repo.update_conversation(self.current_conversation_id, title=title)
         
-        # 更新列表显示
         for i in range(self._sidebar.history_list.count()):
             item = self._sidebar.history_list.item(i)
             if item and item.data(Qt.UserRole) == self.current_conversation_id:
