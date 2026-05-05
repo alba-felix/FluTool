@@ -328,6 +328,9 @@ class DatabaseManager:
             ("ai_messages", "token_input", "INTEGER DEFAULT 0"),
             ("ai_messages", "token_output", "INTEGER DEFAULT 0"),
             ("ai_messages", "latency_ms", "INTEGER DEFAULT 0"),
+            ("app_launcher", "launch_count", "INTEGER DEFAULT 0"),
+            ("app_launcher", "last_launch_time", "TIMESTAMP"),
+            ("app_launcher", "is_favorite", "INTEGER DEFAULT 0"),
         ]
         
         for table, column, definition in migrations:

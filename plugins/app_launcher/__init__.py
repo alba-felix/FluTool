@@ -22,9 +22,9 @@ from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, CardWidget, StrongBodyLabel,
     TransparentToolButton, BodyLabel, IconWidget, CaptionLabel,
-    MessageBox, setCustomStyleSheet,
+    MessageBox, setCustomStyleSheet, MessageBoxBase,
     StyleSheetBase, Theme, qconfig, isDarkTheme, PrimaryPushButton,
-    ScrollArea, SmoothScrollArea
+    ScrollArea, SmoothScrollArea, SubtitleLabel, ComboBox
 )
 
 from core import PluginInterface, get_app_data_path, SearchResult
@@ -372,12 +372,107 @@ DARK_STYLES = {
 }
 
 
+# ==================== 编辑对话框 ====================
+class AppEditDialog(MessageBoxBase):
+    """应用编辑对话框"""
+    
+    def __init__(self, app_data: Dict[str, Any], categories: List[Dict], parent=None):
+        super().__init__(parent)
+        self.app_data = app_data
+        self.categories = categories
+        
+        self.titleLabel = SubtitleLabel("编辑应用", self)
+        self.viewLayout.addWidget(self.titleLabel)
+        
+        # 应用名称
+        self.name_label = BodyLabel("应用名称:", self)
+        self.viewLayout.addWidget(self.name_label)
+        self.name_edit = LineEdit(self)
+        self.name_edit.setText(app_data.get('name', ''))
+        self.name_edit.setClearButtonEnabled(True)
+        self.viewLayout.addWidget(self.name_edit)
+        
+        # 目标路径
+        self.path_label = BodyLabel("目标路径:", self)
+        self.viewLayout.addWidget(self.path_label)
+        path_layout = QHBoxLayout()
+        self.path_edit = LineEdit(self)
+        self.path_edit.setText(app_data.get('target_path', ''))
+        self.path_edit.setClearButtonEnabled(True)
+        path_layout.addWidget(self.path_edit)
+        
+        self.browse_btn = PushButton("浏览", self)
+        self.browse_btn.setFixedWidth(60)
+        self.browse_btn.clicked.connect(self._browse_path)
+        path_layout.addWidget(self.browse_btn)
+        self.viewLayout.addLayout(path_layout)
+        
+        # 启动参数
+        self.args_label = BodyLabel("启动参数:", self)
+        self.viewLayout.addWidget(self.args_label)
+        self.args_edit = LineEdit(self)
+        self.args_edit.setText(app_data.get('arguments', ''))
+        self.args_edit.setClearButtonEnabled(True)
+        self.args_edit.setPlaceholderText("可选")
+        self.viewLayout.addWidget(self.args_edit)
+        
+        # 所属分类
+        self.category_label = BodyLabel("所属分类:", self)
+        self.viewLayout.addWidget(self.category_label)
+        self.category_combo = ComboBox(self)
+        self.category_combo.addItem("全部")
+        current_category_id = app_data.get('category_id')
+        for idx, cat in enumerate(categories):
+            self.category_combo.addItem(cat['name'])
+            if cat['id'] == current_category_id:
+                self.category_combo.setCurrentIndex(idx + 1)
+        self.viewLayout.addWidget(self.category_combo)
+        
+        self.widget.setMinimumWidth(450)
+        self.name_edit.setFocus()
+    
+    def _browse_path(self):
+        """浏览文件路径"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择应用", self.path_edit.text(),
+            "所有支持的文件 (*.exe *.py *.bat *.cmd *.ps1 *.vbs);;"
+            "可执行文件 (*.exe);;"
+            "Python 脚本 (*.py);;"
+            "批处理文件 (*.bat *.cmd);;"
+            "PowerShell 脚本 (*.ps1);;"
+            "VBScript (*.vbs);;"
+            "所有文件 (*.*)"
+        )
+        if file_path:
+            self.path_edit.setText(file_path)
+            if not self.name_edit.text():
+                self.name_edit.setText(os.path.splitext(os.path.basename(file_path))[0])
+    
+    def get_data(self) -> Dict[str, Any]:
+        """获取编辑后的数据"""
+        category_idx = self.category_combo.currentIndex()
+        category_id = None if category_idx == 0 else self.categories[category_idx - 1]['id']
+        
+        return {
+            'name': self.name_edit.text().strip(),
+            'target_path': self.path_edit.text().strip(),
+            'arguments': self.args_edit.text().strip(),
+            'category_id': category_id
+        }
+    
+    def validate(self) -> bool:
+        """验证输入"""
+        return bool(self.name_edit.text().strip() and self.path_edit.text().strip())
+
+
 # ==================== 卡片组件 ====================
 class AppCard(CardWidget):
     """应用卡片组件"""
     
     app_clicked = pyqtSignal(dict)
     app_deleted = pyqtSignal(dict)
+    app_edited = pyqtSignal(dict)
+    app_favorited = pyqtSignal(dict)
     
     DARK_COLORS = {
         'text': '#ffffff',
@@ -423,6 +518,25 @@ class AppCard(CardWidget):
         colors = self.DARK_COLORS if isDarkTheme() else self.LIGHT_COLORS
         self._name_label.setStyleSheet(f"background: transparent; color: {colors['text']};")
     
+    @staticmethod
+    def _crop_to_content(pixmap: QPixmap) -> QPixmap:
+        """裁剪掉透明区域，只保留有效内容"""
+        # 查找非透明像素的边界
+        mask = pixmap.mask()
+        if mask is None or mask.isNull():
+            return pixmap
+        
+        # 获取边界矩形
+        rect = mask.rect()
+        
+        # 如果没有透明区域，直接返回
+        if pixmap.size() == rect.size():
+            return pixmap
+        
+        # 裁剪到内容区域
+        cropped = pixmap.copy(rect)
+        return cropped
+    
     def _load_icon(self) -> QLabel:
         """加载图标"""
         icon_label = QLabel()
@@ -438,8 +552,9 @@ class AppCard(CardWidget):
             if abs_icon_path.exists():
                 pixmap = QPixmap(str(abs_icon_path))
                 if not pixmap.isNull():
-                    pixmap.setDevicePixelRatio(dpr)
-                    scaled_pixmap = pixmap.scaled(
+                    # 先裁剪掉多余空白，再缩放
+                    cropped_pixmap = self._crop_to_content(pixmap)
+                    scaled_pixmap = cropped_pixmap.scaled(
                         target_size, target_size,
                         Qt.KeepAspectRatio, Qt.SmoothTransformation
                     )
@@ -506,10 +621,35 @@ class AppCard(CardWidget):
         """显示右键菜单"""
         menu = QMenu(self)
         menu.setStyleSheet(get_menu_style())
+        
+        # 收藏/取消收藏
+        is_favorite = self.app_data.get('is_favorite', 0)
+        favorite_text = "取消收藏" if is_favorite else "收藏"
+        favorite_action = QAction(favorite_text, self)
+        favorite_action.triggered.connect(self._toggle_favorite)
+        menu.addAction(favorite_action)
+        
+        menu.addSeparator()
+        
+        edit_action = QAction("编辑", self)
+        edit_action.triggered.connect(self._edit_app)
+        menu.addAction(edit_action)
+        
+        menu.addSeparator()
+        
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(lambda: self.app_deleted.emit(self.app_data))
         menu.addAction(delete_action)
+        
         menu.exec_(QCursor.pos())
+    
+    def _toggle_favorite(self):
+        """切换收藏状态"""
+        self.app_favorited.emit(self.app_data)
+    
+    def _edit_app(self):
+        """编辑应用"""
+        self.app_edited.emit(self.app_data)
 
 
 class AddAppCard(CardWidget):
@@ -611,16 +751,22 @@ class CategoryTab(QScrollArea):
     
     app_clicked = pyqtSignal(dict)
     app_deleted = pyqtSignal(dict)
+    app_edited = pyqtSignal(dict)
+    app_favorited = pyqtSignal(dict)
     add_app_clicked = pyqtSignal()
     
     def __init__(self, category_id: Optional[int], parent=None):
         super().__init__(parent)
         self.category_id = category_id
+        self._is_drag_over = False
         self._setup_ui()
         self._apply_style()
         
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
+        
+        # 启用拖拽
+        self.setAcceptDrops(True)
     
     def _setup_ui(self):
         """设置界面"""
@@ -720,6 +866,8 @@ class CategoryTab(QScrollArea):
             card = AppCard(app_data, self.grid_container)
             card.app_clicked.connect(self.app_clicked.emit)
             card.app_deleted.connect(self.app_deleted.emit)
+            card.app_edited.connect(self.app_edited.emit)
+            card.app_favorited.connect(self.app_favorited.emit)
             self.grid_layout.addWidget(card, idx // 6, idx % 6)
         
         # 添加"添加应用"卡片
@@ -760,6 +908,61 @@ class CategoryTab(QScrollArea):
             row = i // cols
             col = i % cols
             self.grid_layout.addWidget(widget, row, col)
+    
+    def dragEnterEvent(self, event):
+        """拖拽进入事件"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self._is_drag_over = True
+            self.update()
+        else:
+            event.ignore()
+    
+    def dragLeaveEvent(self, event):
+        """拖拽离开事件"""
+        self._is_drag_over = False
+        self.update()
+    
+    def dropEvent(self, event):
+        """拖拽放下事件"""
+        self._is_drag_over = False
+        self.update()
+        
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+        
+        # 处理拖拽的文件/文件夹
+        for url in urls:
+            file_path = url.toLocalFile()
+            if os.path.exists(file_path):
+                # 发送添加应用信号，携带分类ID
+                self.add_app_clicked.emit()
+                # 由于add_app_clicked不支持参数，我们需要通过其他方式传递
+                # 这里我们直接调用父组件的方法
+                if hasattr(self.parent(), '_add_app_with_path'):
+                    self.parent()._add_app_with_path(file_path, self.category_id)
+        
+        event.acceptProposedAction()
+    
+    def paintEvent(self, event):
+        """绘制事件 - 添加拖拽视觉反馈"""
+        super().paintEvent(event)
+        
+        if self._is_drag_over:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # 绘制半透明覆盖层
+            overlay_color = QColor(0, 159, 170, 30) if not isDarkTheme() else QColor(0, 159, 170, 50)
+            painter.fillRect(self.rect(), overlay_color)
+            
+            # 绘制边框
+            border_color = QColor(0, 159, 170, 150)
+            pen = QPen(border_color, 3, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(self.rect().adjusted(5, 5, -5, -5), 8, 8)
 
 
 # ==================== 主组件 ====================
@@ -861,11 +1064,18 @@ class AppLauncherWidget(QWidget):
         self.search_timer.timeout.connect(self._perform_search)
         self.search_input.textChanged.connect(lambda: self.search_timer.start(200))
         
+        # 排序按钮
+        self.sort_btn = PushButton("排序", self)
+        self.sort_btn.setIcon(FIF.ARROW_DOWN)
+        self.sort_btn.setFixedWidth(80)
+        self.sort_btn.clicked.connect(self._show_sort_menu)
+        
         scan_btn = PushButton("扫描应用", self)
         scan_btn.setIcon(FIF.SEARCH)
         scan_btn.clicked.connect(self._scan_apps)
         
         search_layout.addWidget(self.search_input, 1)
+        search_layout.addWidget(self.sort_btn)
         search_layout.addWidget(scan_btn)
         
         # 向上滚动按钮
@@ -979,6 +1189,8 @@ class AppLauncherWidget(QWidget):
         all_tab = CategoryTab(None, self)
         all_tab.app_clicked.connect(self._launch_app)
         all_tab.app_deleted.connect(self._delete_app)
+        all_tab.app_edited.connect(self._edit_app)
+        all_tab.app_favorited.connect(self._toggle_favorite)
         all_tab.add_app_clicked.connect(self._add_app)
         all_tab_index = self.tab_widget.addTab(all_tab, "全部")
         self.tab_widget.tabBar().setTabData(all_tab_index, None)
@@ -987,11 +1199,43 @@ class AppLauncherWidget(QWidget):
         all_apps = self.db.get_apps(self.PLUGIN_ID)
         all_tab.refresh_apps(all_apps)
         
+        # 创建"最近使用"标签页
+        recent_tab = CategoryTab('recent', self)
+        recent_tab.app_clicked.connect(self._launch_app)
+        recent_tab.app_deleted.connect(self._delete_app)
+        recent_tab.app_edited.connect(self._edit_app)
+        recent_tab.app_favorited.connect(self._toggle_favorite)
+        recent_tab.add_app_clicked.connect(self._add_app)
+        recent_tab_index = self.tab_widget.addTab(recent_tab, "最近使用")
+        self.tab_widget.tabBar().setTabData(recent_tab_index, 'recent')
+        self.category_tabs['recent'] = recent_tab
+        
+        # 加载最近使用的应用
+        recent_apps = self._get_recent_apps()
+        recent_tab.refresh_apps(recent_apps)
+        
+        # 创建"收藏"标签页
+        favorite_tab = CategoryTab('favorite', self)
+        favorite_tab.app_clicked.connect(self._launch_app)
+        favorite_tab.app_deleted.connect(self._delete_app)
+        favorite_tab.app_edited.connect(self._edit_app)
+        favorite_tab.app_favorited.connect(self._toggle_favorite)
+        favorite_tab.add_app_clicked.connect(self._add_app)
+        favorite_tab_index = self.tab_widget.addTab(favorite_tab, "收藏")
+        self.tab_widget.tabBar().setTabData(favorite_tab_index, 'favorite')
+        self.category_tabs['favorite'] = favorite_tab
+        
+        # 加载收藏的应用
+        favorite_apps = self._get_favorite_apps()
+        favorite_tab.refresh_apps(favorite_apps)
+        
         # 创建分类标签页
         for category in categories:
             tab = CategoryTab(category['id'], self)
             tab.app_clicked.connect(self._launch_app)
             tab.app_deleted.connect(self._delete_app)
+            tab.app_edited.connect(self._edit_app)
+            tab.app_favorited.connect(self._toggle_favorite)
             tab.add_app_clicked.connect(lambda cat_id=category['id']: self._add_app(cat_id))
             tab_index = self.tab_widget.addTab(tab, category['name'])
             self.tab_widget.tabBar().setTabData(tab_index, category['id'])
@@ -1155,6 +1399,34 @@ class AppLauncherWidget(QWidget):
                 parent=self
             )
     
+    def _add_app_with_path(self, file_path: str, category_id: Optional[int] = None):
+        """通过拖拽添加应用"""
+        if not file_path or not os.path.exists(file_path):
+            return
+        
+        name = os.path.splitext(os.path.basename(file_path))[0]
+        icon_path = self._extract_icon(file_path)
+        
+        self.db.add_app(
+            plugin_id=self.PLUGIN_ID,
+            name=name,
+            target_path=file_path,
+            category_id=category_id,
+            icon_path=icon_path
+        )
+        
+        self._load_categories()
+        
+        InfoBar.success(
+            title="添加成功",
+            content=f"已添加 {name}",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self
+        )
+    
     def _extract_icon(self, file_path: str) -> str:
         """从文件中提取图标并保存"""
         try:
@@ -1173,9 +1445,33 @@ class AppLauncherWidget(QWidget):
             icon_name = f"icon_{hash_val}.png"
             icon_save_path = self.icon_dir / icon_name
             
-            # 提取高分辨率图标以支持高 DPI
-            pixmap = file_icon.pixmap(128, 128)
-            if not pixmap.isNull() and pixmap.save(str(icon_save_path), "PNG"):
+            # 获取图标最大可用尺寸
+            max_size = 0
+            for size in [16, 32, 48, 64, 128, 256]:
+                if not file_icon.actualSize(QSize(size, size)).isNull():
+                    max_size = size
+            
+            # 使用最大尺寸提取图标
+            pixmap = file_icon.pixmap(max_size, max_size)
+            if pixmap.isNull():
+                return ""
+            
+            # 裁剪掉空白区域
+            mask = pixmap.mask()
+            if mask and not mask.isNull():
+                content_rect = mask.rect()
+                if pixmap.size() != content_rect.size():
+                    pixmap = pixmap.copy(content_rect)
+            
+            # 缩放到合理的保存尺寸(最大128)
+            save_size = min(128, max(pixmap.width(), pixmap.height()))
+            if pixmap.width() > save_size or pixmap.height() > save_size:
+                pixmap = pixmap.scaled(
+                    save_size, save_size,
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+            
+            if pixmap.save(str(icon_save_path), "PNG"):
                 return f"data/app_icons/{icon_name}"
                 
         except Exception as e:
@@ -1216,6 +1512,11 @@ class AppLauncherWidget(QWidget):
             
             self._launch_by_type(target_path, arguments)
             
+            # 记录启动次数和时间
+            app_id = app_data.get('id')
+            if app_id is not None:
+                self._record_launch(app_id)
+            
             InfoBar.success(
                 title="启动成功",
                 content=f"已启动 {app_data.get('name', 'Unknown')}",
@@ -1236,6 +1537,53 @@ class AppLauncherWidget(QWidget):
                 duration=3000,
                 parent=self
             )
+    
+    def _get_recent_apps(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """获取最近使用的应用"""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT * FROM app_launcher 
+                    WHERE plugin_id = ? AND last_launch_time IS NOT NULL
+                    ORDER BY last_launch_time DESC
+                    LIMIT ?
+                """, (self.PLUGIN_ID, limit))
+                rows = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            self.core.logger.error(f"获取最近使用应用失败: {e}")
+            return []
+    
+    def _get_favorite_apps(self) -> List[Dict[str, Any]]:
+        """获取收藏的应用"""
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT * FROM app_launcher 
+                    WHERE plugin_id = ? AND is_favorite = 1
+                    ORDER BY name
+                """, (self.PLUGIN_ID,))
+                rows = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            self.core.logger.error(f"获取收藏应用失败: {e}")
+            return []
+    
+    def _record_launch(self, app_id: int):
+        """记录应用启动"""
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute("""
+                    UPDATE app_launcher 
+                    SET launch_count = launch_count + 1,
+                        last_launch_time = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (app_id,))
+                conn.commit()
+        except Exception as e:
+            self.core.logger.error(f"记录启动失败: {e}")
     
     def _launch_by_type(self, target_path: str, arguments: str = ''):
         """根据文件类型选择启动方式"""
@@ -1271,6 +1619,97 @@ class AppLauncherWidget(QWidget):
                 subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
             else:
                 os.startfile(target_path)
+    
+    def _toggle_favorite(self, app_data: Dict[str, Any]):
+        """切换收藏状态"""
+        app_id = app_data.get('id')
+        if app_id is None:
+            return
+        
+        is_favorite = app_data.get('is_favorite', 0)
+        new_status = 0 if is_favorite else 1
+        
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute("""
+                    UPDATE app_launcher 
+                    SET is_favorite = ?
+                    WHERE id = ?
+                """, (new_status, app_id))
+                conn.commit()
+            
+            self._load_categories()
+            
+            action = "取消收藏" if is_favorite else "收藏"
+            InfoBar.success(
+                title="操作成功",
+                content=f"已{action} {app_data.get('name', 'Unknown')}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=1500,
+                parent=self
+            )
+        except Exception as e:
+            self.core.logger.error(f"切换收藏状态失败: {e}")
+            InfoBar.error(
+                title="操作失败",
+                content=str(e),
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+    
+    def _edit_app(self, app_data: Dict[str, Any]):
+        """编辑应用"""
+        categories = self.db.get_categories(self.PLUGIN_ID)
+        dialog = AppEditDialog(app_data, categories, self)
+        
+        if dialog.exec():
+            new_data = dialog.get_data()
+            app_id = app_data.get('id')
+            
+            if app_id is not None:
+                # 检查路径是否改变，如果改变则重新提取图标
+                old_path = app_data.get('target_path', '')
+                new_path = new_data['target_path']
+                icon_path = app_data.get('icon_path', '')
+                
+                if old_path != new_path:
+                    # 路径改变，重新提取图标
+                    if icon_path:
+                        abs_icon_path = get_app_data_path(icon_path)
+                        if abs_icon_path.exists():
+                            try:
+                                abs_icon_path.unlink()
+                            except Exception:
+                                pass
+                    icon_path = self._extract_icon(new_path)
+                
+                # 更新数据库
+                self.db.update_app(
+                    plugin_id=self.PLUGIN_ID,
+                    app_id=app_id,
+                    name=new_data['name'],
+                    target_path=new_data['target_path'],
+                    category_id=new_data['category_id'],
+                    arguments=new_data['arguments'],
+                    icon_path=icon_path
+                )
+                
+                self._load_categories()
+                
+                InfoBar.success(
+                    title="修改成功",
+                    content=f"已更新 {new_data['name']}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
     
     def _delete_app(self, app_data: Dict[str, Any]):
         """删除应用"""
@@ -1319,6 +1758,73 @@ class AppLauncherWidget(QWidget):
             
             # 切换到"全部"标签页
             self.tab_widget.setCurrentIndex(0)
+    
+    def _show_sort_menu(self):
+        """显示排序菜单"""
+        menu = QMenu(self)
+        menu.setStyleSheet(get_menu_style())
+        
+        # 按名称排序
+        name_action = QAction("按名称排序", self)
+        name_action.triggered.connect(lambda: self._sort_apps('name'))
+        menu.addAction(name_action)
+        
+        # 按添加时间排序
+        time_action = QAction("按添加时间排序", self)
+        time_action.triggered.connect(lambda: self._sort_apps('created_at'))
+        menu.addAction(time_action)
+        
+        # 按更新时间排序
+        update_action = QAction("按更新时间排序", self)
+        update_action.triggered.connect(lambda: self._sort_apps('updated_at'))
+        menu.addAction(update_action)
+        
+        # 按使用频率排序
+        frequency_action = QAction("按使用频率排序", self)
+        frequency_action.triggered.connect(lambda: self._sort_apps('launch_count'))
+        menu.addAction(frequency_action)
+        
+        # 按最近使用排序
+        recent_action = QAction("按最近使用排序", self)
+        recent_action.triggered.connect(lambda: self._sort_apps('last_launch_time'))
+        menu.addAction(recent_action)
+        
+        menu.exec_(QCursor.pos())
+    
+    def _sort_apps(self, sort_by: str):
+        """排序应用"""
+        # 获取当前标签页
+        current_tab = self.tab_widget.currentWidget()
+        if not isinstance(current_tab, CategoryTab):
+            return
+        
+        category_id = current_tab.category_id
+        apps = self.db.get_apps(self.PLUGIN_ID, category_id)
+        
+        # 排序
+        if sort_by == 'name':
+            apps.sort(key=lambda x: x.get('name', '').lower())
+        elif sort_by == 'created_at':
+            apps.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        elif sort_by == 'updated_at':
+            apps.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+        elif sort_by == 'launch_count':
+            apps.sort(key=lambda x: x.get('launch_count', 0), reverse=True)
+        elif sort_by == 'last_launch_time':
+            apps.sort(key=lambda x: x.get('last_launch_time', ''), reverse=True)
+        
+        # 刷新显示
+        current_tab.refresh_apps(apps)
+        
+        InfoBar.success(
+            title="排序完成",
+            content=f"已按{sort_by}排序",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=1500,
+            parent=self
+        )
     
     def _scan_apps(self):
         """扫描系统应用"""
