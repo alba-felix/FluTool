@@ -10,12 +10,13 @@ from PyQt5.QtCore import Qt, QTimer, QPoint, pyqtSignal
 from PyQt5.QtGui import QCursor
 from qfluentwidgets import (
     isDarkTheme, FluentIcon as FIF,
-    PushButton, TransparentToolButton
+    PushButton, TransparentToolButton, qconfig
 )
 
 from core import PluginInterface
 from plugins.text_tools.page_interface import TabPageInterface
 from .cron_tool import CronToolPage
+from .deepseek_tool import DeepSeekToolPage
 
 
 class OverflowPopup(QWidget):
@@ -309,6 +310,13 @@ class DevToolsWidget(QWidget):
         self.tab_bar.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self.tab_bar)
 
+        # 标签页下方水平分隔线
+        self._separator = QFrame(self)
+        self._separator.setFrameShape(QFrame.HLine)
+        self._separator.setFixedHeight(1)
+        self._separator.setObjectName("tabSeparator")
+        layout.addWidget(self._separator)
+
         # 创建滚动区域包裹 stacked_widget，启用双向滚动但不显示滚动条
         from PyQt5.QtWidgets import QScrollArea
         self._scroll_area = QScrollArea(self)
@@ -332,9 +340,20 @@ class DevToolsWidget(QWidget):
         layout.addWidget(self._scroll_area)
 
         self._init_tabs()
+        self._apply_separator_style()
+        
+        # 监听主题变化
+        qconfig.themeChanged.connect(self._apply_separator_style)
 
     def _on_tab_changed(self, index: int) -> None:
         self.stacked_widget.setCurrentIndex(index)
+
+    def _apply_separator_style(self) -> None:
+        """应用分隔线样式"""
+        if isDarkTheme():
+            self._separator.setStyleSheet("QFrame#tabSeparator { background-color: #3d3d3d; border: none; }")
+        else:
+            self._separator.setStyleSheet("QFrame#tabSeparator { background-color: #e0e0e0; border: none; }")
 
     def _init_tabs(self) -> None:
         """初始化所有已注册的标签页"""
@@ -365,6 +384,7 @@ class Plugin(PluginInterface):
         self._tab_manager = TabManager()
         # 在这里注册开发工具的标签页
         self._tab_manager.register(CronToolPage)
+        self._tab_manager.register(DeepSeekToolPage)
 
         self._widget = None
 

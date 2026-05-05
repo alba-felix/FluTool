@@ -1,6 +1,10 @@
 @echo off
 echo Compiling FluTool project with PyInstaller starting...
 
+REM 删除旧的打包文件以避免缓存
+if exist "dist\FluTool" rmdir /s /q "dist\FluTool"
+if exist "build" rmdir /s /q "build"
+
 pyinstaller --noconfirm --onedir --windowed ^
       --icon "logo.ico" ^
       --name "FluTool" ^
