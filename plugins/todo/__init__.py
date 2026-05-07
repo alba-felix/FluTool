@@ -92,6 +92,7 @@ class AddTodoDialog(MessageBoxBase):
             "due_date": self.due_date_edit.date().toString("yyyy-MM-dd"),
             "tags": [tag.strip() for tag in self.tags_input.text().split(",") if tag.strip()],
             "completed": False,
+            "status": "进行中",
             "pinned": False,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
@@ -195,6 +196,7 @@ class EditTodoDialog(MessageBoxBase):
     
     def get_data(self) -> Dict[str, Any]:
         """获取对话框数据"""
+        completed = self.completed_checkbox.isChecked()
         data = self.todo_data.copy()
         data.update({
             "title": self.title_input.text(),
@@ -203,7 +205,8 @@ class EditTodoDialog(MessageBoxBase):
             "start_date": self.start_date_edit.date().toString("yyyy-MM-dd"),
             "due_date": self.due_date_edit.date().toString("yyyy-MM-dd"),
             "tags": [tag.strip() for tag in self.tags_input.text().split(",") if tag.strip()],
-            "completed": self.completed_checkbox.isChecked(),
+            "completed": completed,
+            "status": "已完成" if completed else self.todo_data.get("status", "进行中"),
             "pinned": self.pinned_checkbox.isChecked(),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
@@ -279,7 +282,7 @@ class TodoWidget(QWidget):
         self.tree.header().setSectionResizeMode(3, QHeaderView.Fixed)
         self.tree.header().setSectionResizeMode(4, QHeaderView.Fixed)
         self.tree.header().setSectionResizeMode(5, QHeaderView.Fixed)
-        self.tree.setColumnWidth(0, 60)
+        self.tree.setColumnWidth(0, 100)
         self.tree.setColumnWidth(2, 80)
         self.tree.setColumnWidth(3, 150)
         self.tree.setColumnWidth(4, 100)
@@ -371,6 +374,9 @@ class TodoWidget(QWidget):
         """从数据库加载代办事项"""
         try:
             self.todos = self.db.get_todos()
+            for todo in self.todos:
+                if "status" not in todo:
+                    todo["status"] = "已完成" if todo.get("completed", False) else "进行中"
         except Exception as e:
             self.core.logger.error(f"加载代办事项失败: {e}")
             self.todos = []
@@ -392,15 +398,13 @@ class TodoWidget(QWidget):
             item = QTreeWidgetItem()
             
             if todo.get("completed", False):
-                status = "✓"
+                status = "✓已完成"
             else:
-                priority = todo.get("priority", "中")
-                if priority == "紧急":
-                    status = "❗"
-                elif priority == "高":
-                    status = "⚠️"
+                todo_status = todo.get("status", "进行中")
+                if todo_status == "未完成":
+                    status = "○未完成"
                 else:
-                    status = "⭕"
+                    status = "▶进行中"
             
             if todo.get("pinned", False):
                 status = "📌" + status
@@ -503,7 +507,8 @@ class TodoWidget(QWidget):
                     due_date=todo_data.get("due_date", ""),
                     tags=todo_data.get("tags", []),
                     completed=1 if todo_data.get("completed", False) else 0,
-                    pinned=1 if todo_data.get("pinned", False) else 0
+                    pinned=1 if todo_data.get("pinned", False) else 0,
+                    status=todo_data.get("status", "进行中")
                 )
                 todo_data["id"] = todo_id
                 self.todos.append(todo_data)
@@ -554,7 +559,8 @@ class TodoWidget(QWidget):
                         due_date=updated_data.get("due_date", ""),
                         tags=updated_data.get("tags", []),
                         completed=1 if updated_data.get("completed", False) else 0,
-                        pinned=1 if updated_data.get("pinned", False) else 0
+                        pinned=1 if updated_data.get("pinned", False) else 0,
+                        status=updated_data.get("status", "进行中")
                     )
                 self.todos[todo_idx] = updated_data
                 self._display_todos()
@@ -592,8 +598,10 @@ class TodoWidget(QWidget):
         todo["completed"] = not todo.get("completed", False)
         if todo["completed"]:
             todo["completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            todo["status"] = "已完成"
         else:
             todo.pop("completed_at", None)
+            todo["status"] = "未完成"
 
         todo_id = todo.get("id")
         if todo_id:
@@ -602,7 +610,7 @@ class TodoWidget(QWidget):
         self._display_todos()
         self._update_stats()
 
-        status_msg = "已完成" if todo["completed"] else "未完成"
+        status_msg = todo["status"]
         InfoBar.success(
             title="状态变更",
             content=f"'{todo.get('title', '未命名')}' 已标记为{status_msg}",
@@ -812,7 +820,14 @@ class Plugin(PluginInterface):
         results = []
         todos = db.search_todos(query)
         for todo in todos[:20]:
-            status = "✓" if todo['completed'] else "⭕"
+            completed = todo.get('completed', False)
+            todo_status = todo.get('status', '')
+            if completed:
+                status = "✓已完成"
+            elif todo_status == "未完成":
+                status = "○未完成"
+            else:
+                status = "▶进行中"
             pinned = "📌" if todo['pinned'] else ""
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,

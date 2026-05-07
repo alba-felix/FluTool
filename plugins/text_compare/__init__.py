@@ -308,7 +308,6 @@ class TextCompareWidget(QWidget):
         left_layout.setSpacing(0)
 
         left_label = BodyLabel("原文本")
-        left_label.setStyleSheet("padding: 4px; font-weight: bold;")
         left_layout.addWidget(left_label)
 
         self._left_text = CodeEditor()
@@ -327,7 +326,6 @@ class TextCompareWidget(QWidget):
         right_layout.setSpacing(0)
 
         right_label = BodyLabel("新文本")
-        right_label.setStyleSheet("padding: 4px; font-weight: bold;")
         right_layout.addWidget(right_label)
 
         self._right_text = CodeEditor()

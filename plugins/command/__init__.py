@@ -198,13 +198,8 @@ class CommandWidget(QWidget):
         
         tip_layout = QHBoxLayout()
         tip_layout.setContentsMargins(10, 0, 10, 5)
-        self.tip_label = QLabel("提示: 双击命令复制到剪贴板")
+        self.tip_label = CaptionLabel("提示: 双击命令复制到剪贴板")
         self.tip_label.setObjectName("tipLabel")
-        setCustomStyleSheet(
-            self.tip_label,
-            "QLabel { color: gray; font-size: 9pt; }",
-            "QLabel { color: #888; font-size: 9pt; }"
-        )
         tip_layout.addWidget(self.tip_label)
         layout.addLayout(tip_layout)
         
@@ -550,7 +545,7 @@ class CommandWidget(QWidget):
         menu = QMenu(self)
         menu.setAttribute(Qt.WA_DeleteOnClose)
         
-        copy_action = QAction("复制命令内容", self)
+        copy_action = QAction("复制命令", self)
         copy_action.triggered.connect(partial(self._copy_command, item))
         menu.addAction(copy_action)
         
@@ -560,11 +555,43 @@ class CommandWidget(QWidget):
         edit_action.triggered.connect(partial(self._edit_command, item))
         menu.addAction(edit_action)
         
+        # 移动分类
+        move_menu = menu.addMenu("移动分类")
+        current_cat = item.text(3) if item.columnCount() > 3 else ""
+        all_categories = self.db.get_categories(self.PLUGIN_ID)
+        for cat in all_categories:
+            if cat['name'] == current_cat:
+                continue
+            cat_action = QAction(cat['name'], self)
+            cat_action.triggered.connect(partial(self._move_command, item, cat['id']))
+            move_menu.addAction(cat_action)
+        if move_menu.isEmpty():
+            move_menu.setEnabled(False)
+        
+        menu.addSeparator()
+        
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(partial(self._delete_command, item))
         menu.addAction(delete_action)
         
         menu.exec_(self.tree.viewport().mapToGlobal(pos))
+    
+    def _move_command(self, item: QTreeWidgetItem, new_category_id: int) -> None:
+        """移动命令到指定分类"""
+        cmd_id = item.data(0, Qt.UserRole)
+        name = item.text(1)
+        
+        self.db.update_command(self.PLUGIN_ID, cmd_id, category_id=new_category_id)
+        self._load_commands()
+        
+        InfoBar.success(
+            title="移动成功",
+            content=f"已将 '{name}' 移动到新分类",
+            orient=Qt.Horizontal, isClosable=True,
+            position=InfoBarPosition.TOP, duration=2000, parent=self
+        )
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("UPDATE", f"移动命令 '{name}' 到分类ID: {new_category_id}")
     
     def _edit_command(self, item: QTreeWidgetItem) -> None:
         """编辑命令"""

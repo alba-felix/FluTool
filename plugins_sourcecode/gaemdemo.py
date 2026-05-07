@@ -1,7 +1,7 @@
 import sys
 import random
 from PyQt5.QtWidgets import QWidget, QApplication, QMessageBox
-from PyQt5.QtCore import QTimer, Qt, QPoint
+from PyQt5.QtCore import QTimer, Qt, QPoint, QRect
 from PyQt5.QtGui import QPainter, QColor, QBrush, QFont, QPen
 
 class SnakeGame(QWidget):
@@ -169,7 +169,7 @@ class SnakeGame(QWidget):
         """将网格坐标转换为矩形绘制区域"""
         x = point.x() * self.GRID_SIZE
         y = point.y() * self.GRID_SIZE
-        return (x, y, self.GRID_SIZE, self.GRID_SIZE)
+        return QRect(x, y, self.GRID_SIZE, self.GRID_SIZE)
 
     def show_game_over_dialog(self):
         """弹出游戏结束对话框，提供重新开始选项"""

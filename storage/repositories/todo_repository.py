@@ -11,17 +11,17 @@ class TodoRepository:
     
     def add(self, title: str, description: str = '', priority: str = '中',
             start_date: str = '', due_date: str = '', tags: list = None,
-            completed: int = 0, pinned: int = 0) -> int:
+            completed: int = 0, pinned: int = 0, status: str = '进行中') -> int:
         """添加待办事项"""
         tags_json = json.dumps(tags) if tags else '[]'
         sql = """
-            INSERT INTO todos (title, description, priority, start_date, due_date, tags, completed, pinned) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO todos (title, description, priority, start_date, due_date, tags, completed, pinned, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with self.db.get_connection() as conn:
             cursor = conn.execute(sql, (
                 title, description, priority, start_date, due_date, 
-                tags_json, completed, pinned
+                tags_json, completed, pinned, status
             ))
             conn.commit()
             return cursor.lastrowid
@@ -63,7 +63,7 @@ class TodoRepository:
     
     def update(self, todo_id: int, **kwargs) -> bool:
         """更新待办事项"""
-        allowed_fields = {'title', 'description', 'priority', 'start_date', 'due_date', 'tags', 'completed', 'pinned', 'sort_order'}
+        allowed_fields = {'title', 'description', 'priority', 'start_date', 'due_date', 'tags', 'completed', 'pinned', 'sort_order', 'status'}
         filtered = {k: v for k, v in kwargs.items() if k in allowed_fields}
         
         if 'tags' in filtered:
@@ -97,7 +97,9 @@ class TodoRepository:
         """切换待办事项完成状态"""
         sql = """
             UPDATE todos 
-            SET completed = NOT completed, updated_at = CURRENT_TIMESTAMP 
+            SET completed = NOT completed,
+                status = CASE WHEN completed = 0 THEN '已完成' ELSE '未完成' END,
+                updated_at = CURRENT_TIMESTAMP 
             WHERE id = ?
         """
         with self.db.get_connection() as conn:

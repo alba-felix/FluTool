@@ -854,11 +854,43 @@ class BookmarkWidget(QWidget):
         
         menu.addSeparator()
         
+        # 移动分类
+        move_menu = menu.addMenu("移动分类")
+        current_cat = item.text(2) if item.columnCount() > 2 else ""
+        all_categories = self.db.get_categories(self.PLUGIN_ID)
+        for cat in all_categories:
+            if cat['name'] == current_cat:
+                continue
+            cat_action = QAction(cat['name'], self)
+            cat_action.triggered.connect(partial(self._move_bookmark, item, cat['id']))
+            move_menu.addAction(cat_action)
+        if move_menu.isEmpty():
+            move_menu.setEnabled(False)
+        
+        menu.addSeparator()
+        
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(partial(self._delete_bookmark, item))
         menu.addAction(delete_action)
         
         menu.exec_(self.tree.viewport().mapToGlobal(pos))
+    
+    def _move_bookmark(self, item: QTreeWidgetItem, new_category_id: int) -> None:
+        """移动书签到指定分类"""
+        bm_id = item.data(0, Qt.UserRole)
+        name = item.text(0)
+        
+        self.db.update_bookmark(self.PLUGIN_ID, bm_id, category_id=new_category_id)
+        self._load_bookmarks()
+        
+        InfoBar.success(
+            title="移动成功",
+            content=f"已将 '{name}' 移动到新分类",
+            orient=Qt.Horizontal, isClosable=True,
+            position=InfoBarPosition.TOP, duration=2000, parent=self
+        )
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("UPDATE", f"移动书签 '{name}' 到分类ID: {new_category_id}")
     
     def _edit_bookmark(self, item: QTreeWidgetItem) -> None:
         """编辑书签"""

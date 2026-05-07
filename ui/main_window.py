@@ -925,7 +925,6 @@ class MainWindow(PushFluentWindow):
 			title_layout.addWidget(logo_label)
 		
 		title = StrongBodyLabel("FluTool")
-		title.setStyleSheet("font-size: 24px; font-weight: bold;")
 		title_layout.addWidget(title)
 		
 		version = CaptionLabel("v0.1.0")
@@ -1047,7 +1046,6 @@ class MainWindow(PushFluentWindow):
 		text_layout.setSpacing(4)
 		
 		title_label = BodyLabel(title)
-		title_label.setStyleSheet("font-size: 15px; font-weight: bold;")
 		text_layout.addWidget(title_label)
 		
 		desc_label = CaptionLabel(desc)
@@ -1060,8 +1058,8 @@ class MainWindow(PushFluentWindow):
 		arrow.setIconSize(QSize(14, 14))
 		layout.addWidget(arrow)
 		
-		self._apply_menu_card_style(card, desc_label, arrow)
-		qconfig.themeChanged.connect(lambda: self._apply_menu_card_style(card, desc_label, arrow))
+		self._apply_menu_card_style(card, title_label, desc_label, arrow)
+		qconfig.themeChanged.connect(lambda: self._apply_menu_card_style(card, title_label, desc_label, arrow))
 		
 		return card
 	
@@ -1070,7 +1068,7 @@ class MainWindow(PushFluentWindow):
 		if event.button() == Qt.LeftButton and action:
 			action()
 	
-	def _apply_menu_card_style(self, card: QFrame, desc_label: CaptionLabel, arrow: TransparentToolButton) -> None:
+	def _apply_menu_card_style(self, card: QFrame, title_label: BodyLabel, desc_label: CaptionLabel, arrow: TransparentToolButton) -> None:
 		"""应用菜单卡片样式"""
 		dark = isDarkTheme()
 		if dark:
@@ -1085,8 +1083,6 @@ class MainWindow(PushFluentWindow):
 					border: 1px solid #5d5d5d;
 				}
 			""")
-			desc_label.setStyleSheet("color: #888888;")
-			arrow.setStyleSheet("color: #888888;")
 		else:
 			card.setStyleSheet("""
 				QFrame#homeMenuCard {
@@ -1099,8 +1095,6 @@ class MainWindow(PushFluentWindow):
 					border: 1px solid #d0d0d0;
 				}
 			""")
-			desc_label.setStyleSheet("color: #888888;")
-			arrow.setStyleSheet("color: #888888;")
 	
 	def _setup_settings_interface(self) -> None:
 		self.settings_interface = SettingsInterface(self.core)

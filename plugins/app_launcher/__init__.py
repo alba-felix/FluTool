@@ -59,6 +59,19 @@ def get_python_executable() -> str:
         return sys.executable
 
 
+def get_plugins_sourcecode_dir() -> Path:
+    """
+    获取 plugins_sourcecode 目录路径
+    开发环境：项目根目录下的 plugins_sourcecode
+    打包环境：_internal 目录下的 plugins_sourcecode
+    """
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path.cwd()
+    return base / "plugins_sourcecode"
+
+
 def get_menu_style() -> str:
     """获取菜单样式"""
     if isDarkTheme():
@@ -1176,7 +1189,52 @@ class AppLauncherWidget(QWidget):
     
     def load_data(self) -> None:
         """加载应用数据"""
+        self._scan_plugins_sourcecode()
         self._load_categories()
+    
+    def _scan_plugins_sourcecode(self) -> None:
+        """扫描 plugins_sourcecode 目录，自动添加 .py 文件到'源码工具'分类"""
+        source_dir = get_plugins_sourcecode_dir()
+        if not source_dir.exists():
+            return
+        
+        # 获取或创建"源码工具"分类
+        categories = self.db.get_categories(self.PLUGIN_ID)
+        cat_id = None
+        for cat in categories:
+            if cat['name'] == "源码工具":
+                cat_id = cat['id']
+                break
+        if cat_id is None:
+            cat_id = self.db.add_category(self.PLUGIN_ID, "源码工具")
+        
+        # 获取已有应用的路径集合，避免重复添加
+        existing_apps = self.db.get_apps(self.PLUGIN_ID, cat_id)
+        existing_paths = {app.get('target_path', '') for app in existing_apps}
+        
+        # 扫描 .py 文件
+        py_files = list(source_dir.glob("*.py"))
+        added_count = 0
+        for py_file in py_files:
+            file_path = str(py_file)
+            if file_path in existing_paths:
+                continue
+            
+            name = py_file.stem.replace("_", " ").title()
+            icon_path = self._extract_icon(file_path)
+            
+            self.db.add_app(
+                plugin_id=self.PLUGIN_ID,
+                name=name,
+                target_path=file_path,
+                category_id=cat_id,
+                icon_path=icon_path
+            )
+            added_count += 1
+        
+        if added_count > 0:
+            if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+                self.core.logger.info(f"已自动添加 {added_count} 个源码工具应用")
     
     def _load_categories(self):
         """加载分类"""
@@ -1594,11 +1652,14 @@ class AppLauncherWidget(QWidget):
         ext = os.path.splitext(target_path)[1].lower()
         
         if ext == '.py':
-            python_exe = get_python_executable()
-            if arguments:
-                subprocess.Popen(f'"{python_exe}" "{target_path}" {arguments}', shell=True)
+            if getattr(sys, 'frozen', False):
+                cmd = f'"{sys.executable}" --run-script "{target_path}"'
             else:
-                subprocess.Popen(f'"{python_exe}" "{target_path}"', shell=True)
+                python_exe = get_python_executable()
+                cmd = f'"{python_exe}" "{target_path}"'
+            if arguments:
+                cmd += f' {arguments}'
+            subprocess.Popen(cmd, shell=True)
         elif ext in ('.bat', '.cmd'):
             if arguments:
                 subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
@@ -1904,11 +1965,14 @@ class Plugin(PluginInterface):
         ext = os.path.splitext(target_path)[1].lower()
         
         if ext == '.py':
-            python_exe = get_python_executable()
-            if arguments:
-                subprocess.Popen(f'"{python_exe}" "{target_path}" {arguments}', shell=True)
+            if getattr(sys, 'frozen', False):
+                cmd = f'"{sys.executable}" --run-script "{target_path}"'
             else:
-                subprocess.Popen(f'"{python_exe}" "{target_path}"', shell=True)
+                python_exe = get_python_executable()
+                cmd = f'"{python_exe}" "{target_path}"'
+            if arguments:
+                cmd += f' {arguments}'
+            subprocess.Popen(cmd, shell=True)
         elif ext in ('.bat', '.cmd'):
             if arguments:
                 subprocess.Popen(f'"{target_path}" {arguments}', shell=True)

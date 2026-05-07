@@ -50,7 +50,6 @@ class AboutInterface(ScrollArea):
         header_layout.addSpacing(8)
         
         title_label = SubtitleLabel("关于")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
         layout.addLayout(header_layout)
@@ -86,7 +85,6 @@ class AboutInterface(ScrollArea):
             layout.addWidget(logo_label, alignment=Qt.AlignCenter)
         
         title = StrongBodyLabel("FluTool")
-        title.setStyleSheet("font-size: 24px; font-weight: bold;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title, alignment=Qt.AlignCenter)
         
@@ -140,7 +138,6 @@ class AboutInterface(ScrollArea):
         layout.setSpacing(8)
         
         tech_title = BodyLabel("技术栈")
-        tech_title.setStyleSheet("font-weight: bold;")
         layout.addWidget(tech_title)
         
         tech_items = [
@@ -219,7 +216,6 @@ class CheckUpdateInterface(ScrollArea):
         header_layout.addSpacing(8)
         
         title_label = SubtitleLabel("检查更新")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
         layout.addLayout(header_layout)
@@ -328,7 +324,6 @@ class FeedbackInterface(ScrollArea):
         header_layout.addSpacing(8)
         
         title_label = SubtitleLabel("问题反馈")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
         layout.addLayout(header_layout)
@@ -358,11 +353,10 @@ class FeedbackInterface(ScrollArea):
             item_layout.addWidget(title_label)
             
             contact_label = CaptionLabel(contact)
-            contact_label.setStyleSheet("color: #009faa;")
             item_layout.addWidget(contact_label, 1)
             
             desc_label = CaptionLabel(desc)
-            desc_label.setStyleSheet("color: #888;")
+            desc_label.setProperty("class", "secondary-label")
             item_layout.addWidget(desc_label, 1)
             
             card_layout.addLayout(item_layout)

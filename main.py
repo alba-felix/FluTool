@@ -276,4 +276,13 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--run-script":
+        script_path = sys.argv[2]
+        try:
+            import runpy
+            runpy.run_path(script_path, run_name="__main__")
+        except Exception as e:
+            print(f"[FluTool Script Runner] Error: {e}")
+            traceback.print_exc()
+        sys.exit(0)
     sys.exit(main())

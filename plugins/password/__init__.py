@@ -624,6 +624,18 @@ class PasswordWidget(QWidget):
             edit_action.triggered.connect(lambda: self._edit_password(item))
             menu.addAction(edit_action)
             
+            move_menu = menu.addMenu("移动分类")
+            current_category = item.parent()
+            all_categories = self._get_all_categories()
+            for cat_name, cat_id in all_categories:
+                if cat_id == current_category.data(0, Qt.UserRole):
+                    continue
+                cat_action = QAction(cat_name, self)
+                cat_action.triggered.connect(lambda checked, cid=cat_id, it=item: self._move_password(it, cid))
+                move_menu.addAction(cat_action)
+            
+            menu.addSeparator()
+            
             delete_action = QAction("删除", self)
             delete_action.triggered.connect(lambda: self._delete_password(item))
             menu.addAction(delete_action)
@@ -641,6 +653,28 @@ class PasswordWidget(QWidget):
     def _add_password_to_category(self, category_item):
         self.tree.setCurrentItem(category_item)
         self._add_password()
+    
+    def _get_all_categories(self):
+        """获取所有分类"""
+        categories = self.db.get_categories(self.PLUGIN_ID)
+        return [(cat['name'], cat['id']) for cat in categories]
+    
+    def _move_password(self, item, new_category_id: int):
+        """移动密码到指定分类"""
+        password_id = item.data(0, Qt.UserRole)
+        platform = item.text(0)
+        
+        self.db.update_password(self.PLUGIN_ID, password_id, category_id=new_category_id)
+        self._load_passwords()
+        
+        InfoBar.success(
+            title="移动成功",
+            content=f"已将 '{platform}' 移动到新分类",
+            orient=Qt.Horizontal, isClosable=True,
+            position=InfoBarPosition.TOP, duration=2000, parent=self
+        )
+        if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
+            self.core.logger.log_operation("UPDATE", f"移动密码 '{platform}' 到分类ID: {new_category_id}")
     
     def _edit_password(self, item):
         """编辑密码"""

@@ -315,6 +315,7 @@ class DatabaseManager:
             ("clipboard_history", "item_type", "TEXT NOT NULL DEFAULT 'text'"),
             ("clipboard_history", "format", "TEXT DEFAULT ''"),
             ("todos", "sort_order", "INTEGER DEFAULT 0"),
+            ("todos", "status", "TEXT DEFAULT '进行中'"),
             ("notebook", "color", "TEXT DEFAULT ''"),
             ("ai_conversations", "provider_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("ai_conversations", "provider", "TEXT NOT NULL DEFAULT 'default'"),
@@ -342,6 +343,16 @@ class DatabaseManager:
                     conn.commit()
             except Exception:
                 pass
+        
+        # 更新已有待办事项的状态
+        try:
+            cursor = conn.execute("PRAGMA table_info(todos)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "status" in columns:
+                conn.execute("UPDATE todos SET status = '已完成' WHERE completed = 1 AND status = '进行中'")
+                conn.commit()
+        except Exception:
+            pass
     
     def _create_indexes(self, conn) -> None:
         """创建索引"""
