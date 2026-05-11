@@ -22,3 +22,37 @@ class AppRepository(BaseRepository):
         with self.db.get_connection() as conn:
             cursor = conn.execute(sql, (plugin_id, name, target_path))
             return cursor.fetchone() is not None
+
+    def batch_update(self, plugin_id: str, app_ids: list, **kwargs) -> int:
+        """批量更新应用"""
+        allowed_fields = {'category_id', 'arguments', 'notes', 'is_favorite', 'sort_order', 'name', 'icon_path', 'target_path'}
+        filtered = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        if not filtered or not app_ids:
+            return 0
+
+        set_clause = ', '.join(f"{field} = ?" for field in filtered.keys())
+        placeholders = ', '.join('?' for _ in app_ids)
+        sql = f"""
+            UPDATE app_launcher
+            SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+            WHERE plugin_id = ? AND id IN ({placeholders})
+        """
+        params = list(filtered.values()) + [plugin_id] + list(app_ids)
+
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(sql, params)
+            conn.commit()
+            return cursor.rowcount
+
+    def batch_delete(self, plugin_id: str, app_ids: list) -> int:
+        """批量删除应用"""
+        if not app_ids:
+            return 0
+
+        placeholders = ', '.join('?' for _ in app_ids)
+        sql = f"DELETE FROM app_launcher WHERE plugin_id = ? AND id IN ({placeholders})"
+
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(sql, [plugin_id] + list(app_ids))
+            conn.commit()
+            return cursor.rowcount

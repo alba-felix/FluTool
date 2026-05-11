@@ -12,7 +12,7 @@ class CategoryRepository(BaseRepository):
             plugin_field='plugin_id',
             has_category=False,
             searchable_fields=['name'],
-            allowed_fields=['plugin_id', 'name', 'sort_order']
+            allowed_fields=['plugin_id', 'name', 'sort_order', 'icon_name', 'color']
         )
         super().__init__(db_manager, config)
     
@@ -42,7 +42,7 @@ class CategoryRepository(BaseRepository):
     
     def update(self, category_id: int, **kwargs) -> bool:
         """更新分类"""
-        allowed_fields = {'name', 'sort_order'}
+        allowed_fields = {'name', 'sort_order', 'icon_name', 'color'}
         filtered = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not filtered:
             return False
@@ -59,6 +59,24 @@ class CategoryRepository(BaseRepository):
             cursor = conn.execute(sql, values)
             conn.commit()
             return cursor.rowcount > 0
+
+    def update_sort_orders(self, plugin_id: str, category_ids: List[int]) -> bool:
+        """批量更新分类排序"""
+        if not category_ids:
+            return False
+
+        with self.db.get_connection() as conn:
+            for sort_order, category_id in enumerate(category_ids):
+                conn.execute(
+                    """
+                    UPDATE categories
+                    SET sort_order = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND plugin_id = ?
+                    """,
+                    (sort_order, category_id, plugin_id)
+                )
+            conn.commit()
+        return True
     
     def delete(self, category_id: int) -> bool:
         """删除分类"""

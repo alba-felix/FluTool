@@ -16,6 +16,27 @@ _start_time = None
 _server_name = "FluTool_Server"
 
 
+def _fix_uac_drag_drop():
+    """修复管理员权限下无法从资源管理器拖放文件的问题
+
+    Windows UAC 安全机制阻止高完整性进程（管理员）接收中完整性进程（资源管理器）
+    的拖放数据。通过 ChangeWindowMessageFilter 修改进程级消息过滤来解除此限制。
+    """
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        ChangeWindowMessageFilter = user32.ChangeWindowMessageFilter
+        ChangeWindowMessageFilter.argtypes = [ctypes.c_uint, ctypes.c_uint]
+        ChangeWindowMessageFilter.restype = ctypes.c_bool
+
+        MSGFLT_ADD = 1
+        for msg in (0x0233, 0x004A, 0x0049):
+            ChangeWindowMessageFilter(msg, MSGFLT_ADD)
+    except Exception:
+        pass
+
+
 class SingleInstance(QObject):
     """单实例检测与激活"""
 
@@ -118,6 +139,8 @@ def show_error_and_exit(title: str, message: str, exit_code: int = 1) -> int:
 def main():
     global _start_time
     _start_time = time.time()
+
+    _fix_uac_drag_drop()
     
     # 单实例检测
     try:

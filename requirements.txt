@@ -3,3 +3,4 @@ PyQt-Fluent-Widgets[full]
 requests
 charset_normalizer
 beautifulsoup4
+pypinyin

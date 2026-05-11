@@ -11,7 +11,7 @@ from PyQt5.QtGui import QFont
 from qfluentwidgets import (
     StrongBodyLabel, InfoBar, InfoBarPosition, PushButton,
     FluentIcon as FIF, MessageBoxBase, SubtitleLabel, TextEdit,
-    LineEdit, BodyLabel, isDarkTheme, qconfig
+    LineEdit, BodyLabel, isDarkTheme, qconfig, MessageBox
 )
 from qfluentwidgets.components.widgets.card_widget import (
     HeaderCardWidget, CardSeparator
@@ -22,6 +22,8 @@ from storage.database import DatabaseManager
 
 class EditCardDialog(MessageBoxBase):
     """编辑卡片对话框"""
+
+    delete_requested = pyqtSignal(int)
 
     def __init__(self, card_data: Dict[str, Any], parent=None):
         self.card_data = card_data.copy()
@@ -58,7 +60,30 @@ class EditCardDialog(MessageBoxBase):
 
         self.yesButton.setText("保存")
         self.cancelButton.setText("取消")
+        self.deleteButton = PushButton("删除卡片", self.buttonGroup)
+        self.deleteButton.setStyleSheet("""
+            QPushButton {
+                color: #d83b01;
+                background-color: transparent;
+                border: 1px solid #d83b01;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                color: white;
+                background-color: #d83b01;
+            }
+        """)
+        self.deleteButton.clicked.connect(self._on_delete_clicked)
+        self.buttonLayout.insertWidget(0, self.deleteButton, 0, Qt.AlignVCenter)
+        self.buttonLayout.insertStretch(1, 1)
         self.widget.setMinimumWidth(400)
+
+    def _on_delete_clicked(self) -> None:
+        """发出删除卡片请求"""
+        card_id = self.card_data.get("id")
+        if card_id is None:
+            return
+        self.delete_requested.emit(card_id)
 
     def get_data(self) -> Dict[str, Any]:
         """获取编辑后的数据"""
@@ -73,6 +98,36 @@ class EditCardDialog(MessageBoxBase):
             "title": self.title_input.text().strip(),
             "items": items
         }
+
+    def validate(self) -> bool:
+        """验证表单内容"""
+        title = self.title_input.text().strip()
+        if not title:
+            InfoBar.warning(
+                title="无法保存",
+                content="标题不能为空",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return False
+
+        has_item = any(item_input.text().strip() for item_input in self.item_inputs)
+        if not has_item:
+            InfoBar.warning(
+                title="无法保存",
+                content="至少需要一个内容项",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return False
+
+        return True
 
 
 class QuickCopyCard(HeaderCardWidget):
@@ -232,7 +287,6 @@ class QuickCopyWidget(QWidget):
         self._item_count = 0
         self._cards = []
         self._setup_ui()
-        self._load_cards()
     
     def _init_paths(self) -> None:
         """初始化路径"""
@@ -289,33 +343,40 @@ class QuickCopyWidget(QWidget):
 
     def _add_item(self) -> None:
         """添加快速复制项"""
-        # 直接在数据库添加新卡片（无内容项）
-        card_id = self.db.add_quick_copy_card(
-            f"卡片 {len(self.cards_data) + 1}", 
-            len(self.cards_data)
-        )
-        new_card = {
-            "id": card_id,
-            "title": f"卡片 {len(self.cards_data) + 1}",
-            "items": []
-        }
-        self.cards_data.append(new_card)
-
-        # 统一刷新界面（内部会清除旧控件并重建）
-        self._display_cards()
+        try:
+            card_title = f"卡片 {len(self.cards_data) + 1}"
+            card_id = self.db.add_quick_copy_card(card_title, len(self.cards_data))
+            new_card = {
+                "id": card_id,
+                "title": card_title,
+                "items": []
+            }
+            self.cards_data.append(new_card)
+            self._display_cards()
+        except Exception as e:
+            self.core.logger.error(f"添加快速复制卡片失败: {e}")
+            InfoBar.error(
+                title="添加失败",
+                content="无法添加快速复制卡片",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
     
     def _load_cards(self) -> None:
         """从数据库加载卡片数据"""
         try:
-            cards = self.db.get_quick_copy_cards()
-            self.cards_data = []
-            for card in cards:
-                items = self.db.get_quick_copy_items(card['id'])
-                self.cards_data.append({
-                    "id": card['id'],
-                    "title": card['title'],
-                    "items": [item['content'] for item in items]
-                })
+            cards = self.db.get_quick_copy_cards_with_items()
+            self.cards_data = [
+                {
+                    "id": card["id"],
+                    "title": card["title"],
+                    "items": [item["content"] for item in card.get("items", [])]
+                }
+                for card in cards
+            ]
         except Exception as e:
             self.core.logger.error(f"加载快速复制数据失败: {e}")
             self.cards_data = []
@@ -349,6 +410,45 @@ class QuickCopyWidget(QWidget):
             self._scroll_layout.addWidget(card, i // 4, i % 4, 1, 1)
             self._cards.append(card)
             self._item_count = i + 1
+
+    def _on_card_delete(self, card_id: int, dialog: EditCardDialog = None) -> None:
+        """处理卡片删除请求"""
+        card_data = next((data for data in self.cards_data if data.get("id") == card_id), None)
+        if card_data is None:
+            return
+
+        box = MessageBox("确认删除", f"确定要删除卡片 '{card_data.get('title', '未命名')}' 吗？", dialog or self)
+        if not box.exec():
+            return
+
+        try:
+            if not self.db.delete_quick_copy_card(card_id):
+                raise RuntimeError(f"card not found: {card_id}")
+
+            self.cards_data = [data for data in self.cards_data if data.get("id") != card_id]
+            self._display_cards()
+            if dialog is not None:
+                dialog.reject()
+            InfoBar.success(
+                title="删除成功",
+                content="卡片已删除",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        except Exception as e:
+            self.core.logger.error(f"删除快速复制卡片失败: {e}")
+            InfoBar.error(
+                title="删除失败",
+                content="无法删除快速复制卡片",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
     
     def _on_card_edit(self, card_id: int) -> None:
         """处理卡片编辑请求"""
@@ -364,38 +464,49 @@ class QuickCopyWidget(QWidget):
             return
         
         dialog = EditCardDialog(card_data, self)
+        dialog.delete_requested.connect(lambda cid: self._on_card_delete(cid, dialog))
         if dialog.exec():
             new_data = dialog.get_data()
             new_data["id"] = card_id
-            
-            self.db.update_quick_copy_card(card_id, title=new_data["title"])
-            
-            existing_items = self.db.get_quick_copy_items(card_id)
-            existing_ids = {item['id'] for item in existing_items}
-            
-            for i, content in enumerate(new_data["items"]):
-                if i < len(existing_items):
-                    self.db.update_quick_copy_item(existing_items[i]['id'], content=content)
-                else:
-                    self.db.add_quick_copy_item(card_id, content, i)
-            
-            for item in existing_items[len(new_data["items"]):]:
-                self.db.delete_quick_copy_item(item['id'])
-            
-            self.cards_data[card_index] = new_data
-            
-            if card_index < len(self._cards):
-                self._cards[card_index].update_data(new_data)
-            
-            InfoBar.success(
-                title="保存成功",
-                content="卡片已更新",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2000,
-                parent=self
-            )
+
+            try:
+                self.db.update_quick_copy_card(card_id, title=new_data["title"])
+
+                existing_items = self.db.get_quick_copy_items(card_id)
+                for i, content in enumerate(new_data["items"]):
+                    if i < len(existing_items):
+                        self.db.update_quick_copy_item(existing_items[i]['id'], content=content, sort_order=i)
+                    else:
+                        self.db.add_quick_copy_item(card_id, content, i)
+
+                for item in existing_items[len(new_data["items"]):]:
+                    self.db.delete_quick_copy_item(item['id'])
+
+                self.cards_data[card_index] = new_data
+
+                if card_index < len(self._cards):
+                    self._cards[card_index].update_data(new_data)
+
+                InfoBar.success(
+                    title="保存成功",
+                    content="卡片已更新",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+            except Exception as e:
+                self.core.logger.error(f"保存快速复制卡片失败: {e}")
+                InfoBar.error(
+                    title="保存失败",
+                    content="无法保存快速复制卡片",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
 
     def load_data(self) -> None:
         """加载数据（通常由插件框架调用）"""

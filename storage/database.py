@@ -332,6 +332,8 @@ class DatabaseManager:
             ("app_launcher", "launch_count", "INTEGER DEFAULT 0"),
             ("app_launcher", "last_launch_time", "TIMESTAMP"),
             ("app_launcher", "is_favorite", "INTEGER DEFAULT 0"),
+            ("categories", "icon_name", "TEXT DEFAULT ''"),
+            ("categories", "color", "TEXT DEFAULT ''"),
         ]
         
         for table, column, definition in migrations:
@@ -398,8 +400,13 @@ class DatabaseManager:
     def get_categories(self, plugin_id: str) -> list:
         return self.categories.get_by_plugin(plugin_id)
     
-    def update_category(self, plugin_id: str, category_id: int, name: str) -> bool:
-        return self.categories.update(category_id, name=name)
+    def update_category(self, plugin_id: str, category_id: int, name: str = None, **kwargs) -> bool:
+        if name is not None:
+            kwargs['name'] = name
+        return self.categories.update(category_id, **kwargs)
+
+    def update_category_sort_orders(self, plugin_id: str, category_ids: list) -> bool:
+        return self.categories.update_sort_orders(plugin_id, category_ids)
     
     def delete_category(self, plugin_id: str, category_id: int) -> bool:
         return self.categories.delete(category_id)
@@ -506,6 +513,12 @@ class DatabaseManager:
     
     def search_apps(self, plugin_id: str, keyword: str) -> list:
         return self.apps.search(plugin_id, keyword)
+
+    def batch_update_apps(self, plugin_id: str, app_ids: list, **kwargs) -> int:
+        return self.apps.batch_update(plugin_id, app_ids, **kwargs)
+
+    def batch_delete_apps(self, plugin_id: str, app_ids: list) -> int:
+        return self.apps.batch_delete(plugin_id, app_ids)
     
     def app_exists(self, plugin_id: str, name: str, target_path: str) -> bool:
         return self.apps.exists(plugin_id, name, target_path)
@@ -609,6 +622,9 @@ class DatabaseManager:
     
     def get_quick_copy_cards(self) -> list:
         return self.quick_copy.get_cards()
+
+    def get_quick_copy_cards_with_items(self) -> list:
+        return self.quick_copy.get_cards_with_items()
     
     def update_quick_copy_card(self, card_id: int, **kwargs) -> bool:
         return self.quick_copy.update_card(card_id, **kwargs)

@@ -1,26 +1,467 @@
 import os
 import re
 import json
+import sip
 from pathlib import Path
-from typing import Optional, Tuple, List
-from PyQt5.QtCore import Qt, QPoint, QTimer, pyqtSignal, QSize, QEvent
-from PyQt5.QtGui import QColor, QPalette, QPixmap, QPainter, QCursor, QIcon
+from typing import Optional, Tuple, List, Dict
+from PyQt5.QtCore import Qt, QPoint, QPointF, QTimer, pyqtSignal, QSize, QEvent, QThread, QObject
+from PyQt5.QtGui import QColor, QPalette, QPixmap, QPainter, QPen, QCursor, QIcon
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QColorDialog,
     QGridLayout, QScrollArea, QFrame, QTabWidget,
     QSplitter, QListWidget, QListWidgetItem, QMessageBox, QToolTip,
     QMenu, QAction, QApplication, QFileDialog, QTextEdit, QDialog,
-    QVBoxLayout as QVBoxLayoutWidget, QLineEdit, QPushButton
+    QVBoxLayout as QVBoxLayoutWidget, QLineEdit, QPushButton,
+    QButtonGroup
 )
 from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, ScrollArea, PrimaryPushButton, ToolButton,
-    CardWidget, SpinBox, isDarkTheme, qconfig, ToolButton, BodyLabel, IndeterminateProgressBar,
+    CardWidget, SpinBox, isDarkTheme, qconfig, BodyLabel, IndeterminateProgressBar,
     ComboBox, FluentStyleSheet, Dialog, RoundMenu, Action, MessageBoxBase,
-    SubtitleLabel, BodyLabel as FluentBodyLabel
+    SubtitleLabel, BodyLabel as FluentBodyLabel, CaptionLabel
 )
 from core import PluginInterface, get_app_data_path
 from storage.database import DatabaseManager
+
+
+class FolderTreeWorker(QObject):
+    """文件夹树生成后台工作线程"""
+    finished = pyqtSignal(str, list, int, int)
+    error = pyqtSignal(str)
+    status = pyqtSignal(str)
+
+    def __init__(self, root_path: Path, mode: str, rule_index: int, custom_rules: dict, depth: int = -1):
+        super().__init__()
+        self._root_path = root_path
+        self._mode = mode
+        self._rule_index = rule_index
+        self._custom_rules = custom_rules
+        self._depth = depth
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        try:
+            self.status.emit("正在估算项目数量...")
+            total_items = self._count_items(self._root_path, 0)
+            folder_count, file_count = 0, 0
+
+            self.status.emit(f"正在生成结构 ({total_items} 个项目)...")
+            root_name = self._root_path.name
+            tree_body = ""
+            flat_nodes: List[Tuple[str, bool, int]] = [("", False, 0)]
+
+            if self._mode == "tree":
+                tree_body, flat_nodes, folder_count, file_count = self._build_tree(
+                    self._root_path, '', 0, [(root_name, True, 0)], 0, 0
+                )
+            else:
+                tree_body, flat_nodes, folder_count, _ = self._build_folders_only(
+                    self._root_path, '', 0, [(root_name, True, 0)], 0, 0
+                )
+
+            if self._cancelled:
+                return
+
+            tree_content = f"{root_name}/\n{tree_body}"
+            self.finished.emit(tree_content, flat_nodes, folder_count, file_count)
+        except Exception as e:
+            self.error.emit(str(e))
+
+    def _get_skip_names(self) -> set:
+        """获取当前规则下需要跳过的名称集合"""
+        if self._rule_index == 1:
+            return {".venv", ".git", ".idea"}
+        if self._rule_index >= 2:
+            custom_index = self._rule_index - 2
+            rule_names = list(self._custom_rules.keys())
+            if custom_index < len(rule_names):
+                rule_name = rule_names[custom_index]
+                return set(self._custom_rules.get(rule_name, []))
+        return set()
+
+    def _count_items(self, path: Path, current_depth: int) -> int:
+        """预计算项目数量"""
+        if self._cancelled:
+            return 0
+        count = 0
+        items = []
+        try:
+            skip_names = self._get_skip_names()
+            items = [item for item in path.iterdir() if item.name not in skip_names]
+            count += len(items)
+            if self._depth == -1 or current_depth < self._depth:
+                for item in items:
+                    try:
+                        if item.is_dir():
+                            count += self._count_items(item, current_depth + 1)
+                    except (PermissionError, OSError):
+                        pass
+        except (PermissionError, OSError):
+            pass
+        return count
+
+    def _build_tree(self, path: Path, prefix: str, current_depth: int,
+                     flat_nodes: List[Tuple[str, bool, int]],
+                     folder_count: int, file_count: int):
+        """递归获取文件夹树形结构（深度可控）"""
+        if self._cancelled:
+            return "", flat_nodes, folder_count, file_count
+
+        tree = ''
+        items = []
+        try:
+            skip_names = self._get_skip_names()
+            items = sorted(
+                (item for item in path.iterdir() if item.name not in skip_names),
+                key=lambda x: x.name.lower()
+            )
+        except (PermissionError, OSError):
+            pass
+
+        for i, item in enumerate(items):
+            if self._cancelled:
+                return "", flat_nodes, folder_count, file_count
+
+            try:
+                is_last = (i == len(items) - 1)
+                is_dir = item.is_dir()
+                display_name = f'{item.name}/' if is_dir else item.name
+
+                if is_last:
+                    tree += f'{prefix}└── {display_name}\n'
+                    next_prefix = f'{prefix}    '
+                else:
+                    tree += f'{prefix}├── {display_name}\n'
+                    next_prefix = f'{prefix}│   '
+
+                if is_dir:
+                    folder_count += 1
+                    node_depth = current_depth + 1
+                    flat_nodes.append((item.name, True, node_depth))
+                    if self._depth == -1 or node_depth < self._depth:
+                        sub_tree, flat_nodes, folder_count, file_count = self._build_tree(
+                            item, next_prefix, node_depth, flat_nodes, folder_count, file_count
+                        )
+                        tree += sub_tree
+                else:
+                    file_count += 1
+                    flat_nodes.append((item.name, False, current_depth + 1))
+            except (PermissionError, OSError):
+                pass
+
+        return tree, flat_nodes, folder_count, file_count
+
+    def _build_folders_only(self, path: Path, prefix: str, current_depth: int,
+                            flat_nodes: List[Tuple[str, bool, int]],
+                            folder_count: int, file_count: int):
+        """递归获取只有文件夹的树形结构（深度可控）"""
+        if self._cancelled:
+            return "", flat_nodes, folder_count, 0
+
+        tree = ''
+        folders = []
+        try:
+            skip_names = self._get_skip_names()
+            items = sorted(
+                (item for item in path.iterdir() if item.name not in skip_names),
+                key=lambda x: x.name.lower()
+            )
+            folders = [item for item in items if item.is_dir()]
+        except (PermissionError, OSError):
+            pass
+
+        for i, item in enumerate(folders):
+            if self._cancelled:
+                return "", flat_nodes, folder_count, 0
+
+            try:
+                is_last = (i == len(folders) - 1)
+                display_name = f'{item.name}/'
+                folder_count += 1
+
+                if is_last:
+                    tree += f'{prefix}└── {display_name}\n'
+                    next_prefix = f'{prefix}    '
+                else:
+                    tree += f'{prefix}├── {display_name}\n'
+                    next_prefix = f'{prefix}│   '
+
+                node_depth = current_depth + 1
+                flat_nodes.append((item.name, True, node_depth))
+
+                if self._depth == -1 or node_depth < self._depth:
+                    sub_tree, flat_nodes, folder_count, _ = self._build_folders_only(
+                        item, next_prefix, node_depth, flat_nodes, folder_count, 0
+                    )
+                    tree += sub_tree
+            except (PermissionError, OSError):
+                pass
+
+        return tree, flat_nodes, folder_count, 0
+
+
+class TreeNode:
+    """文件夹树节点数据"""
+    def __init__(self, name: str, is_dir: bool, depth: int = 0):
+        self.name = name
+        self.is_dir = is_dir
+        self.depth = depth
+        self.children: List['TreeNode'] = []
+        self.expanded = True
+        self.parent: Optional['TreeNode'] = None
+
+    def add_child(self, child: 'TreeNode'):
+        child.parent = self
+        self.children.append(child)
+
+    @property
+    def has_children(self) -> bool:
+        return len(self.children) > 0
+
+    @property
+    def is_last_sibling(self) -> bool:
+        if self.parent is None:
+            return True
+        return self.parent.children[-1] is self
+
+    def get_connector_flags(self) -> List[bool]:
+        """获取每级缩进是否需要画│线
+        返回列表长度 = self.depth，flag[d] 表示第 d 级（从根开始）是否需要画│
+        """
+        if self.parent is None:
+            return []
+        chain: List[TreeNode] = []
+        node = self
+        while node.parent is not None:
+            chain.append(node.parent)
+            node = node.parent
+        chain.reverse()
+        return [not ancestor.is_last_sibling for ancestor in chain]
+
+    def get_visible_nodes(self) -> List['TreeNode']:
+        """获取所有可见节点（含自身），按展开状态过滤"""
+        nodes = [self]
+        if self.expanded:
+            for child in self.children:
+                nodes.extend(child.get_visible_nodes())
+        return nodes
+
+
+SCAN_DEPTH_CONFIG_KEY = "folder_tree_scan_depth"
+
+NODE_INDENT = 24
+NODE_SPACING = 6
+
+
+class TreeRowWidget(QWidget):
+    """树节点行控件（含连接线绘制）"""
+    toggle_requested = pyqtSignal(object)
+
+    INDENT = NODE_INDENT
+    LINE_COLOR = QColor(180, 180, 180)
+
+    def __init__(self, node: TreeNode, parent=None):
+        super().__init__(parent)
+        self._node = node
+        self._connector_flags = node.get_connector_flags()
+        self._init_ui()
+
+    def _init_ui(self):
+        """初始化行布局"""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(0)
+
+        depth = self._node.depth
+        btn_width = 18
+        connector_end = depth * self.INDENT
+        is_toggleable = self._node.is_dir and self._node.has_children
+
+        if is_toggleable:
+            layout.addSpacing(connector_end)
+        else:
+            layout.addSpacing(connector_end + btn_width + NODE_SPACING)
+
+        self._toggle_btn = ToolButton()
+        self._toggle_btn.setFixedSize(btn_width, btn_width)
+        if is_toggleable:
+            icon = FIF.CHEVRON_RIGHT if not self._node.expanded else FIF.ARROW_DOWN
+            self._toggle_btn.setIcon(icon)
+            self._toggle_btn.clicked.connect(self._on_toggle)
+            layout.addSpacing(NODE_SPACING)
+        else:
+            self._toggle_btn.setVisible(False)
+        layout.addWidget(self._toggle_btn)
+
+        name_text = f'{self._node.name}/' if self._node.is_dir else self._node.name
+        self._name_label = BodyLabel(name_text)
+        layout.addWidget(self._name_label)
+
+        layout.addStretch()
+
+    def _on_toggle(self):
+        """切换展开/折叠"""
+        self.toggle_requested.emit(self._node)
+
+    def update_icon(self):
+        """更新折叠图标状态"""
+        if not (self._node.is_dir and self._node.has_children):
+            return
+        icon = FIF.CHEVRON_RIGHT if not self._node.expanded else FIF.ARROW_DOWN
+        self._toggle_btn.setIcon(icon)
+
+    def paintEvent(self, event):
+        """绘制树连接线"""
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(self.LINE_COLOR, 1.2))
+
+        h = self.height()
+        mid_y = h / 2
+        depth = self._node.depth
+        is_last = self._node.is_last_sibling
+
+        for d in range(depth):
+            cx = d * self.INDENT + self.INDENT / 2
+            if d == depth - 1:
+                if is_last:
+                    painter.drawLine(QPointF(cx, 0), QPointF(cx, mid_y))
+                    painter.drawLine(QPointF(cx, mid_y), QPointF(cx + self.INDENT / 2, mid_y))
+                else:
+                    painter.drawLine(QPointF(cx, 0), QPointF(cx, h))
+                    painter.drawLine(QPointF(cx, mid_y), QPointF(cx + self.INDENT / 2, mid_y))
+            elif d < len(self._connector_flags) and self._connector_flags[d]:
+                painter.drawLine(QPointF(cx, 0), QPointF(cx, h))
+
+
+class FolderTreeView(QScrollArea):
+    """可折叠文件夹树视图"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        self._container = QWidget()
+        self._layout = QVBoxLayout(self._container)
+        self._layout.setContentsMargins(8, 4, 8, 4)
+        self._layout.setSpacing(1)
+        self._layout.setAlignment(Qt.AlignTop)
+
+        self.setWidget(self._container)
+
+        self._root_nodes: List[TreeNode] = []
+        self._row_widgets: List[TreeRowWidget] = []
+
+    @staticmethod
+    def _scrollbar_stylesheet() -> str:
+        dark = isDarkTheme()
+        bg = "#3d3d3d" if dark else "#e0e0e0"
+        handle_bg = "#5a5a5a" if dark else "#bfbfbf"
+        handle_hover = "#7a7a7a" if dark else "#9a9a9a"
+        handle_pressed = "#9a9a9a" if dark else "#808080"
+        width = 10
+
+        return f"""
+            QScrollBar:vertical {{
+                background: {bg};
+                width: {width}px;
+                margin: 0px;
+                padding: 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {handle_bg};
+                min-height: 30px;
+                margin: 1px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {handle_hover};
+            }}
+            QScrollBar::handle:vertical:pressed {{
+                background: {handle_pressed};
+            }}
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+        """
+
+    def apply_style(self):
+        self.verticalScrollBar().setStyleSheet(self._scrollbar_stylesheet())
+
+    @staticmethod
+    def build_tree(flat_nodes: List[Tuple[str, bool, int]]) -> List[TreeNode]:
+        """从扁平节点列表构建TreeNode树
+
+        Args:
+            flat_nodes: [(name, is_dir, depth), ...] 列表, depth从0开始
+
+        Returns:
+            根节点列表（通常只有一个根节点）
+        """
+        if not flat_nodes:
+            return []
+
+        roots: List[TreeNode] = []
+        stack: List[Tuple[int, TreeNode]] = []
+
+        for name, is_dir, depth in flat_nodes:
+            node = TreeNode(name, is_dir, depth)
+            node.expanded = (depth == 0)
+
+            while stack and stack[-1][0] >= depth:
+                stack.pop()
+
+            if stack:
+                stack[-1][1].add_child(node)
+            else:
+                roots.append(node)
+
+            if is_dir:
+                stack.append((depth, node))
+
+        return roots
+
+    def set_tree(self, flat_nodes: List[Tuple[str, bool, int]]):
+        """设置树数据并刷新显示"""
+        self._root_nodes = self.build_tree(flat_nodes)
+        self._rebuild()
+
+    def _rebuild(self):
+        """重建所有可见行"""
+        for row in self._row_widgets:
+            self._layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+        self._row_widgets.clear()
+
+        for root in self._root_nodes:
+            visible = root.get_visible_nodes()
+            for node in visible:
+                row = TreeRowWidget(node, self._container)
+                row.toggle_requested.connect(self._on_toggle)
+                self._layout.addWidget(row)
+                self._row_widgets.append(row)
+
+    def _on_toggle(self, node: TreeNode):
+        """切换节点展开/折叠"""
+        node.expanded = not node.expanded
+        self._rebuild()
+
+    def clear(self):
+        """清空树"""
+        self._root_nodes.clear()
+        self._rebuild()
 
 
 class FolderTreeWidget(QWidget):
@@ -34,9 +475,21 @@ class FolderTreeWidget(QWidget):
         self.current_folder = None
         self.tree_content = ""
         self.custom_rules = {}
-        # 延迟加载规则，等数据库初始化完成后再加载
-        # self.load_custom_rules()
-        # print(f"[INIT] Loaded {len(self.custom_rules)} rules: {list(self.custom_rules.keys())}")
+
+        # 扫描统计
+        self._folder_count = 0
+        self._file_count = 0
+
+        # 扫描统计
+        self._folder_count = 0
+        self._file_count = 0
+
+        # 深度扫描相关属性
+        self._scan_depth = -1
+        self._worker = None
+        self._thread = None
+        self._cancelled = False
+
         self.init_ui()
         self.setup_style()
         qconfig.themeChanged.connect(self.on_theme_changed)
@@ -78,11 +531,16 @@ class FolderTreeWidget(QWidget):
         toolbar = self.create_toolbar()
         self._content_layout.addWidget(toolbar)
 
-        # 预览文本框
+        # 可折叠文件夹树视图
+        self._tree_view = FolderTreeView()
+        self._content_layout.addWidget(self._tree_view, 1)
+
+        # 纯文本预览（简单版）
         self._preview_text = QTextEdit()
         self._preview_text.setReadOnly(True)
         self._preview_text.setPlaceholderText("请选择文件夹并生成树形结构...")
         self._content_layout.addWidget(self._preview_text, 1)
+        self._preview_text.hide()
 
         # 状态栏
         status_bar = self.create_status_bar()
@@ -116,6 +574,42 @@ class FolderTreeWidget(QWidget):
         self._generate_folders_btn.clicked.connect(self.generate_folders_only)
         toolbar_layout.addWidget(self._generate_folders_btn)
 
+        # 取消按钮（默认隐藏）
+        self._cancel_btn = PushButton(FIF.CLOSE, "取消")
+        self._cancel_btn.clicked.connect(self._cancel_scan)
+        self._cancel_btn.setVisible(False)
+        toolbar_layout.addWidget(self._cancel_btn)
+        
+        # 扫描深度选择下拉框
+        depth_label = CaptionLabel("深度:", self)
+        toolbar_layout.addWidget(depth_label)
+        
+        self._depth_combo = ComboBox()
+        self._depth_combo.addItems(["1 级", "2 级", "3 级", "全部"])
+        self._depth_combo.setFixedWidth(80)
+        toolbar_layout.addWidget(self._depth_combo)
+        
+        # 加载保存的深度设置
+        saved_depth = self._load_scan_depth()
+        self._scan_depth = saved_depth
+        
+        # 设置下拉框当前值
+        depth_to_index = {-1: 3, 1: 0, 2: 1, 3: 2}
+        default_index = depth_to_index.get(saved_depth, 3)
+        self._depth_combo.setCurrentIndex(default_index)
+        
+        self._depth_combo.currentIndexChanged.connect(self._on_depth_changed)
+
+        # 视图切换按钮
+        self._view_toggle_btn = ToolButton()
+        self._view_toggle_btn.setIcon(FIF.FOLDER)
+        self._view_toggle_btn.setToolTip("切换结果视图")
+        self._view_toggle_btn.setFixedSize(32, 32)
+        self._view_toggle_btn.clicked.connect(self._toggle_view)
+        toolbar_layout.addWidget(self._view_toggle_btn)
+
+        toolbar_layout.addStretch()
+
         # 分隔符
         separator = QFrame()
         separator.setFrameShape(QFrame.VLine)
@@ -138,7 +632,7 @@ class FolderTreeWidget(QWidget):
 
         # 规则下拉框
         self._rules_combo = ComboBox()
-        self._update_rules_combo()  # 初始化时加载所有规则（包括自定义）
+        self._update_rules_combo()
         self._rules_combo.setCurrentIndex(0)
         self._rules_combo.currentIndexChanged.connect(self.on_rules_combo_changed)
         toolbar_layout.addWidget(self._rules_combo)
@@ -219,13 +713,48 @@ class FolderTreeWidget(QWidget):
         # 内容容器
         self._content_widget.setStyleSheet(f"QWidget#folderTreeContent{{background-color: {bg_color};}}")
         
-        # 预览文本框
+        # 可折叠树视图
+        self._tree_view.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 2px;
+            }}
+            QScrollArea > QWidget > QWidget {{
+                background-color: {bg_color};
+            }}
+        """)
+        self._tree_view.apply_style()
+
+        # 纯文本预览框
         self._preview_text.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {bg_color};
                 color: {text_color};
                 border: 1px solid {border_color};
                 border-radius: 4px;
+            }}
+            QTextEdit > QScrollBar:vertical {{
+                background: {"#3d3d3d" if dark else "#e0e0e0"};
+                width: 8px;
+                margin: 0px;
+                border-radius: 4px;
+            }}
+            QTextEdit > QScrollBar::handle:vertical {{
+                background: {"#5a5a5a" if dark else "#bfbfbf"};
+                min-height: 30px;
+                border-radius: 4px;
+            }}
+            QTextEdit > QScrollBar::handle:vertical:hover {{
+                background: {"#7a7a7a" if dark else "#9a9a9a"};
+            }}
+            QTextEdit > QScrollBar::add-line:vertical,
+            QTextEdit > QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QTextEdit > QScrollBar::add-page:vertical,
+            QTextEdit > QScrollBar::sub-page:vertical {{
+                background: none;
             }}
         """)
         
@@ -644,30 +1173,7 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        try:
-            self._status_label.setText('正在生成树形结构...')
-            self._progress_bar.setVisible(True)
-            QApplication.processEvents()
-            
-            rule_index = self._rules_combo.currentIndex()
-            root_name = self.current_folder.name
-            tree_body = self._get_folder_tree(self.current_folder, '', rule_index)
-            self.tree_content = f"{root_name}/\n{tree_body}"
-            self._preview_text.setPlainText(self.tree_content)
-            self._update_counts()
-            self._status_label.setText('树形结构生成完成')
-            
-            InfoBar.success(
-                title="生成成功",
-                content="树形结构已生成",
-                parent=self,
-                duration=2000
-            )
-        except Exception as e:
-            QMessageBox.critical(self, '错误', f'生成树形结构失败：{str(e)}')
-            self._status_label.setText('生成失败')
-        finally:
-            self._progress_bar.setVisible(False)
+        self._start_scan("tree")
 
     def generate_folders_only(self):
         """只生成文件夹的树形结构"""
@@ -680,133 +1186,169 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        try:
-            self._status_label.setText('正在生成文件夹树形结构...')
-            self._progress_bar.setVisible(True)
-            QApplication.processEvents()
-            
-            rule_index = self._rules_combo.currentIndex()
-            root_name = self.current_folder.name
-            tree_body = self._get_folder_only_tree(self.current_folder, '', rule_index)
-            self.tree_content = f"{root_name}/\n{tree_body}"
-            self._preview_text.setPlainText(self.tree_content)
-            self._update_counts()
-            self._status_label.setText('文件夹树形结构生成完成')
-            
-            InfoBar.success(
-                title="生成成功",
-                content="文件夹结构已生成",
-                parent=self,
-                duration=2000
-            )
-        except Exception as e:
-            QMessageBox.critical(self, '错误', f'生成文件夹树形结构失败: {str(e)}')
-            self._status_label.setText('生成失败')
-        finally:
-            self._progress_bar.setVisible(False)
+        self._start_scan("folders")
 
-    def _get_folder_tree(self, root_path: Path, prefix: str = '', rule_index: int = 0) -> str:
-        """递归获取文件夹树形结构"""
-        tree = ''
+    def _start_scan(self, mode: str):
+        """启动后台扫描"""
+        # 清理已有扫描任务
         try:
-            items = sorted(root_path.iterdir(), key=lambda x: x.name.lower())
-        except PermissionError:
-            return f'{prefix}└── [权限不足，无法访问]\n'
-        
-        # 规则 1：跳过.venv, .git, .idea
-        if rule_index == 1:
-            skip_names = [".venv", ".git", ".idea"]
-            items = [item for item in items if item.name not in skip_names]
-        
-        # 自定义规则（索引 >= 2）
-        if rule_index >= 2:
-            custom_rule_index = rule_index - 2
-            rule_names = list(self.custom_rules.keys())
-            if custom_rule_index < len(rule_names):
-                rule_name = rule_names[custom_rule_index]
-                skip_names = self.custom_rules[rule_name]
-                items = [item for item in items if item.name not in skip_names]
-        
-        for i, item in enumerate(items):
-            is_last = (i == len(items) - 1)
+            if hasattr(self, '_thread') and self._thread and self._thread.isRunning():
+                self._worker.cancel()
+                self._thread.quit()
+                self._thread.wait(2000)
+        except RuntimeError:
+            # 线程对象已被删除，忽略
+            pass
             
-            # 如果是文件夹，在名称后面添加斜杠
-            display_name = f'{item.name}/' if item.is_dir() else item.name
-            
-            if is_last:
-                tree += f'{prefix}└── {display_name}\n'
-                next_prefix = f'{prefix}    '
-            else:
-                tree += f'{prefix}├── {display_name}\n'
-                next_prefix = f'{prefix}│   '
-            
-            if item.is_dir():
-                try:
-                    tree += self._get_folder_tree(item, next_prefix, rule_index)
-                except PermissionError:
-                    tree += f'{next_prefix}└── [权限不足，无法访问]\n'
-        
-        return tree
-
-    def _get_folder_only_tree(self, root_path: Path, prefix: str = '', rule_index: int = 0) -> str:
-        """递归获取只有文件夹的树形结构"""
-        tree = ''
+        # 确保之前的线程和工作者完全清理
         try:
-            items = sorted(root_path.iterdir(), key=lambda x: x.name.lower())
-        except PermissionError:
-            return f'{prefix}└── [权限不足，无法访问]\n'
-        
-        folders = [item for item in items if item.is_dir()]
-        
-        # 规则 1：跳过.venv, .git, .idea
-        if rule_index == 1:
-            skip_names = [".venv", ".git", ".idea"]
-            folders = [item for item in folders if item.name not in skip_names]
-        
-        # 自定义规则（索引 >= 2）
-        if rule_index >= 2:
-            custom_rule_index = rule_index - 2
-            rule_names = list(self.custom_rules.keys())
-            if custom_rule_index < len(rule_names):
-                rule_name = rule_names[custom_rule_index]
-                skip_names = self.custom_rules[rule_name]
-                folders = [item for item in folders if item.name not in skip_names]
-        
-        for i, item in enumerate(folders):
-            is_last = (i == len(folders) - 1)
+            if hasattr(self, '_thread') and self._thread:
+                sip.delete(self._thread)
+                self._thread = None
+        except RuntimeError:
+            pass
             
-            display_name = f'{item.name}/'
-            
-            if is_last:
-                tree += f'{prefix}└── {display_name}\n'
-                next_prefix = f'{prefix}    '
-            else:
-                tree += f'{prefix}├── {display_name}\n'
-                next_prefix = f'{prefix}│   '
-            
-            try:
-                tree += self._get_folder_only_tree(item, next_prefix, rule_index)
-            except PermissionError:
-                tree += f'{next_prefix}└── [权限不足，无法访问]\n'
-        
-        return tree
+        try:
+            if hasattr(self, '_worker') and self._worker:
+                sip.delete(self._worker)
+                self._worker = None
+        except RuntimeError:
+            pass
 
-    def _update_counts(self):
-        """更新统计信息"""
-        if not self.current_folder:
-            return
+        self._cancelled = False
+        self._show_scan_ui(True)
         
-        folder_count = 0
-        file_count = 0
+        rule_index = self._rules_combo.currentIndex()
+        self._worker = FolderTreeWorker(
+            root_path=self.current_folder,
+            mode=mode,
+            rule_index=rule_index,
+            custom_rules=getattr(self, 'custom_rules', {}),
+            depth=self._scan_depth
+        )
         
-        for item in self.current_folder.rglob("*"):
-            if item.is_dir():
-                folder_count += 1
-            else:
-                file_count += 1
+        self._thread = QThread(self)
+        self._worker.moveToThread(self._thread)
         
-        self._folder_count_label.setText(f"文件夹: {folder_count}")
-        self._file_count_label.setText(f"文件: {file_count}")
+        self._thread.started.connect(self._worker.run)
+        self._worker.finished.connect(self._on_tree_generated)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.status.connect(self._on_worker_status)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._thread.finished.connect(self._thread.deleteLater)
+        
+        self._thread.start()
+
+    def _cancel_scan(self):
+        """取消扫描"""
+        try:
+            if hasattr(self, '_worker') and self._worker:
+                self._worker.cancel()
+        except RuntimeError:
+            pass
+        self._cancelled = True
+        self._show_scan_ui(False)
+        InfoBar.info(
+            title="已取消", content="扫描已取消",
+            orient=Qt.Horizontal, isClosable=True,
+            position=InfoBarPosition.TOP, duration=2000, parent=self
+        )
+
+    def _show_scan_ui(self, scanning: bool):
+        """显示或隐藏扫描状态"""
+        self._cancel_btn.setVisible(scanning)
+        self._progress_bar.setVisible(scanning)
+        self._generate_tree_btn.setEnabled(not scanning)
+        self._generate_folders_btn.setEnabled(not scanning)
+        self._select_btn.setEnabled(not scanning)
+        if scanning:
+            self._status_label.setText("正在扫描...")
+        else:
+            self._status_label.setText("就绪")
+
+    def _on_tree_generated(self, tree_content: str, flat_nodes: list, folder_count: int, file_count: int):
+        """处理生成的树结构"""
+        self._show_scan_ui(False)
+        self._cancelled = False
+        self.tree_content = tree_content
+        self._folder_count = folder_count
+        self._file_count = file_count
+        self._update_counts_display()
+
+        self._tree_view.set_tree(flat_nodes)
+        self._preview_text.setPlainText(tree_content)
+
+        InfoBar.success(
+            title="生成完成",
+            content=f"共 {folder_count} 个文件夹，{file_count} 个文件",
+            parent=self,
+            duration=3000
+        )
+
+    def _toggle_view(self):
+        """切换树视图/文本视图"""
+        if self._tree_view.isVisible():
+            self._tree_view.hide()
+            self._preview_text.show()
+            self._view_toggle_btn.setIcon(FIF.DOCUMENT)
+        else:
+            self._tree_view.show()
+            self._preview_text.hide()
+            self._view_toggle_btn.setIcon(FIF.FOLDER)
+
+    def _on_worker_error(self, error_msg: str):
+        """处理扫描错误"""
+        self._show_scan_ui(False)
+        self._cancelled = False
+        self._status_label.setText("生成失败")
+        QMessageBox.critical(self, '错误', f'生成失败：{error_msg}')
+
+    def _on_worker_status(self, status_msg: str):
+        """更新状态信息"""
+        self._status_label.setText(status_msg)
+
+    def _update_counts_display(self):
+        """更新统计显示"""
+        self._folder_count_label.setText(f"文件夹：{self._folder_count}")
+        self._file_count_label.setText(f"文件：{self._file_count}")
+    
+    def _on_depth_changed(self, index: int):
+        """扫描深度改变"""
+        # 根据下拉框索引获取深度值：0->1, 1->2, 2->3, 3->-1
+        depth_map = {0: 1, 1: 2, 2: 3, 3: -1}
+        depth = depth_map.get(index, -1)
+        self._scan_depth = depth
+        self._save_scan_depth(depth)
+        depth_text = "全部层级" if depth == -1 else f"{depth} 级"
+        InfoBar.info(
+            title="深度已更改",
+            content=f"下次扫描将使用深度：{depth_text}",
+            orient=Qt.Horizontal, isClosable=True,
+            position=InfoBarPosition.TOP, duration=2000, parent=self
+        )
+    
+    def _load_scan_depth(self) -> int:
+        """加载保存的扫描深度"""
+        try:
+            cfg_path = get_app_data_path() / "folder_tree_config.json"
+            if cfg_path.exists():
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                return cfg.get("scan_depth", -1)
+        except Exception:
+            pass
+        return -1
+    
+    def _save_scan_depth(self, depth: int):
+        """保存扫描深度"""
+        try:
+            app_data = get_app_data_path()
+            app_data.mkdir(parents=True, exist_ok=True)
+            cfg_path = app_data / "folder_tree_config.json"
+            cfg = {"scan_depth": depth}
+            cfg_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
     def save_to_txt(self):
         """保存为txt（默认位置）"""

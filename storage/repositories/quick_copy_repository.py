@@ -24,6 +24,51 @@ class QuickCopyRepository:
         with self.db.get_connection() as conn:
             cursor = conn.execute(sql)
             return [dict(row) for row in cursor.fetchall()]
+
+    def get_cards_with_items(self) -> List[Dict[str, Any]]:
+        """一次性获取所有快速复制卡片及其内容项"""
+        sql = """
+            SELECT
+                c.id AS card_id,
+                c.title AS card_title,
+                c.sort_order AS card_sort_order,
+                c.created_at AS card_created_at,
+                c.updated_at AS card_updated_at,
+                i.id AS item_id,
+                i.content AS item_content,
+                i.sort_order AS item_sort_order,
+                i.created_at AS item_created_at
+            FROM quick_copy_cards c
+            LEFT JOIN quick_copy_items i ON i.card_id = c.id
+            ORDER BY c.sort_order, c.id, i.sort_order, i.id
+        """
+        cards = {}
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(sql)
+            for row in cursor.fetchall():
+                card_id = row["card_id"]
+                if card_id not in cards:
+                    cards[card_id] = {
+                        "id": card_id,
+                        "title": row["card_title"],
+                        "sort_order": row["card_sort_order"],
+                        "created_at": row["card_created_at"],
+                        "updated_at": row["card_updated_at"],
+                        "items": []
+                    }
+
+                if row["item_id"] is None:
+                    continue
+
+                cards[card_id]["items"].append({
+                    "id": row["item_id"],
+                    "card_id": card_id,
+                    "content": row["item_content"],
+                    "sort_order": row["item_sort_order"],
+                    "created_at": row["item_created_at"]
+                })
+
+        return list(cards.values())
     
     def update_card(self, card_id: int, **kwargs) -> bool:
         """更新快速复制卡片"""
@@ -46,10 +91,10 @@ class QuickCopyRepository:
             return cursor.rowcount > 0
     
     def delete_card(self, card_id: int) -> bool:
-        """删除快速复制卡片（级联删除项目）"""
-        sql = "DELETE FROM quick_copy_cards WHERE id = ?"
+        """删除快速复制卡片并清理内容项"""
         with self.db.get_connection() as conn:
-            cursor = conn.execute(sql, (card_id,))
+            conn.execute("DELETE FROM quick_copy_items WHERE card_id = ?", (card_id,))
+            cursor = conn.execute("DELETE FROM quick_copy_cards WHERE id = ?", (card_id,))
             conn.commit()
             return cursor.rowcount > 0
     
