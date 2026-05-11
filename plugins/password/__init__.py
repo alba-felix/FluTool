@@ -21,7 +21,7 @@ from qfluentwidgets import (
 )
 
 from core import PluginInterface
-from storage import DatabaseManager
+from plugins.password.service import PasswordService
 from utils import CharCryptoTool
 from core import get_app_data_path, SearchResult
 from ui.common import InputDialog
@@ -178,7 +178,7 @@ class PasswordWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = PasswordService(self.PLUGIN_ID)
         self.crypto_tool = CharCryptoTool()
         self.is_decrypted = False
         self.encryption_key = 42
@@ -366,14 +366,14 @@ class PasswordWidget(QWidget):
         """加载密码列表"""
         self.tree.clear()
         
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         
         for category in categories:
             category_item = QTreeWidgetItem(self.tree)
             category_item.setText(0, category['name'])
             category_item.setData(0, Qt.UserRole, category['id'])
             
-            passwords = self.db.get_passwords(self.PLUGIN_ID, category['id'])
+            passwords = self.service.list_passwords(category['id'])
             
             for pwd in passwords:
                 password_item = QTreeWidgetItem(category_item)
@@ -429,7 +429,7 @@ class PasswordWidget(QWidget):
         if dialog.exec():
             name = dialog.get_text()
             if name:
-                self.db.add_category(self.PLUGIN_ID, name)
+                self.service.add_category(name)
                 self._load_passwords()
                 InfoBar.success(
                     title="成功", content=f"已添加分类 {name}",
@@ -452,19 +452,14 @@ class PasswordWidget(QWidget):
             else:
                 category_id = item.data(0, Qt.UserRole)
         else:
-            categories = self.db.get_categories(self.PLUGIN_ID)
-            if categories:
-                category_id = categories[0]['id']
-            else:
-                category_id = self.db.add_category(self.PLUGIN_ID, "默认分类")
+            category_id = self.service.ensure_default_category()
 
         dialog = AddPasswordDialog(self)
         if dialog.exec():
             data = dialog.get_data()
             encrypted = self.crypto_tool.shift_encrypt(data['password'], self.encryption_key)
 
-            self.db.add_password(
-                plugin_id=self.PLUGIN_ID,
+            self.service.add_password(
                 username=data['username'],
                 password=f"encrypted:{encrypted}",
                 platform=data['platform'],
@@ -656,15 +651,14 @@ class PasswordWidget(QWidget):
     
     def _get_all_categories(self):
         """获取所有分类"""
-        categories = self.db.get_categories(self.PLUGIN_ID)
-        return [(cat['name'], cat['id']) for cat in categories]
+        return self.service.list_category_choices()
     
     def _move_password(self, item, new_category_id: int):
         """移动密码到指定分类"""
         password_id = item.data(0, Qt.UserRole)
         platform = item.text(0)
         
-        self.db.update_password(self.PLUGIN_ID, password_id, category_id=new_category_id)
+        self.service.update_password(password_id, category_id=new_category_id)
         self._load_passwords()
         
         InfoBar.success(
@@ -704,8 +698,8 @@ class PasswordWidget(QWidget):
             data = dialog.get_data()
             new_encrypted = self.crypto_tool.shift_encrypt(data['password'], self.encryption_key)
 
-            self.db.update_password(
-                self.PLUGIN_ID, password_id,
+            self.service.update_password(
+                password_id,
                 platform=data['platform'],
                 username=data['username'],
                 password=f"encrypted:{new_encrypted}",
@@ -731,7 +725,7 @@ class PasswordWidget(QWidget):
             f"确定要删除密码 '{platform}' 吗？",
             self
         ).exec():
-            self.db.delete_password(self.PLUGIN_ID, item.data(0, Qt.UserRole))
+            self.service.delete_password(item.data(0, Qt.UserRole))
             self._load_passwords()
             # 记录操作日志
             if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
@@ -745,7 +739,7 @@ class PasswordWidget(QWidget):
             f"确定要删除分类 '{category_name}' 吗？",
             self
         ).exec():
-            self.db.delete_category(self.PLUGIN_ID, item.data(0, Qt.UserRole))
+            self.service.delete_category(item.data(0, Qt.UserRole))
             self._load_passwords()
             # 记录操作日志
             if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
@@ -830,9 +824,9 @@ class Plugin(PluginInterface):
         return True
     
     def search(self, query: str):
-        db = DatabaseManager()
+        service = PasswordService(self.PLUGIN_ID)
         results = []
-        passwords = db.search_passwords(self.PLUGIN_ID, query)
+        passwords = service.search_passwords(query)
         for pwd in passwords[:20]:
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,

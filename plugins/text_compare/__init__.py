@@ -168,12 +168,15 @@ class TextCompareWidget(QWidget):
         
         # 监听主题变化
         from qfluentwidgets import qconfig
-        qconfig.themeChanged.connect(self.on_theme_changed)
+        qconfig.themeChangedFinished.connect(self.on_theme_changed)
     
-    def on_theme_changed(self, theme):
+    def on_theme_changed(self):
         """主题变化时重新设置样式"""
+        QTimer.singleShot(0, self._refresh_theme_style)
+
+    def _refresh_theme_style(self):
+        """延迟刷新主题样式，避免阻塞主题切换动画"""
         self.setup_style()
-        # 重新高亮差异
         if self.diff_results:
             self.highlight_differences()
 

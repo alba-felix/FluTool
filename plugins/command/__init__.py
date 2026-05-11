@@ -15,10 +15,10 @@ from qfluentwidgets import (
 )
 from core import PluginInterface
 from core.async_loader import BaseAsyncLoader
-from storage import DatabaseManager
 from functools import partial
 from core import SearchResult
 from ui.common import InputDialog
+from .service import CommandService
 
 
 class CommandDialog(MessageBoxBase):
@@ -100,7 +100,11 @@ class CommandLoader(BaseAsyncLoader):
     
     def load_data(self) -> List[Dict[str, Any]]:
         """加载命令数据"""
-        return self.db.get_commands(self.plugin_id)
+        return self.service.list_commands()
+    
+    def __init__(self, service: CommandService):
+        super().__init__(plugin_id=service.plugin_id)
+        self.service = service
     
     def get_data_name(self) -> str:
         return "命令"
@@ -114,7 +118,7 @@ class CommandWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = CommandService(self.PLUGIN_ID)
         self._current_category_id: Optional[int] = None
         self._current_category_name = "全部"
         self._category_buttons: List[PushButton] = []
@@ -267,7 +271,7 @@ class CommandWidget(QWidget):
         self._is_loading = True
         self.progress_bar.setVisible(True)
         
-        self._loader = CommandLoader(self.db, self.PLUGIN_ID)
+        self._loader = CommandLoader(self.service)
         self._loader.load_finished.connect(self._on_load_finished)
         self._loader.load_progress.connect(self._on_load_progress)
         self._loader.load_error.connect(self._on_load_error)
@@ -326,7 +330,7 @@ class CommandWidget(QWidget):
             btn.deleteLater()
         self._category_buttons.clear()
         
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         for cat in categories:
             btn = PushButton(cat['name'], self)
             btn.clicked.connect(partial(self._show_category, cat))
@@ -362,7 +366,7 @@ class CommandWidget(QWidget):
             if new_name and new_name != category['name']:
                 existing_names = [btn.text() for btn in self._category_buttons]
                 if new_name not in existing_names:
-                    self.db.update_category(self.PLUGIN_ID, category['id'], new_name)
+                    self.service.update_category(category['id'], new_name)
                     self._load_categories()
                     if self._current_category_id == category['id']:
                         self._current_category_name = new_name
@@ -390,7 +394,7 @@ class CommandWidget(QWidget):
         """删除分类"""
         box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的命令将移至\"全部\"分类。", self)
         if box.exec():
-            self.db.delete_category(self.PLUGIN_ID, category['id'])
+            self.service.delete_category(category['id'])
             self._load_categories()
             if self._current_category_id == category['id']:
                 self._show_all()
@@ -407,7 +411,7 @@ class CommandWidget(QWidget):
     def _load_commands(self) -> None:
         """加载命令列表"""
         self.tree.clear()
-        commands = self.db.get_commands(self.PLUGIN_ID, self._current_category_id)
+        commands = self.service.list_commands(self._current_category_id)
         
         for idx, cmd in enumerate(commands, 1):
             item = QTreeWidgetItem(self.tree)
@@ -441,7 +445,7 @@ class CommandWidget(QWidget):
             return
         
         self.tree.clear()
-        results = self.db.search_commands(self.PLUGIN_ID, text)
+        results = self.service.search_commands(text)
         
         for idx, cmd in enumerate(results, 1):
             item = QTreeWidgetItem(self.tree)
@@ -480,7 +484,7 @@ class CommandWidget(QWidget):
     
     def _add_command(self) -> None:
         """添加新命令"""
-        categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
+        categories = self.service.list_category_names()
         current_cat = self._current_category_name if self._current_category_name != "全部" else ""
         
         dialog = CommandDialog(
@@ -494,8 +498,7 @@ class CommandWidget(QWidget):
             
             category_name = data.get("category", current_cat) or None
             
-            self.db.add_command(
-                plugin_id=self.PLUGIN_ID,
+            self.service.add_command(
                 name=data["name"],
                 content=data["content"],
                 category_name=category_name,
@@ -523,7 +526,7 @@ class CommandWidget(QWidget):
             if not name:
                 return
             
-            self.db.add_category(self.PLUGIN_ID, name)
+            self.service.add_category(name)
             self._load_categories()
             
             InfoBar.success(
@@ -558,7 +561,7 @@ class CommandWidget(QWidget):
         # 移动分类
         move_menu = menu.addMenu("移动分类")
         current_cat = item.text(3) if item.columnCount() > 3 else ""
-        all_categories = self.db.get_categories(self.PLUGIN_ID)
+        all_categories = self.service.list_categories()
         for cat in all_categories:
             if cat['name'] == current_cat:
                 continue
@@ -581,7 +584,7 @@ class CommandWidget(QWidget):
         cmd_id = item.data(0, Qt.UserRole)
         name = item.text(1)
         
-        self.db.update_command(self.PLUGIN_ID, cmd_id, category_id=new_category_id)
+        self.service.update_command(cmd_id, category_id=new_category_id)
         self._load_commands()
         
         InfoBar.success(
@@ -601,7 +604,7 @@ class CommandWidget(QWidget):
         old_content = item.text(4)
         old_category = item.text(3)
         
-        categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
+        categories = self.service.list_category_names()
         
         dialog = CommandDialog(
             self,
@@ -617,14 +620,10 @@ class CommandWidget(QWidget):
             new_category = data.get("category", old_category)
             category_id = None
             if new_category:
-                cats = self.db.get_categories(self.PLUGIN_ID)
-                for cat in cats:
-                    if cat['name'] == new_category:
-                        category_id = cat['id']
-                        break
+                category_id = self.service.resolve_category_id(new_category)
             
-            self.db.update_command(
-                self.PLUGIN_ID, cmd_id,
+            self.service.update_command(
+                cmd_id,
                 name=data["name"],
                 content=data["content"],
                 sub_title=data["sub_title"],
@@ -648,7 +647,7 @@ class CommandWidget(QWidget):
         name = item.text(1)
         
         if MessageBox("确认删除", f"确定要删除命令 '{name}' 吗？", self).exec():
-            self.db.delete_command(self.PLUGIN_ID, cmd_id)
+            self.service.delete_command(cmd_id)
             self._load_commands()
             
             InfoBar.success(
@@ -689,9 +688,9 @@ class Plugin(PluginInterface):
         return True
 
     def search(self, query: str):
-        db = DatabaseManager()
+        service = CommandService(self.PLUGIN_ID)
         results = []
-        commands = db.search_commands(self.PLUGIN_ID, query)
+        commands = service.search_commands(query)
         for cmd in commands[:20]:
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,

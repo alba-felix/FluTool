@@ -12,6 +12,8 @@ data/
 scripts/
 .trae_copy/
 config/local_settings.ini
+tests/__pycache__/
+tests/*.log
 tests/
 config/time_lock_data.json
 cert/
@@ -56,6 +58,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.pytest_tmp*/
 
 # 翻译
 *.mo

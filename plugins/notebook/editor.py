@@ -1,6 +1,6 @@
 """随手记编辑器 - 文本编辑区域 - 性能优化版本"""
 
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, QRect, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit
 from PyQt5.QtGui import QColor, QKeyEvent, QPainter, QFont, QFontMetrics
 from qfluentwidgets import isDarkTheme, qconfig
@@ -99,10 +99,14 @@ class NotebookEditor(QWidget):
         super().__init__(parent)
         self.setObjectName("notebookEditor")
         self._setup_ui()
-        qconfig.themeChanged.connect(self.on_theme_changed)
+        qconfig.themeChangedFinished.connect(self.on_theme_changed)
 
     def on_theme_changed(self):
         """主题变化时更新样式"""
+        QTimer.singleShot(0, self._refresh_theme_style)
+
+    def _refresh_theme_style(self):
+        """延迟刷新编辑器样式，避免阻塞主题切换"""
         self._editor.line_number_area.update_style()
         self._update_editor_style()
 

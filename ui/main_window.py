@@ -2,7 +2,8 @@ from PyQt5.QtCore import pyqtSignal, QEasingCurve, QPoint, QRect, QSize, Qt, QTi
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (QAbstractButton, QAction, QApplication, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon,
                              QVBoxLayout, QWidget, QFrame, QScrollArea)
-from qfluentwidgets import (BodyLabel, CaptionLabel, FluentIcon as FIF, FluentStyleSheet, HyperlinkLabel, isDarkTheme,
+from qfluentwidgets import (BodyLabel, CaptionLabel, FluentIcon as FIF, FluentStyleSheet, HyperlinkLabel, InfoBar,
+                           InfoBarPosition, isDarkTheme,
                            NavigationWidget, setCustomStyleSheet, setTheme, SmoothScrollArea, StrongBodyLabel, Theme,
                            TransparentToolButton, SubtitleLabel, qconfig, MessageBox)
 from qfluentwidgets.common.font import setFont
@@ -16,6 +17,7 @@ from .settings_interface import SettingsInterface
 from .global_search_dialog import GlobalSearchDialog
 from .plugin_docs_interface import PluginDocsInterface
 from .about_interfaces import AboutInterface, CheckUpdateInterface, FeedbackInterface
+from .plugin_host import PluginHost
 
 
 class ScrollableNavButton(NavigationWidget):
@@ -764,10 +766,37 @@ class PushFluentWindow(FramelessMainWindow):
 	
 	def _toggle_theme(self) -> None:
 		from qfluentwidgets import qconfig
-		if qconfig.theme == Theme.DARK:
-			setTheme(Theme.LIGHT)
-		else:
-			setTheme(Theme.DARK)
+		if getattr(self, "_theme_switching", False):
+			return
+
+		self._theme_switching = True
+		self._theme_btn.setEnabled(False)
+		target_theme = Theme.LIGHT if qconfig.theme == Theme.DARK else Theme.DARK
+		target_name = "浅色" if target_theme == Theme.LIGHT else "深色"
+
+		InfoBar.info(
+			title="正在切换主题",
+			content=f"正在应用{target_name}主题...",
+			orient=Qt.Horizontal,
+			isClosable=False,
+			position=InfoBarPosition.TOP,
+			duration=1200,
+			parent=self
+		)
+		QTimer.singleShot(0, lambda theme=target_theme: self._apply_theme_change(theme))
+
+	def _apply_theme_change(self, theme: Theme) -> None:
+		"""延迟执行主题切换，让提示先完成绘制。"""
+		try:
+			setTheme(theme)
+			QTimer.singleShot(350, self._finish_theme_change)
+		except Exception as e:
+			self.core.logger.error(f"Failed to switch theme: {e}")
+			self._finish_theme_change()
+
+	def _finish_theme_change(self) -> None:
+		self._theme_switching = False
+		self._theme_btn.setEnabled(True)
 	
 	def _on_global_search(self) -> None:
 		if not self.core or not self.core.search_manager:
@@ -880,9 +909,10 @@ class MainWindow(PushFluentWindow):
 		self.resize(1000, 700)
 		self._center_window()
 		
-		self._plugin_containers = {}
-		self._plugin_widgets = {}
-		self._plugin_initialized = {}
+		self._plugin_host = PluginHost(core)
+		self._plugin_containers = self._plugin_host.plugin_containers
+		self._plugin_widgets = self._plugin_host.plugin_widgets
+		self._plugin_initialized = self._plugin_host.plugin_initialized
 		
 		try:
 			self._setup_home_page()
@@ -1059,7 +1089,9 @@ class MainWindow(PushFluentWindow):
 		layout.addWidget(arrow)
 		
 		self._apply_menu_card_style(card, title_label, desc_label, arrow)
-		qconfig.themeChanged.connect(lambda: self._apply_menu_card_style(card, title_label, desc_label, arrow))
+		qconfig.themeChangedFinished.connect(
+			lambda: QTimer.singleShot(0, lambda: self._apply_menu_card_style(card, title_label, desc_label, arrow))
+		)
 		
 		return card
 	
@@ -1145,13 +1177,7 @@ class MainWindow(PushFluentWindow):
 			self.navigationInterface.collapse(useAni=False)
 	
 	def register_plugin(self, plugin_id: str, icon, name: str) -> None:
-		container = QWidget()
-		container.setObjectName(f"container_{plugin_id}")
-		container.setLayout(QVBoxLayout())
-		container.layout().setContentsMargins(0, 0, 0, 0)
-		
-		self._plugin_containers[plugin_id] = container
-		self._plugin_initialized[plugin_id] = False
+		container = self._plugin_host.create_container(plugin_id)
 		self.addSubInterface(container, icon, name)
 	
 	def load_first_plugin(self) -> None:
@@ -1161,40 +1187,7 @@ class MainWindow(PushFluentWindow):
 		self._init_plugin_widget(plugin_id)
 	
 	def _init_plugin_widget(self, plugin_id: str) -> bool:
-		if not plugin_id:
-			return False
-		
-		if self._plugin_initialized.get(plugin_id, False):
-			return True
-		
-		plugin = self.core.plugin_manager.get_plugin(plugin_id)
-		if not plugin:
-			self.core.logger.error(f"Plugin not found: {plugin_id}")
-			return False
-		
-		container = self._plugin_containers.get(plugin_id)
-		if container is None:
-			self.core.logger.error(f"Container not found for plugin: {plugin_id}")
-			return False
-		
-		try:
-			widget = plugin.get_widget(container)
-			if widget is None:
-				self.core.logger.warning(f"Plugin widget is None: {plugin_id}")
-				return False
-			
-			widget.setObjectName(plugin_id)
-			container.layout().addWidget(widget)
-			
-			self._plugin_widgets[plugin_id] = widget
-			self._plugin_initialized[plugin_id] = True
-			
-			self.core.logger.info(f"Plugin widget created: {plugin.get_name()}")
-			return True
-		
-		except Exception as e:
-			self.core.logger.error(f"Failed to create plugin widget {plugin_id}: {e}")
-			return False
+		return self._plugin_host.init_plugin_widget(plugin_id)
 	
 	def _on_page_changed(self, index: int) -> None:
 		if index < 0:
@@ -1217,49 +1210,17 @@ class MainWindow(PushFluentWindow):
 			QTimer.singleShot(50, lambda pid=plugin_id: self._load_plugin_data(pid))
 
 	def _load_plugin_data(self, plugin_id: str) -> None:
-		if not plugin_id:
-			return
-		
-		plugin = self.core.plugin_manager.get_plugin(plugin_id)
-		if plugin is None:
-			return
-		
-		try:
-			plugin.load_data()
-		except Exception as e:
-			self.core.logger.error(f"Failed to load plugin data {plugin_id}: {e}")
+		self._plugin_host.load_plugin_data(plugin_id)
 	
 	def add_plugin(self, plugin) -> None:
 		plugin_id = plugin.get_id()
-		container = QWidget()
-		container.setObjectName(f"container_{plugin_id}")
-		container.setLayout(QVBoxLayout())
-		container.layout().setContentsMargins(0, 0, 0, 0)
-		
-		qss = f"QWidget#{container.objectName()} {{ background-color: transparent; }}"
-		setCustomStyleSheet(container, qss, qss)
-		
-		widget = plugin.get_widget(container)
-		if widget:
-			widget.setObjectName(plugin_id)
-			container.layout().addWidget(widget)
-			icon = plugin.get_icon() if plugin.get_icon() else FIF.DOCUMENT
-			self.addSubInterface(container, icon, plugin.get_name())
-			
-			self._plugin_containers[plugin_id] = container
-			self._plugin_widgets[plugin_id] = widget
-			self._plugin_initialized[plugin_id] = True
+		container = self._plugin_host.attach_loaded_plugin(plugin)
+		icon = plugin.get_icon() if plugin.get_icon() else FIF.DOCUMENT
+		self.addSubInterface(container, icon, plugin.get_name())
 	
 	def close_plugin(self, plugin_id: str) -> None:
 		if not plugin_id:
 			return
-		
-		plugin = self.core.plugin_manager.get_plugin(plugin_id)
-		if plugin:
-			try:
-				plugin.shutdown()
-			except Exception as e:
-				self.core.logger.error(f"Plugin shutdown error: {e}")
 		
 		container = self._plugin_containers.get(plugin_id)
 		if container:
@@ -1269,9 +1230,7 @@ class MainWindow(PushFluentWindow):
 			except Exception as e:
 				self.core.logger.error(f"Failed to remove container: {e}")
 		
-		self._plugin_containers.pop(plugin_id, None)
-		self._plugin_widgets.pop(plugin_id, None)
-		self._plugin_initialized.pop(plugin_id, None)
+		self._plugin_host.shutdown_plugin(plugin_id)
 		self.navigationInterface.removeItem(plugin_id)
 	
 	def closeEvent(self, event) -> None:

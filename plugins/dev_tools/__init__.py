@@ -343,7 +343,7 @@ class DevToolsWidget(QWidget):
         self._apply_separator_style()
         
         # 监听主题变化
-        qconfig.themeChanged.connect(self._apply_separator_style)
+        qconfig.themeChangedFinished.connect(lambda: QTimer.singleShot(0, self._apply_separator_style))
 
     def _on_tab_changed(self, index: int) -> None:
         self.stacked_widget.setCurrentIndex(index)

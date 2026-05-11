@@ -1,7 +1,10 @@
 import os
 import re
 import json
-import sip
+try:
+    import sip
+except ImportError:
+    from PyQt5 import sip
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict
 from PyQt5.QtCore import Qt, QPoint, QPointF, QTimer, pyqtSignal, QSize, QEvent, QThread, QObject
@@ -22,7 +25,7 @@ from qfluentwidgets import (
     SubtitleLabel, BodyLabel as FluentBodyLabel, CaptionLabel
 )
 from core import PluginInterface, get_app_data_path
-from storage.database import DatabaseManager
+from plugins.folder_tree.service import FolderTreeService
 
 
 class FolderTreeWorker(QObject):
@@ -105,11 +108,23 @@ class FolderTreeWorker(QObject):
         return count
 
     def _build_tree(self, path: Path, prefix: str, current_depth: int,
-                     flat_nodes: List[Tuple[str, bool, int]],
-                     folder_count: int, file_count: int):
+                     flat_nodes_or_folder_count,
+                     folder_count: int = None, file_count: int = None):
         """递归获取文件夹树形结构（深度可控）"""
+        legacy_return = not isinstance(flat_nodes_or_folder_count, list)
+        if legacy_return:
+            flat_nodes = []
+            folder_count = flat_nodes_or_folder_count
+        else:
+            flat_nodes = flat_nodes_or_folder_count
+
+        if folder_count is None:
+            folder_count = 0
+        if file_count is None:
+            file_count = 0
+
         if self._cancelled:
-            return "", flat_nodes, folder_count, file_count
+            return ("", folder_count, file_count) if legacy_return else ("", flat_nodes, folder_count, file_count)
 
         tree = ''
         items = []
@@ -124,7 +139,7 @@ class FolderTreeWorker(QObject):
 
         for i, item in enumerate(items):
             if self._cancelled:
-                return "", flat_nodes, folder_count, file_count
+                return ("", folder_count, file_count) if legacy_return else ("", flat_nodes, folder_count, file_count)
 
             try:
                 is_last = (i == len(items) - 1)
@@ -153,14 +168,28 @@ class FolderTreeWorker(QObject):
             except (PermissionError, OSError):
                 pass
 
+        if legacy_return:
+            return tree, folder_count, file_count
         return tree, flat_nodes, folder_count, file_count
 
     def _build_folders_only(self, path: Path, prefix: str, current_depth: int,
-                            flat_nodes: List[Tuple[str, bool, int]],
-                            folder_count: int, file_count: int):
+                            flat_nodes_or_folder_count,
+                            folder_count: int = None, file_count: int = None):
         """递归获取只有文件夹的树形结构（深度可控）"""
+        legacy_return = not isinstance(flat_nodes_or_folder_count, list)
+        if legacy_return:
+            flat_nodes = []
+            folder_count = flat_nodes_or_folder_count
+        else:
+            flat_nodes = flat_nodes_or_folder_count
+
+        if folder_count is None:
+            folder_count = 0
+        if file_count is None:
+            file_count = 0
+
         if self._cancelled:
-            return "", flat_nodes, folder_count, 0
+            return ("", folder_count, 0) if legacy_return else ("", flat_nodes, folder_count, 0)
 
         tree = ''
         folders = []
@@ -176,7 +205,7 @@ class FolderTreeWorker(QObject):
 
         for i, item in enumerate(folders):
             if self._cancelled:
-                return "", flat_nodes, folder_count, 0
+                return ("", folder_count, 0) if legacy_return else ("", flat_nodes, folder_count, 0)
 
             try:
                 is_last = (i == len(folders) - 1)
@@ -201,6 +230,8 @@ class FolderTreeWorker(QObject):
             except (PermissionError, OSError):
                 pass
 
+        if legacy_return:
+            return tree, folder_count, 0
         return tree, flat_nodes, folder_count, 0
 
 
@@ -471,7 +502,7 @@ class FolderTreeWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = FolderTreeService()
         self.current_folder = None
         self.tree_content = ""
         self.custom_rules = {}
@@ -492,7 +523,7 @@ class FolderTreeWidget(QWidget):
 
         self.init_ui()
         self.setup_style()
-        qconfig.themeChanged.connect(self.on_theme_changed)
+        qconfig.themeChangedFinished.connect(self.on_theme_changed)
         
         # 使用 QTimer 延迟加载规则，确保数据库已初始化
         QTimer.singleShot(100, self._delayed_load_rules)
@@ -505,7 +536,7 @@ class FolderTreeWidget(QWidget):
 
     def on_theme_changed(self):
         """主题变化时更新样式"""
-        self.setup_style()
+        QTimer.singleShot(0, self.setup_style)
 
     def init_ui(self):
         """初始化界面"""
@@ -771,12 +802,7 @@ class FolderTreeWidget(QWidget):
     def load_custom_rules(self):
         """加载自定义规则"""
         try:
-            # 检查数据库是否已初始化
-            if not hasattr(self.db, '_db_path') or self.db._db_path is None:
-                self.custom_rules = {}
-                return
-            
-            rules = self.db.get_all_folder_tree_rules()
+            rules = self.service.list_rules()
             self.custom_rules = {}
             for rule in rules:
                 # exclude_items 从 Repository 返回时已经是 list 类型
@@ -1015,14 +1041,14 @@ class FolderTreeWidget(QWidget):
                     )
                     return
                 # 删除旧规则
-                self.db.delete_folder_tree_rule(old_name)
+                self.service.delete_rule(old_name)
                 del self.custom_rules[old_name]
                 # 添加新规则
-                self.db.add_folder_tree_rule(name, result)
+                self.service.add_rule(name, result)
                 self.custom_rules[name] = result
             else:
                 # 名称未变，直接更新
-                self.db.update_folder_tree_rule(name, result)
+                self.service.update_rule(name, result)
                 self.custom_rules[name] = result
             
             # 更新 UI
@@ -1049,7 +1075,7 @@ class FolderTreeWidget(QWidget):
             )
             return
         
-        self.db.add_folder_tree_rule(name, result)
+        self.service.add_rule(name, result)
         self.custom_rules[name] = result
         self._update_rules_combo(name)
         
@@ -1089,7 +1115,7 @@ class FolderTreeWidget(QWidget):
             list_item_text = self._rule_list.item(current_row).text()
             rule_name = list_item_text.split(":")[0].strip()
             
-            self.db.delete_folder_tree_rule(rule_name)
+            self.service.delete_rule(rule_name)
             del self.custom_rules[rule_name]
             
             self._update_rules_combo()
@@ -1465,9 +1491,9 @@ class Plugin(PluginInterface):
     
     def search(self, query: str):
         from core import SearchResult
-        db = DatabaseManager()
+        service = FolderTreeService()
         results = []
-        rules = db.search_folder_tree_rules(query)
+        rules = service.search_rules(query)
         for rule in rules[:20]:
             # exclude_items 从 Repository 返回时已经是 list 类型
             exclude_items = rule['exclude_items'] if rule['exclude_items'] else []

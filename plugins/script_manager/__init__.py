@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Dict, Any, List
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -16,7 +17,7 @@ from qfluentwidgets import (
 )
 from core import PluginInterface
 from core.async_loader import BaseAsyncLoader
-from storage import DatabaseManager
+from plugins.script_manager.service import ScriptService
 from functools import partial
 from core import SearchResult
 from ui.common import InputDialog
@@ -103,10 +104,14 @@ class ScriptDialog(MessageBoxBase):
 
 class ScriptLoader(BaseAsyncLoader):
     """异步脚本加载器"""
+
+    def __init__(self, service: ScriptService):
+        super().__init__(None, service.plugin_id)
+        self.service = service
     
     def load_data(self) -> List[Dict[str, Any]]:
         """加载脚本数据"""
-        return self.db.get_scripts(self.plugin_id)
+        return self.service.list_scripts()
     
     def get_data_name(self) -> str:
         return "脚本"
@@ -266,7 +271,7 @@ class ScriptWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = ScriptService(self.PLUGIN_ID)
         self._current_category_id: Optional[int] = None
         self._current_category_name = "全部"
         self._category_buttons: List[PushButton] = []
@@ -446,7 +451,7 @@ class ScriptWidget(QWidget):
         self._is_loading = True
         self.progress_bar.setVisible(True)
         
-        self._loader = ScriptLoader(self.db, self.PLUGIN_ID)
+        self._loader = ScriptLoader(self.service)
         self._loader.load_finished.connect(self._on_load_finished)
         self._loader.load_progress.connect(self._on_load_progress)
         self._loader.load_error.connect(self._on_load_error)
@@ -499,7 +504,7 @@ class ScriptWidget(QWidget):
             btn.deleteLater()
         self._category_buttons.clear()
         
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         for cat in categories:
             btn = PushButton(cat['name'], self)
             btn.clicked.connect(partial(self._show_category, cat))
@@ -533,7 +538,7 @@ class ScriptWidget(QWidget):
             if new_name and new_name != category['name']:
                 existing_names = [btn.text() for btn in self._category_buttons]
                 if new_name not in existing_names:
-                    self.db.update_category(self.PLUGIN_ID, category['id'], new_name)
+                    self.service.update_category(category['id'], new_name)
                     self._load_categories()
                     if self._current_category_id == category['id']:
                         self._current_category_name = new_name
@@ -560,7 +565,7 @@ class ScriptWidget(QWidget):
     def _delete_category(self, category: dict) -> None:
         box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的脚本将移至\"全部\"分类。", self)
         if box.exec():
-            self.db.delete_category(self.PLUGIN_ID, category['id'])
+            self.service.delete_category(category['id'])
             self._load_categories()
             if self._current_category_id == category['id']:
                 self._show_all()
@@ -576,7 +581,7 @@ class ScriptWidget(QWidget):
     
     def _load_scripts(self) -> None:
         self.tree.clear()
-        scripts = self.db.get_scripts(self.PLUGIN_ID, self._current_category_id)
+        scripts = self.service.list_scripts(self._current_category_id)
         
         for idx, script in enumerate(scripts, 1):
             item = QTreeWidgetItem(self.tree)
@@ -607,7 +612,7 @@ class ScriptWidget(QWidget):
             return
         
         self.tree.clear()
-        results = self.db.search_scripts(self.PLUGIN_ID, text)
+        results = self.service.search_scripts(text)
         
         for idx, script in enumerate(results, 1):
             item = QTreeWidgetItem(self.tree)
@@ -626,7 +631,7 @@ class ScriptWidget(QWidget):
             self.editor.load_script(scripts[0])
     
     def _add_script(self) -> None:
-        categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
+        categories = self.service.list_category_names()
         current_cat = self._current_category_name if self._current_category_name != "全部" else ""
         
         dialog = ScriptDialog(
@@ -640,8 +645,7 @@ class ScriptWidget(QWidget):
             
             category_name = data.get("category", current_cat) or None
             
-            script_id = self.db.add_script(
-                plugin_id=self.PLUGIN_ID,
+            script_id = self.service.add_script(
                 name=data["name"],
                 content="",
                 script_type=data["script_type"],
@@ -649,7 +653,7 @@ class ScriptWidget(QWidget):
                 description=data["description"]
             )
             
-            self._scripts_cache = self.db.get_scripts(self.PLUGIN_ID)
+            self._scripts_cache = self.service.list_scripts()
             self._load_categories()
             self._load_scripts()
             
@@ -675,7 +679,7 @@ class ScriptWidget(QWidget):
             if not name:
                 return
             
-            self.db.add_category(self.PLUGIN_ID, name)
+            self.service.add_category(name)
             self._load_categories()
             
             InfoBar.success(
@@ -713,7 +717,7 @@ class ScriptWidget(QWidget):
         old_category = item.text(3)
         old_desc = item.text(4)
         
-        categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
+        categories = self.service.list_category_names()
         
         dialog = ScriptDialog(
             self,
@@ -727,22 +731,16 @@ class ScriptWidget(QWidget):
             data = dialog.get_script_data()
             
             new_category = data.get("category", old_category)
-            category_id = None
-            if new_category:
-                cats = self.db.get_categories(self.PLUGIN_ID)
-                for cat in cats:
-                    if cat['name'] == new_category:
-                        category_id = cat['id']
-                        break
+            category_id = self.service.resolve_category_id(new_category)
             
-            self.db.update_script(
-                self.PLUGIN_ID, script_id,
+            self.service.update_script(
+                script_id,
                 name=data["name"],
                 script_type=data["script_type"],
                 description=data["description"],
                 category_id=category_id
             )
-            self._scripts_cache = self.db.get_scripts(self.PLUGIN_ID)
+            self._scripts_cache = self.service.list_scripts()
             self._load_scripts()
             
             InfoBar.success(
@@ -760,8 +758,8 @@ class ScriptWidget(QWidget):
         name = item.text(1)
         
         if MessageBox("确认删除", f"确定要删除脚本 '{name}' 吗？", self).exec():
-            self.db.delete_script(self.PLUGIN_ID, script_id)
-            self._scripts_cache = self.db.get_scripts(self.PLUGIN_ID)
+            self.service.delete_script(script_id)
+            self._scripts_cache = self.service.list_scripts()
             self._load_scripts()
             
             if self.editor.get_script_id() == script_id:
@@ -783,7 +781,7 @@ class ScriptWidget(QWidget):
             return
         
         content = self.editor.get_content()
-        self.db.update_script(self.PLUGIN_ID, script_id, content=content)
+        self.service.update_script(script_id, content=content)
         self.editor.save_btn.setEnabled(False)
         
         for i, script in enumerate(self._scripts_cache):
@@ -964,15 +962,14 @@ class Plugin(PluginInterface):
     
     def _init_test_scripts(self) -> None:
         """初始化测试脚本"""
-        db = DatabaseManager()
+        service = ScriptService(self.PLUGIN_ID)
         for script in self.TEST_SCRIPTS:
-            if not db.script_exists(self.PLUGIN_ID, script["name"]):
-                db.add_script(
-                    plugin_id=self.PLUGIN_ID,
+            if not service.script_exists(script["name"]):
+                service.add_script(
                     name=script["name"],
                     content=script["content"],
                     script_type=script["script_type"],
-                    description=script["description"]
+                    description=script["description"],
                 )
                 self.core.logger.info(f"Added test script: {script['name']}")
     
@@ -991,9 +988,9 @@ class Plugin(PluginInterface):
         return True
 
     def search(self, query: str):
-        db = DatabaseManager()
+        service = ScriptService(self.PLUGIN_ID)
         results = []
-        scripts = db.search_scripts(self.PLUGIN_ID, query)
+        scripts = service.search_scripts(query)
         for script in scripts[:20]:
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,

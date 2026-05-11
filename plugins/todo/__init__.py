@@ -7,16 +7,19 @@ from typing import List, Dict, Any, Optional
 
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import QFileDialog, QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem, QHeaderView, QDateEdit
+from PyQt5.QtWidgets import (
+    QApplication, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout,
+    QTreeWidgetItem, QHeaderView, QDateEdit
+)
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, TreeWidget, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig,
     MessageBoxBase, TransparentToolButton, CaptionLabel, ComboBox,
-    TextEdit, CheckBox, SubtitleLabel, BodyLabel
+    TextEdit, CheckBox, SubtitleLabel, BodyLabel, MessageBox
 )
 from core import PluginInterface
-from storage.database import DatabaseManager
+from .service import TodoService
 
 
 class AddTodoDialog(MessageBoxBase):
@@ -221,7 +224,7 @@ class TodoWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = TodoService()
         self.todos: List[Dict[str, Any]] = []
 
         self._setup_ui()
@@ -373,7 +376,7 @@ class TodoWidget(QWidget):
     def _load_todos(self):
         """从数据库加载代办事项"""
         try:
-            self.todos = self.db.get_todos()
+            self.todos = self.service.list_todos()
             for todo in self.todos:
                 if "status" not in todo:
                     todo["status"] = "已完成" if todo.get("completed", False) else "进行中"
@@ -499,17 +502,7 @@ class TodoWidget(QWidget):
         if dialog.exec():
             todo_data = dialog.get_data()
             if todo_data["title"]:
-                todo_id = self.db.add_todo(
-                    title=todo_data["title"],
-                    description=todo_data.get("description", ""),
-                    priority=todo_data.get("priority", "中"),
-                    start_date=todo_data.get("start_date", ""),
-                    due_date=todo_data.get("due_date", ""),
-                    tags=todo_data.get("tags", []),
-                    completed=1 if todo_data.get("completed", False) else 0,
-                    pinned=1 if todo_data.get("pinned", False) else 0,
-                    status=todo_data.get("status", "进行中")
-                )
+                todo_id = self.service.add_todo(todo_data)
                 todo_data["id"] = todo_id
                 self.todos.append(todo_data)
                 self._display_todos()
@@ -550,18 +543,7 @@ class TodoWidget(QWidget):
             if updated_data["title"]:
                 todo_id = todo_data.get("id")
                 if todo_id:
-                    self.db.update_todo(
-                        todo_id,
-                        title=updated_data["title"],
-                        description=updated_data.get("description", ""),
-                        priority=updated_data.get("priority", "中"),
-                        start_date=updated_data.get("start_date", ""),
-                        due_date=updated_data.get("due_date", ""),
-                        tags=updated_data.get("tags", []),
-                        completed=1 if updated_data.get("completed", False) else 0,
-                        pinned=1 if updated_data.get("pinned", False) else 0,
-                        status=updated_data.get("status", "进行中")
-                    )
+                    self.service.update_todo(todo_id, updated_data)
                 self.todos[todo_idx] = updated_data
                 self._display_todos()
                 self._update_stats()
@@ -605,7 +587,7 @@ class TodoWidget(QWidget):
 
         todo_id = todo.get("id")
         if todo_id:
-            self.db.toggle_todo_completed(todo_id)
+            self.service.toggle_completed(todo_id)
 
         self._display_todos()
         self._update_stats()
@@ -635,7 +617,7 @@ class TodoWidget(QWidget):
         
         todo_id = todo.get("id")
         if todo_id:
-            self.db.toggle_todo_pinned(todo_id)
+            self.service.toggle_pinned(todo_id)
         
         self._display_todos()
         self._update_stats()
@@ -658,12 +640,12 @@ class TodoWidget(QWidget):
             return
         todo = self.todos[todo_idx]
 
-        box = MessageBoxBase("删除代办事项", f"确定要删除 '{todo.get('title', '未命名')}' 吗？", self)
+        box = MessageBox("删除代办事项", f"确定要删除 '{todo.get('title', '未命名')}' 吗？", self)
         if box.exec():
             todo_id = todo.get("id")
             todo_title = todo.get('title', '未命名')
             if todo_id:
-                self.db.delete_todo(todo_id)
+                self.service.delete_todo(todo_id)
             del self.todos[todo_idx]
             self._display_todos()
             self._update_stats()
@@ -750,15 +732,16 @@ class TodoWidget(QWidget):
             )
             return
         
-        box = MessageBoxBase("确认操作", f"确定要将 {completed_count} 个已完成任务标记为未完成吗？", self)
+        box = MessageBox("确认操作", f"确定要将 {completed_count} 个已完成任务标记为未完成吗？", self)
         if box.exec():
             for todo in self.todos:
                 if todo.get("completed", False):
                     todo["completed"] = False
+                    todo["status"] = "未完成"
                     todo.pop("completed_at", None)
                     todo_id = todo.get("id")
                     if todo_id:
-                        self.db.update_todo(todo_id, completed=0)
+                        self.service.update_fields(todo_id, completed=0, status="未完成")
 
             self._display_todos()
             self._update_stats()
@@ -816,9 +799,8 @@ class Plugin(PluginInterface):
     
     def search(self, query: str):
         from core import SearchResult
-        db = DatabaseManager()
         results = []
-        todos = db.search_todos(query)
+        todos = TodoService().search(query)
         for todo in todos[:20]:
             completed = todo.get('completed', False)
             todo_status = todo.get('status', '')

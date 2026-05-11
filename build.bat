@@ -9,9 +9,10 @@ pyinstaller --noconfirm --onedir --windowed ^
       --icon "logo.ico" ^
       --name "FluTool" ^
       --clean ^
+      --additional-hooks-dir "hooks" ^
       --collect-all qfluentwidgets ^
       --collect-all qframelesswindow ^
-      --collect-all plugins ^
+      --collect-submodules plugins ^
       --collect-submodules ui ^
       --collect-submodules core ^
       --collect-submodules utils ^
@@ -26,6 +27,11 @@ pyinstaller --noconfirm --onedir --windowed ^
       --hidden-import "charset_normalizer" ^
       --hidden-import "bs4" ^
       --hidden-import "loguru" ^
+      --hidden-import "configparser" ^
+      --hidden-import "markdown" ^
+      --hidden-import "ui.common" ^
+      --hidden-import "ui.common.dialogs" ^
+      --hidden-import "core.async_loader" ^
       --add-data "data;data/" ^
       --add-data "config;config/" ^
       --add-data "logo.ico;." ^
@@ -55,7 +61,9 @@ pyinstaller --noconfirm --onedir --windowed ^
       --exclude-module "PyQt5.Qt3DExtras" ^
       "main.py"
 
-if %errorlevel% equ 0 (
+set BUILD_EXIT_CODE=%errorlevel%
+
+if %BUILD_EXIT_CODE% equ 0 (
     color 0A
     echo Compilation completed!
 ) else (
@@ -63,3 +71,4 @@ if %errorlevel% equ 0 (
     echo Compilation failed!
 )
 color 07
+exit /b %BUILD_EXIT_CODE%

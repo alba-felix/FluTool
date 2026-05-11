@@ -22,8 +22,7 @@ from qfluentwidgets import (
 
 from core import PluginInterface
 from core.ai import AIChatService, AISettingsBridge, AISearchBridge
-from storage import DatabaseManager
-from storage.repositories import AIRepository
+from plugins.ai_assistant.service import AIAssistantService
 from .chat_input import ChatInputWidget
 from .chat_message import ChatMessageList
 
@@ -338,7 +337,7 @@ class AIAssistantWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.repo = AIRepository(DatabaseManager())
+        self.service = AIAssistantService()
 
         self.ai_settings = getattr(core, "ai_settings", AISettingsBridge())
         self.chat_service = getattr(core, "ai_chat_service", None)
@@ -537,7 +536,7 @@ class AIAssistantWidget(QWidget):
         if dialog.exec():
             new_title = dialog.get_text()
             if new_title and new_title != current_title:
-                self.repo.update_conversation_title(conv_id, new_title)
+                self.service.update_conversation_title(conv_id, new_title)
                 item.setText(new_title)
                 item.setToolTip(new_title)
 
@@ -546,7 +545,7 @@ class AIAssistantWidget(QWidget):
         if conv_id is None:
             return
         conv_id = int(conv_id)
-        self.repo.delete_conversation(conv_id)
+        self.service.delete_conversation(conv_id)
         if self.current_conversation_id == conv_id:
             self.current_conversation_id = None
             self.chat_view.clear_messages()
@@ -676,7 +675,7 @@ class AIAssistantWidget(QWidget):
         self.ai_settings.set_default_provider(provider)
 
     def _load_or_create_conversation(self) -> None:
-        conversations = self.repo.get_conversations()
+        conversations = self.service.get_conversations()
         if not conversations:
             self._create_conversation()
             return
@@ -704,7 +703,7 @@ class AIAssistantWidget(QWidget):
             model_id = self.ai_settings.get_default_model() or "default"
 
         try:
-            conversation_id = self.repo.add_conversation(
+            conversation_id = self.service.add_conversation(
                 title="新会话",
                 provider=provider,
                 model_id=model_id,
@@ -728,7 +727,7 @@ class AIAssistantWidget(QWidget):
             return
 
         self._sidebar.history_list.clear()
-        conversations = self.repo.search_conversations(keyword, limit=100)
+        conversations = self.service.search_conversations(keyword, limit=100)
 
         if not conversations:
             # 显示无结果提示
@@ -753,7 +752,7 @@ class AIAssistantWidget(QWidget):
 
     def _refresh_history_list(self) -> None:
         self._sidebar.history_list.clear()
-        conversations = self.repo.get_conversations()
+        conversations = self.service.get_conversations()
         for conv in conversations:
             title = conv.get("title", "新会话") or "新会话"
             conv_id = conv.get("id")
@@ -770,7 +769,7 @@ class AIAssistantWidget(QWidget):
             return
         self.current_conversation_id = int(conversation_id)
         self.chat_view.clear_messages()
-        messages = self.repo.get_messages(self.current_conversation_id)
+        messages = self.service.get_messages(self.current_conversation_id)
         for message in messages:
             is_user = message.get("role") == "user"
             content = message.get("content", "")
@@ -827,11 +826,11 @@ class AIAssistantWidget(QWidget):
         self.chat_view.add_message(display_content, is_user=True, attachments=attachments)
 
         # 判断是否是第一次对话（在保存消息之前判断）
-        self._is_first_message = self.repo.get_message_count(self.current_conversation_id) == 0
+        self._is_first_message = self.service.get_message_count(self.current_conversation_id) == 0
         self._first_message_content = text[:100]
 
         # 保存到数据库的是完整内容
-        self.repo.add_message(
+        self.service.add_message(
             conversation_id=self.current_conversation_id,
             role="user",
             content=content,
@@ -866,7 +865,7 @@ class AIAssistantWidget(QWidget):
 
         conversation_history = []
         if self.current_conversation_id:
-            history_messages = self.repo.get_messages(self.current_conversation_id)
+            history_messages = self.service.get_messages(self.current_conversation_id)
             if history_messages:
                 conversation_history = [
                     {"role": msg.get("role"), "content": msg.get("content")}
@@ -932,7 +931,7 @@ class AIAssistantWidget(QWidget):
         if self._current_ai_bubble:
             self._current_ai_bubble.update_text(assistant_text)
 
-        self.repo.add_message(
+        self.service.add_message(
             conversation_id=self.current_conversation_id,
             role="assistant",
             content=assistant_text,
@@ -962,7 +961,7 @@ class AIAssistantWidget(QWidget):
         if len(content) > 20:
             title += "..."
         
-        self.repo.update_conversation(self.current_conversation_id, title=title)
+        self.service.update_conversation(self.current_conversation_id, title=title)
         
         for i in range(self._sidebar.history_list.count()):
             item = self._sidebar.history_list.item(i)
@@ -985,7 +984,7 @@ class AIAssistantWidget(QWidget):
             self._current_ai_bubble.update_text(error_text)
 
         # 保存错误消息
-        self.repo.add_message(
+        self.service.add_message(
             conversation_id=self.current_conversation_id,
             role="assistant",
             content=error_text,
@@ -1016,7 +1015,7 @@ class AIAssistantWidget(QWidget):
         if self._current_ai_bubble:
             current_text = self._current_ai_bubble.text
             if current_text:
-                self.repo.add_message(
+                self.service.add_message(
                     conversation_id=self.current_conversation_id,
                     role="assistant",
                     content=current_text,

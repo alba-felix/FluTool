@@ -1,20 +1,6 @@
-from . import app_launcher
-from . import bookmark
-from . import clipboard
-from . import color_palette
-from . import command
-from . import environment
-from . import folder_tree
-from . import image_assistant
-from . import network
-from . import notebook
-from . import password
-from . import system_tools
-from . import text_compare
-from . import time_converter
-from . import todo
-from . import script_manager
-from . import quick_copy
-from . import ai_assistant
-from . import text_tools
-from . import dev_tools
+"""FluTool 插件包。
+
+插件由 ``core.plugin_manager.PluginManager`` 按需发现和加载。
+这里不要主动导入子插件，避免破坏插件懒加载。
+"""
+

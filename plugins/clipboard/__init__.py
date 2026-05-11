@@ -20,7 +20,7 @@ from qfluentwidgets import (
     RoundMenu, SubtitleLabel, BodyLabel, ScrollArea
 )
 from core import PluginInterface, get_app_data_path
-from storage.database import DatabaseManager
+from plugins.clipboard.service import ClipboardService
 
 
 THUMBNAIL_SIZE = 80
@@ -197,7 +197,7 @@ class ClipboardWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = ClipboardService()
         self.clipboard_data: List[Dict[str, Any]] = []
         self.max_history = 100
         self._is_monitoring = True
@@ -408,7 +408,7 @@ class ClipboardWidget(QWidget):
         if self.clipboard_data and self.clipboard_data[0].get('type') == 'text' and self.clipboard_data[0].get('content') == text:
             return
         
-        item_id = self.db.add_clipboard_item("text", text)
+        item_id = self.service.add_item("text", text)
         item_data = {
             "id": item_id,
             "type": "text",
@@ -420,7 +420,7 @@ class ClipboardWidget(QWidget):
         if len(self.clipboard_data) > self.max_history:
             removed = self.clipboard_data.pop()
             if 'id' in removed:
-                self.db.delete_clipboard_item(removed['id'])
+                self.service.delete_item(removed['id'])
         
         self._update_list_view()
     
@@ -439,7 +439,7 @@ class ClipboardWidget(QWidget):
         pixmap.save(buffer, "PNG")
         image_data = byte_array.toBase64().data().decode()
         
-        item_id = self.db.add_clipboard_item("image", image_data, "png")
+        item_id = self.service.add_item("image", image_data, "png")
         self.clipboard_data.insert(0, {
             "id": item_id,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -451,7 +451,7 @@ class ClipboardWidget(QWidget):
         if len(self.clipboard_data) > self.max_history:
             removed = self.clipboard_data.pop()
             if 'id' in removed:
-                self.db.delete_clipboard_item(removed['id'])
+                self.service.delete_item(removed['id'])
         
         self._update_list_view()
     
@@ -465,7 +465,7 @@ class ClipboardWidget(QWidget):
         if self.clipboard_data and self.clipboard_data[0].get("type") == "urls" and self.clipboard_data[0].get("content") == paths:
             return
         
-        item_id = self.db.add_clipboard_item("urls", json.dumps(paths))
+        item_id = self.service.add_item("urls", json.dumps(paths))
         self.clipboard_data.insert(0, {
             "id": item_id,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -476,7 +476,7 @@ class ClipboardWidget(QWidget):
         if len(self.clipboard_data) > self.max_history:
             removed = self.clipboard_data.pop()
             if 'id' in removed:
-                self.db.delete_clipboard_item(removed['id'])
+                self.service.delete_item(removed['id'])
         
         self._update_list_view()
     
@@ -587,7 +587,7 @@ class ClipboardWidget(QWidget):
         if row >= 0:
             item_data = self.clipboard_data.pop(row)
             if 'id' in item_data:
-                self.db.delete_clipboard_item(item_data['id'])
+                self.service.delete_item(item_data['id'])
             self.list_widget.takeItem(row)
             self.status_label.setText("已删除")
     
@@ -595,7 +595,7 @@ class ClipboardWidget(QWidget):
         """清空剪切板历史"""
         box = MessageBox("确认清空", "确定要清空所有剪切板历史记录吗？", self)
         if box.exec():
-            self.db.clear_clipboard_history()
+            self.service.clear_history()
             self.clipboard_data.clear()
             self._update_list_view()
             self.status_label.setText("已清空剪切板历史")
@@ -703,7 +703,7 @@ class ClipboardWidget(QWidget):
     def _load_clipboard_history(self):
         """从数据库加载剪切板历史"""
         try:
-            data = self.db.get_clipboard_history(self.max_history)
+            data = self.service.list_history(self.max_history)
             self.clipboard_data = []
             for item in data:
                 item_data = {
@@ -759,9 +759,9 @@ class Plugin(PluginInterface):
     
     def search(self, query: str):
         from core import SearchResult
-        db = DatabaseManager()
+        service = ClipboardService()
         results = []
-        items = db.search_clipboard(query)
+        items = service.search(query)
         for item in items[:20]:
             content = item['content']
             if len(content) > 100:

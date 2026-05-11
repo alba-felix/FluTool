@@ -17,7 +17,7 @@ from qfluentwidgets.components.widgets.card_widget import (
     HeaderCardWidget, CardSeparator
 )
 from core import PluginInterface
-from storage.database import DatabaseManager
+from .service import QuickCopyService
 
 
 class EditCardDialog(MessageBoxBase):
@@ -280,7 +280,7 @@ class QuickCopyWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = QuickCopyService()
         self.cards_data: List[Dict[str, Any]] = []
         self.setObjectName("quickCopyWidget")
         self._scroll_layout = None
@@ -345,12 +345,7 @@ class QuickCopyWidget(QWidget):
         """添加快速复制项"""
         try:
             card_title = f"卡片 {len(self.cards_data) + 1}"
-            card_id = self.db.add_quick_copy_card(card_title, len(self.cards_data))
-            new_card = {
-                "id": card_id,
-                "title": card_title,
-                "items": []
-            }
+            new_card = self.service.add_card(card_title, len(self.cards_data))
             self.cards_data.append(new_card)
             self._display_cards()
         except Exception as e:
@@ -368,15 +363,7 @@ class QuickCopyWidget(QWidget):
     def _load_cards(self) -> None:
         """从数据库加载卡片数据"""
         try:
-            cards = self.db.get_quick_copy_cards_with_items()
-            self.cards_data = [
-                {
-                    "id": card["id"],
-                    "title": card["title"],
-                    "items": [item["content"] for item in card.get("items", [])]
-                }
-                for card in cards
-            ]
+            self.cards_data = self.service.list_cards()
         except Exception as e:
             self.core.logger.error(f"加载快速复制数据失败: {e}")
             self.cards_data = []
@@ -422,7 +409,7 @@ class QuickCopyWidget(QWidget):
             return
 
         try:
-            if not self.db.delete_quick_copy_card(card_id):
+            if not self.service.delete_card(card_id):
                 raise RuntimeError(f"card not found: {card_id}")
 
             self.cards_data = [data for data in self.cards_data if data.get("id") != card_id]
@@ -470,17 +457,7 @@ class QuickCopyWidget(QWidget):
             new_data["id"] = card_id
 
             try:
-                self.db.update_quick_copy_card(card_id, title=new_data["title"])
-
-                existing_items = self.db.get_quick_copy_items(card_id)
-                for i, content in enumerate(new_data["items"]):
-                    if i < len(existing_items):
-                        self.db.update_quick_copy_item(existing_items[i]['id'], content=content, sort_order=i)
-                    else:
-                        self.db.add_quick_copy_item(card_id, content, i)
-
-                for item in existing_items[len(new_data["items"]):]:
-                    self.db.delete_quick_copy_item(item['id'])
+                self.service.update_card(card_id, new_data["title"], new_data["items"])
 
                 self.cards_data[card_index] = new_data
 
@@ -539,9 +516,9 @@ class Plugin(PluginInterface):
     
     def search(self, query: str):
         from core import SearchResult
-        db = DatabaseManager()
+        service = QuickCopyService()
         results = []
-        items = db.search_quick_copy(query)
+        items = service.search(query)
         for item in items[:20]:
             content = item['content']
             if len(content) > 80:

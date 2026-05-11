@@ -12,7 +12,11 @@ class AppRepository(BaseRepository):
             has_category=True,
             category_field='category_id',
             searchable_fields=['name', 'target_path', 'notes'],
-            allowed_fields=['plugin_id', 'category_id', 'name', 'icon_path', 'target_path', 'arguments', 'notes', 'sort_order']
+            allowed_fields=[
+                'plugin_id', 'category_id', 'name', 'icon_path', 'target_path',
+                'arguments', 'notes', 'sort_order', 'launch_count',
+                'last_launch_time', 'is_favorite'
+            ]
         )
         super().__init__(db_manager, config)
     

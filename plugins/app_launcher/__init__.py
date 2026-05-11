@@ -31,7 +31,7 @@ from qfluentwidgets import (
 from qfluentwidgets.common.icon import drawIcon
 
 from core import PluginInterface, get_app_data_path, SearchResult
-from storage import DatabaseManager
+from plugins.app_launcher.service import AppLauncherService
 from ui.common import InputDialog
 from ui.custom_icon import CustomFluentIcon as CFIF
 
@@ -1577,7 +1577,7 @@ class AppLauncherWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = AppLauncherService(self.PLUGIN_ID)
         self.category_tabs = {}  # 缓存标签页
         self.selected_app_ids: Set[int] = set()
         self.batch_mode = False
@@ -1590,7 +1590,7 @@ class AppLauncherWidget(QWidget):
         self._apply_styles()
         
         # 监听主题变化
-        qconfig.themeChanged.connect(self._on_theme_changed)
+        qconfig.themeChangedFinished.connect(self._on_theme_changed)
     
     def _init_scroll_buttons(self):
         """初始化滚动按钮"""
@@ -1708,7 +1708,7 @@ class AppLauncherWidget(QWidget):
         elif category_id == "favorite":
             apps = self._get_favorite_apps()
         else:
-            apps = self.db.get_apps(self.PLUGIN_ID, category_id if isinstance(category_id, int) else None)
+            apps = self.service.list_apps(category_id if isinstance(category_id, int) else None)
 
         apps = self._sort_app_list(apps, self._current_sort_by)
         keyword = self.search_input.text().strip() if hasattr(self, "search_input") else ""
@@ -1768,7 +1768,7 @@ class AppLauncherWidget(QWidget):
         if not self.selected_app_ids:
             return []
 
-        apps = self.db.get_apps(self.PLUGIN_ID)
+        apps = self.service.list_apps()
         return [app for app in apps if app.get("id") in self.selected_app_ids]
 
     def _on_card_selection_changed(self, app_id: int, selected: bool) -> None:
@@ -1984,6 +1984,10 @@ class AppLauncherWidget(QWidget):
     
     def _on_theme_changed(self):
         """主题变化时更新样式"""
+        QTimer.singleShot(0, self._refresh_theme_styles)
+
+    def _refresh_theme_styles(self):
+        """延迟刷新主题样式，避免阻塞全局主题切换"""
         self._apply_styles()
         self._refresh_all_tabs()
     
@@ -1999,17 +2003,10 @@ class AppLauncherWidget(QWidget):
             return
         
         # 获取或创建"源码工具"分类
-        categories = self.db.get_categories(self.PLUGIN_ID)
-        cat_id = None
-        for cat in categories:
-            if cat['name'] == "源码工具":
-                cat_id = cat['id']
-                break
-        if cat_id is None:
-            cat_id = self.db.add_category(self.PLUGIN_ID, "源码工具")
+        cat_id = self.service.get_or_create_category("源码工具")
         
         # 获取已有应用的路径集合，避免重复添加
-        existing_apps = self.db.get_apps(self.PLUGIN_ID, cat_id)
+        existing_apps = self.service.list_apps(cat_id)
         existing_paths = {app.get('target_path', '') for app in existing_apps}
         
         # 扫描 .py 文件
@@ -2023,8 +2020,7 @@ class AppLauncherWidget(QWidget):
             name = py_file.stem.replace("_", " ").title()
             icon_path = self._extract_icon(file_path)
             
-            self.db.add_app(
-                plugin_id=self.PLUGIN_ID,
+            self.service.add_app(
                 name=name,
                 target_path=file_path,
                 category_id=cat_id,
@@ -2049,7 +2045,7 @@ class AppLauncherWidget(QWidget):
         if isinstance(tab_bar, CustomTabBar):
             tab_bar.clear_category_meta()
 
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         
         # 创建"全部"标签页
         all_tab = CategoryTab(None, self)
@@ -2125,11 +2121,10 @@ class AppLauncherWidget(QWidget):
             data = dialog.get_data()
             name = data.get("name", "")
             if name:
-                existing_categories = [cat.get("name") for cat in self.db.get_categories(self.PLUGIN_ID)]
+                existing_categories = [cat.get("name") for cat in self.service.list_categories()]
                 if name not in existing_categories:
-                    category_id = self.db.add_category(self.PLUGIN_ID, name)
-                    self.db.update_category(
-                        self.PLUGIN_ID,
+                    category_id = self.service.add_category(name)
+                    self.service.update_category(
                         category_id,
                         icon_name=data.get("icon_name", ""),
                         color=data.get("color", "")
@@ -2171,7 +2166,7 @@ class AppLauncherWidget(QWidget):
     
     def _edit_category(self, category_id: int):
         """编辑分类"""
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         current_category = self._find_category_by_id(category_id)
         if current_category is None:
             return
@@ -2199,8 +2194,7 @@ class AppLauncherWidget(QWidget):
                 )
                 return
 
-            self.db.update_category(
-                self.PLUGIN_ID,
+            self.service.update_category(
                 category_id,
                 name=new_name,
                 icon_name=data.get("icon_name", ""),
@@ -2219,8 +2213,7 @@ class AppLauncherWidget(QWidget):
 
     def _find_category_by_id(self, category_id: int) -> Optional[Dict[str, Any]]:
         """根据 ID 查找分类"""
-        categories = self.db.get_categories(self.PLUGIN_ID)
-        return next((category for category in categories if category.get("id") == category_id), None)
+        return self.service.get_category(category_id)
 
     def _on_category_tab_moved(self, from_index: int, to_index: int) -> None:
         """处理分类拖拽排序"""
@@ -2238,7 +2231,7 @@ class AppLauncherWidget(QWidget):
             category_id = self.tab_widget.tabBar().tabData(index)
             if isinstance(category_id, int):
                 category_ids.append(category_id)
-        self.db.update_category_sort_orders(self.PLUGIN_ID, category_ids)
+        self.service.update_category_sort_orders(category_ids)
         self._load_categories()
 
     def _move_category_tab(self, category_id: int, step: int) -> None:
@@ -2262,16 +2255,12 @@ class AppLauncherWidget(QWidget):
     
     def _delete_category(self, category_id: int):
         """删除分类"""
-        categories = self.db.get_categories(self.PLUGIN_ID)
-        category_name = ""
-        for cat in categories:
-            if cat['id'] == category_id:
-                category_name = cat['name']
-                break
+        category = self.service.get_category(category_id)
+        category_name = category['name'] if category else ""
         
         box = MessageBox("删除分类", f"确定要删除分类 '{category_name}' 吗？\n该分类下的应用将移至\"全部\"分类。", self)
         if box.exec():
-            apps = self.db.get_apps(self.PLUGIN_ID, category_id)
+            apps = self.service.list_apps(category_id)
             for app in apps:
                 icon_path = app.get('icon_path', '')
                 if icon_path:
@@ -2282,7 +2271,7 @@ class AppLauncherWidget(QWidget):
                         except Exception:
                             pass
             
-            self.db.delete_category(self.PLUGIN_ID, category_id)
+            self.service.delete_category(category_id)
             self._load_categories()
             
             InfoBar.success(
@@ -2314,14 +2303,13 @@ class AppLauncherWidget(QWidget):
         if not selected_apps:
             return
 
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         dialog = BatchMoveDialog(categories, self)
         if not dialog.exec():
             return
 
         category_id = dialog.get_category_id(categories)
-        updated_count = self.db.batch_update_apps(
-            self.PLUGIN_ID,
+        updated_count = self.service.batch_update_apps(
             list(self.selected_app_ids),
             category_id=category_id
         )
@@ -2358,8 +2346,7 @@ class AppLauncherWidget(QWidget):
             )
             return
 
-        updated_count = self.db.batch_update_apps(
-            self.PLUGIN_ID,
+        updated_count = self.service.batch_update_apps(
             list(self.selected_app_ids),
             **updates
         )
@@ -2396,7 +2383,7 @@ class AppLauncherWidget(QWidget):
             except Exception as e:
                 self.core.logger.warning(f"删除图标文件失败: {e}")
 
-        deleted_count = self.db.batch_delete_apps(self.PLUGIN_ID, list(self.selected_app_ids))
+        deleted_count = self.service.batch_delete_apps(list(self.selected_app_ids))
         self.selected_app_ids.clear()
         self._refresh_all_tabs()
         InfoBar.success(
@@ -2426,8 +2413,7 @@ class AppLauncherWidget(QWidget):
             name = os.path.splitext(os.path.basename(file_path))[0]
             icon_path = self._extract_icon(file_path)
             
-            self.db.add_app(
-                plugin_id=self.PLUGIN_ID,
+            self.service.add_app(
                 name=name,
                 target_path=file_path,
                 category_id=category_id,
@@ -2454,8 +2440,7 @@ class AppLauncherWidget(QWidget):
         name = os.path.splitext(os.path.basename(file_path))[0]
         icon_path = self._extract_icon(file_path)
         
-        self.db.add_app(
-            plugin_id=self.PLUGIN_ID,
+        self.service.add_app(
             name=name,
             target_path=file_path,
             category_id=category_id,
@@ -2586,16 +2571,7 @@ class AppLauncherWidget(QWidget):
     def _get_recent_apps(self, limit: int = 10) -> List[Dict[str, Any]]:
         """获取最近使用的应用"""
         try:
-            with self.db.get_connection() as conn:
-                cursor = conn.execute("""
-                    SELECT * FROM app_launcher 
-                    WHERE plugin_id = ? AND last_launch_time IS NOT NULL
-                    ORDER BY last_launch_time DESC
-                    LIMIT ?
-                """, (self.PLUGIN_ID, limit))
-                rows = cursor.fetchall()
-                columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, row)) for row in rows]
+            return self.service.list_recent_apps(limit)
         except Exception as e:
             self.core.logger.error(f"获取最近使用应用失败: {e}")
             return []
@@ -2603,15 +2579,7 @@ class AppLauncherWidget(QWidget):
     def _get_favorite_apps(self) -> List[Dict[str, Any]]:
         """获取收藏的应用"""
         try:
-            with self.db.get_connection() as conn:
-                cursor = conn.execute("""
-                    SELECT * FROM app_launcher 
-                    WHERE plugin_id = ? AND is_favorite = 1
-                    ORDER BY name
-                """, (self.PLUGIN_ID,))
-                rows = cursor.fetchall()
-                columns = [description[0] for description in cursor.description]
-                return [dict(zip(columns, row)) for row in rows]
+            return self.service.list_favorite_apps()
         except Exception as e:
             self.core.logger.error(f"获取收藏应用失败: {e}")
             return []
@@ -2619,14 +2587,7 @@ class AppLauncherWidget(QWidget):
     def _record_launch(self, app_id: int):
         """记录应用启动"""
         try:
-            with self.db.get_connection() as conn:
-                conn.execute("""
-                    UPDATE app_launcher 
-                    SET launch_count = launch_count + 1,
-                        last_launch_time = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (app_id,))
-                conn.commit()
+            self.service.record_launch(app_id)
         except Exception as e:
             self.core.logger.error(f"记录启动失败: {e}")
     
@@ -2678,13 +2639,7 @@ class AppLauncherWidget(QWidget):
         new_status = 0 if is_favorite else 1
         
         try:
-            with self.db.get_connection() as conn:
-                conn.execute("""
-                    UPDATE app_launcher 
-                    SET is_favorite = ?
-                    WHERE id = ?
-                """, (new_status, app_id))
-                conn.commit()
+            self.service.set_favorite(app_id, bool(new_status))
             
             self._refresh_all_tabs()
             
@@ -2712,7 +2667,7 @@ class AppLauncherWidget(QWidget):
     
     def _edit_app(self, app_data: Dict[str, Any]):
         """编辑应用"""
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         dialog = AppEditDialog(app_data, categories, self)
         
         if dialog.exec():
@@ -2737,9 +2692,8 @@ class AppLauncherWidget(QWidget):
                     icon_path = self._extract_icon(new_path)
                 
                 # 更新数据库
-                self.db.update_app(
-                    plugin_id=self.PLUGIN_ID,
-                    app_id=app_id,
+                self.service.update_app(
+                    app_id,
                     name=new_data['name'],
                     target_path=new_data['target_path'],
                     category_id=new_data['category_id'],
@@ -2775,7 +2729,7 @@ class AppLauncherWidget(QWidget):
                         except Exception as e:
                             self.core.logger.warning(f"删除图标文件失败: {e}")
                 
-                self.db.delete_app(self.PLUGIN_ID, app_id)
+                self.service.delete_app(app_id)
                 self.selected_app_ids.discard(app_id)
                 self._refresh_all_tabs()
                 
@@ -2891,9 +2845,9 @@ class Plugin(PluginInterface):
 
     def search(self, query: str):
         """搜索应用"""
-        db = DatabaseManager()
+        service = AppLauncherService(self.PLUGIN_ID)
         results = []
-        apps = db.search_apps(self.PLUGIN_ID, query)
+        apps = service.search_apps(query)
         for app in apps[:20]:
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,

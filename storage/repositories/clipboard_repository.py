@@ -9,10 +9,10 @@ class ClipboardRepository(BaseRepository):
         config = TableConfig(
             table_name='clipboard_history',
             primary_key='id',
-            plugin_field=None,  # 剪贴板历史没有 plugin_id 字段
+            plugin_field='plugin_id',
             has_category=False,
             searchable_fields=['content'],
-            allowed_fields=['item_type', 'content', 'format']
+            allowed_fields=['plugin_id', 'content_type', 'item_type', 'content', 'format']
         )
         super().__init__(db_manager, config)
     

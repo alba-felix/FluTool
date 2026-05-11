@@ -15,9 +15,8 @@ from qfluentwidgets import (
     CardWidget, CheckBox
 )
 
-from storage import DatabaseManager
-
 from .page_interface import TabPageInterface
+from .translator_data_service import TranslatorDataService
 from .translation_service import get_translation_service, reset_translation_service
 
 
@@ -29,7 +28,7 @@ class TranslatePanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._db = DatabaseManager()
+        self._data_service = TranslatorDataService()
         # 重置翻译服务以确保使用最新配置
         self._translation_service = reset_translation_service()
         self._auto_translate_timer = QTimer(self)
@@ -199,11 +198,7 @@ class TranslatePanel(QWidget):
 
     def _save_to_history(self, source_text: str, target_text: str, source_lang: str, target_lang: str) -> None:
         try:
-            with self._db.get_connection() as conn:
-                conn.execute('''INSERT INTO translation_history 
-                    (source_text, target_text, source_lang, target_lang) VALUES (?, ?, ?, ?)''',
-                    (source_text, target_text, source_lang, target_lang))
-                conn.commit()
+            self._data_service.add_history(source_text, target_text, source_lang, target_lang)
         except Exception as e:
             print(f"[Translator] Error saving history: {e}")
 
@@ -248,7 +243,7 @@ class VocabularyPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._db = DatabaseManager()
+        self._data_service = TranslatorDataService()
         self._setup_ui()
         QTimer.singleShot(100, self._load_data)
 
@@ -285,13 +280,10 @@ class VocabularyPanel(QWidget):
     def _load_data(self) -> None:
         self._word_list.clear()
         try:
-            with self._db.get_connection() as conn:
-                cursor = conn.execute("SELECT id, word, translation FROM vocabulary ORDER BY id DESC LIMIT 100")
-                for row in cursor.fetchall():
-                    record_id, word, translation = row
-                    item = QListWidgetItem(f"{word} - {translation}")
-                    item.setData(Qt.UserRole, record_id)
-                    self._word_list.addItem(item)
+            for row in self._data_service.list_vocabulary():
+                item = QListWidgetItem(f"{row['word']} - {row['translation']}")
+                item.setData(Qt.UserRole, row['id'])
+                self._word_list.addItem(item)
         except Exception as e:
             print(f"[Vocabulary] Error loading data: {e}")
 
@@ -350,12 +342,7 @@ class VocabularyPanel(QWidget):
                 return
 
             try:
-                with self._db.get_connection() as conn:
-                    conn.execute(
-                        "INSERT INTO vocabulary (word, translation, notes, source_lang, target_lang) VALUES (?, ?, ?, 'en', 'zh')",
-                        (word, translation, notes)
-                    )
-                    conn.commit()
+                self._data_service.add_vocabulary(word, translation, notes)
 
                 InfoBar.success(title="添加成功", content=f"已添加单词: {word}",
                                orient=Qt.Horizontal, isClosable=True,
@@ -375,15 +362,12 @@ class VocabularyPanel(QWidget):
 
         # 获取当前数据
         try:
-            with self._db.get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT word, translation, notes FROM vocabulary WHERE id = ?",
-                    (record_id,)
-                )
-                row = cursor.fetchone()
-                if not row:
-                    return
-                current_word, current_translation, current_notes = row
+            row = self._data_service.get_vocabulary(record_id)
+            if not row:
+                return
+            current_word = row["word"]
+            current_translation = row["translation"]
+            current_notes = row.get("notes", "")
         except Exception as e:
             print(f"[Vocabulary] Error fetching word: {e}")
             return
@@ -433,12 +417,7 @@ class VocabularyPanel(QWidget):
                 return
 
             try:
-                with self._db.get_connection() as conn:
-                    conn.execute(
-                        "UPDATE vocabulary SET word = ?, translation = ?, notes = ? WHERE id = ?",
-                        (word, translation, notes, record_id)
-                    )
-                    conn.commit()
+                self._data_service.update_vocabulary(record_id, word, translation, notes)
 
                 InfoBar.success(title="更新成功", content=f"已更新单词: {word}",
                                orient=Qt.Horizontal, isClosable=True,
@@ -459,9 +438,7 @@ class VocabularyPanel(QWidget):
         box = MessageBox("确认删除", f"确定要删除单词 \"{word}\" 吗？", self)
         if box.exec():
             try:
-                with self._db.get_connection() as conn:
-                    conn.execute("DELETE FROM vocabulary WHERE id = ?", (record_id,))
-                    conn.commit()
+                self._data_service.delete_vocabulary(record_id)
 
                 InfoBar.success(title="删除成功", content=f"已删除单词: {word}",
                                orient=Qt.Horizontal, isClosable=True,
@@ -541,7 +518,7 @@ class HistoryPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._db = DatabaseManager()
+        self._data_service = TranslatorDataService()
         self._selected_items: List[QListWidgetItem] = []
         self._setup_ui()
         QTimer.singleShot(100, self._load_data)
@@ -616,46 +593,18 @@ class HistoryPanel(QWidget):
         self._select_all_cb.setChecked(False)
         
         try:
-            # 构建查询条件
             lang_filter = self._lang_filter.currentText()
             date_filter = self._date_filter.currentText()
-            
-            query = "SELECT id, source_text, target_text, source_lang, target_lang, created_at FROM translation_history WHERE 1=1"
-            params = []
-            
-            # 语言筛选
-            if lang_filter == "中文→英语":
-                query += " AND source_lang = '中文' AND target_lang = '英语'"
-            elif lang_filter == "英语→中文":
-                query += " AND source_lang = '英语' AND target_lang = '中文'"
-            elif lang_filter == "自动→中文":
-                query += " AND source_lang = '自动检测' AND target_lang = '中文'"
-            elif lang_filter == "其他":
-                query += " AND source_lang NOT IN ('中文', '英语', '自动检测')"
-            
-            # 日期筛选
-            if date_filter == "今天":
-                query += " AND date(created_at) = date('now')"
-            elif date_filter == "最近7天":
-                query += " AND created_at >= datetime('now', '-7 days')"
-            elif date_filter == "最近30天":
-                query += " AND created_at >= datetime('now', '-30 days')"
-            
-            query += " ORDER BY id DESC LIMIT 100"
-            
-            with self._db.get_connection() as conn:
-                cursor = conn.execute(query, params)
-                for row in cursor.fetchall():
-                    record_id, source_text, target_text, source_lang, target_lang, created_at = row
-                    display = f"[{source_lang}→{target_lang}] {source_text} → {target_text}"
-                    item = QListWidgetItem(display)
-                    item.setData(Qt.UserRole, record_id)
-                    item.setData(Qt.UserRole + 1, source_text)
-                    item.setData(Qt.UserRole + 2, target_text)
-                    item.setData(Qt.UserRole + 3, source_lang)
-                    item.setData(Qt.UserRole + 4, target_lang)
-                    item.setToolTip(f"原文: {source_text}\n译文: {target_text}\n时间: {created_at}")
-                    self._history_list.addItem(item)
+            for row in self._data_service.list_history(lang_filter, date_filter):
+                display = f"[{row['source_lang']}→{row['target_lang']}] {row['source_text']} → {row['target_text']}"
+                item = QListWidgetItem(display)
+                item.setData(Qt.UserRole, row['id'])
+                item.setData(Qt.UserRole + 1, row['source_text'])
+                item.setData(Qt.UserRole + 2, row['target_text'])
+                item.setData(Qt.UserRole + 3, row['source_lang'])
+                item.setData(Qt.UserRole + 4, row['target_lang'])
+                item.setToolTip(f"原文: {row['source_text']}\n译文: {row['target_text']}\n时间: {row['created_at']}")
+                self._history_list.addItem(item)
         except Exception as e:
             print(f"[History] Error loading data: {e}")
 
@@ -690,11 +639,7 @@ class HistoryPanel(QWidget):
         box = MessageBox("确认删除", f"确定要删除选中的 {len(selected_items)} 条历史记录吗？", self)
         if box.exec():
             try:
-                with self._db.get_connection() as conn:
-                    for item in selected_items:
-                        record_id = item.data(Qt.UserRole)
-                        conn.execute("DELETE FROM translation_history WHERE id = ?", (record_id,))
-                    conn.commit()
+                self._data_service.delete_histories([item.data(Qt.UserRole) for item in selected_items])
 
                 InfoBar.success(title="删除成功", content=f"已删除 {len(selected_items)} 条历史记录",
                                orient=Qt.Horizontal, isClosable=True,
@@ -712,9 +657,7 @@ class HistoryPanel(QWidget):
         box = MessageBox("确认清空", "确定要清空所有历史记录吗？此操作不可恢复。", self)
         if box.exec():
             try:
-                with self._db.get_connection() as conn:
-                    conn.execute("DELETE FROM translation_history")
-                    conn.commit()
+                self._data_service.clear_history()
                 self._load_data()
                 InfoBar.success(title="已清空", content="历史记录已清空",
                                orient=Qt.Horizontal, isClosable=True,
@@ -805,20 +748,12 @@ class HistoryPanel(QWidget):
                 return
 
             try:
-                with self._db.get_connection() as conn:
-                    # 检查是否已存在
-                    cursor = conn.execute("SELECT id FROM vocabulary WHERE word = ?", (word,))
-                    if cursor.fetchone():
-                        InfoBar.info(title="提示", content=f"单词 \"{word}\" 已存在于单词本",
-                                    orient=Qt.Horizontal, isClosable=True,
-                                    position=InfoBarPosition.TOP, duration=2000, parent=self)
-                        return
-
-                    conn.execute(
-                        "INSERT INTO vocabulary (word, translation, notes, source_lang, target_lang) VALUES (?, ?, ?, 'en', 'zh')",
-                        (word, translation, notes if notes else f"来自历史记录")
-                    )
-                    conn.commit()
+                if self._data_service.vocabulary_exists(word):
+                    InfoBar.info(title="提示", content=f"单词 \"{word}\" 已存在于单词本",
+                                orient=Qt.Horizontal, isClosable=True,
+                                position=InfoBarPosition.TOP, duration=2000, parent=self)
+                    return
+                self._data_service.add_vocabulary(word, translation, notes if notes else "来自历史记录")
 
                 InfoBar.success(title="添加成功", content=f"已添加单词到单词本: {word}",
                                orient=Qt.Horizontal, isClosable=True,
@@ -838,9 +773,7 @@ class HistoryPanel(QWidget):
         box = MessageBox("确认删除", f"确定要删除这条历史记录吗？\n{source_text[:30]}...", self)
         if box.exec():
             try:
-                with self._db.get_connection() as conn:
-                    conn.execute("DELETE FROM translation_history WHERE id = ?", (record_id,))
-                    conn.commit()
+                self._data_service.delete_history(record_id)
 
                 InfoBar.success(title="删除成功", content="已删除历史记录",
                                orient=Qt.Horizontal, isClosable=True,
@@ -923,7 +856,7 @@ class TranslatorWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._db = DatabaseManager()
+        self._data_service = TranslatorDataService()
         self._setup_ui()
         QTimer.singleShot(100, self._init_table)
 
@@ -971,29 +904,7 @@ class TranslatorWidget(QWidget):
     def _init_table(self) -> None:
         """初始化数据库表"""
         try:
-            with self._db.get_connection() as conn:
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS translation_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        source_text TEXT NOT NULL,
-                        target_text TEXT NOT NULL,
-                        source_lang TEXT DEFAULT 'auto',
-                        target_lang TEXT DEFAULT 'en',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                conn.execute('''
-                    CREATE TABLE IF NOT EXISTS vocabulary (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        word TEXT NOT NULL,
-                        translation TEXT NOT NULL,
-                        source_lang TEXT DEFAULT 'en',
-                        target_lang TEXT DEFAULT 'zh',
-                        notes TEXT DEFAULT '',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                conn.commit()
+            self._data_service.initialize_tables()
         except Exception as e:
             print(f"[Translator] Error initializing table: {e}")
 

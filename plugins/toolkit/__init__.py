@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 from core import PluginInterface, SearchResult
-from storage import DatabaseManager
+from .service import ToolkitService
 
 
 def get_app_data_path(relative_path: str) -> Path:
@@ -136,7 +136,7 @@ class ToolkitWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = ToolkitService(self.PLUGIN_ID)
         self._current_category_id: Optional[int] = None
         self._current_category_name = "全部"
         self._category_buttons: List[PushButton] = []
@@ -291,7 +291,7 @@ class ToolkitWidget(QWidget):
             btn.deleteLater()
         self._category_buttons.clear()
 
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         for cat in categories:
             btn = PushButton(cat['name'], self)
             btn.clicked.connect(partial(self._show_category, cat))
@@ -303,7 +303,7 @@ class ToolkitWidget(QWidget):
     def _load_tools(self, category_id: int = None) -> None:
         """加载工具列表"""
         self.tree.clear()
-        tools = self.db.get_commands(self.PLUGIN_ID, category_id)
+        tools = self.service.list_tools(category_id)
         self._tools_cache = tools
 
         for idx, tool in enumerate(tools, 1):
@@ -348,7 +348,7 @@ class ToolkitWidget(QWidget):
         if dialog.exec():
             name = dialog.get_name()
             if name:
-                self.db.add_category(self.PLUGIN_ID, name)
+                self.service.add_category(name)
                 self._load_categories()
                 InfoBar.success(
                     title="成功",
@@ -366,7 +366,7 @@ class ToolkitWidget(QWidget):
         if dialog.exec():
             name = dialog.get_name()
             if name and name != category['name']:
-                self.db.update_category(self.PLUGIN_ID, category['id'], name)
+                self.service.update_category(category['id'], name)
                 self._load_categories()
                 InfoBar.success(
                     title="成功",
@@ -383,7 +383,7 @@ class ToolkitWidget(QWidget):
         from qfluentwidgets import MessageBox
         box = MessageBox("确认删除", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的工具将移至未分类。", self)
         if box.exec():
-            self.db.delete_category(self.PLUGIN_ID, category['id'])
+            self.service.delete_category(category['id'])
             self._load_categories()
             if self._current_category_id == category['id']:
                 self._show_all()
@@ -399,7 +399,7 @@ class ToolkitWidget(QWidget):
 
     def _add_tool(self) -> None:
         """添加工具"""
-        categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
+        categories = self.service.list_category_names()
         dialog = ToolInputDialog(
             self,
             categories=categories,
@@ -407,8 +407,7 @@ class ToolkitWidget(QWidget):
         )
         if dialog.exec():
             data = dialog.get_tool_data()
-            self.db.add_command(
-                plugin_id=self.PLUGIN_ID,
+            self.service.add_tool(
                 name=data['name'],
                 content=data['content'],
                 sub_title=data.get('sub_title', ''),
@@ -431,7 +430,7 @@ class ToolkitWidget(QWidget):
         if not tool:
             return
 
-        categories = [cat['name'] for cat in self.db.get_categories(self.PLUGIN_ID)]
+        categories = self.service.list_category_names()
         dialog = ToolInputDialog(
             self,
             tool_data=tool,
@@ -442,8 +441,7 @@ class ToolkitWidget(QWidget):
 
         if dialog.exec():
             data = dialog.get_tool_data()
-            self.db.update_command(
-                self.PLUGIN_ID,
+            self.service.update_tool(
                 tool_id,
                 name=data['name'],
                 content=data['content'],
@@ -470,7 +468,7 @@ class ToolkitWidget(QWidget):
 
         box = MessageBox("确认删除", f"确定要删除工具 '{tool['name']}' 吗？", self)
         if box.exec():
-            self.db.delete_command(self.PLUGIN_ID, tool_id)
+            self.service.delete_tool(tool_id)
             self._load_tools(self._current_category_id)
             InfoBar.success(
                 title="成功",
@@ -586,8 +584,7 @@ class Plugin(PluginInterface):
     def search(self, query: str):
         """全局搜索"""
         results = []
-        db = DatabaseManager()
-        tools = db.search_commands(self.PLUGIN_ID, query)
+        tools = ToolkitService(self.PLUGIN_ID).search_tools(query)
 
         for tool in tools[:20]:
             result = SearchResult(

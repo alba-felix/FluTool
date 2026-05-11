@@ -18,11 +18,11 @@ from qfluentwidgets import (
     TransparentToolButton
 )
 from core import PluginInterface
-from storage import DatabaseManager
 from functools import partial
 from ui.custom_icon import CustomFluentIcon
 from core import SearchResult
 from ui.common import InputDialog
+from .service import BookmarkService
 
 
 def get_app_data_path(relative_path: str) -> Path:
@@ -254,7 +254,7 @@ class BookmarkWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = BookmarkService(self.PLUGIN_ID)
         self._current_category_id = None
         self._current_category_name = "全部"
         self._category_buttons = []
@@ -413,7 +413,7 @@ class BookmarkWidget(QWidget):
             btn.deleteLater()
         self._category_buttons.clear()
         
-        categories = self.db.get_categories(self.PLUGIN_ID)
+        categories = self.service.list_categories()
         for cat in categories:
             btn = PushButton(cat['name'], self)
             btn.clicked.connect(partial(self._show_category, cat))
@@ -447,7 +447,7 @@ class BookmarkWidget(QWidget):
             if new_name and new_name != category['name']:
                 existing_names = [btn.text() for btn in self._category_buttons]
                 if new_name not in existing_names:
-                    self.db.update_category(self.PLUGIN_ID, category['id'], new_name)
+                    self.service.rename_category(category['id'], new_name)
                     self._load_categories()
                     InfoBar.success(
                         title="修改成功",
@@ -489,7 +489,7 @@ class BookmarkWidget(QWidget):
         """删除分类"""
         box = MessageBox("删除分类", f"确定要删除分类 '{category['name']}' 吗？\n该分类下的书签将移至\"全部\"分类。", self)
         if box.exec():
-            self.db.delete_category(self.PLUGIN_ID, category['id'])
+            self.service.delete_category(category['id'])
             self._load_categories()
             if self._current_category_id == category['id']:
                 self._show_all()
@@ -509,7 +509,7 @@ class BookmarkWidget(QWidget):
     def _load_bookmarks(self) -> None:
         """加载书签列表"""
         self.tree.clear()
-        bookmarks = self.db.get_bookmarks(self.PLUGIN_ID, self._current_category_id)
+        bookmarks = self.service.list_bookmarks(self._current_category_id)
         
         for bm in bookmarks:
             item = QTreeWidgetItem(self.tree)
@@ -619,8 +619,7 @@ class BookmarkWidget(QWidget):
         """使用指定名称添加书签"""
         category_name = self._current_category_name if self._current_category_name != "全部" else None
 
-        self.db.add_bookmark(
-            plugin_id=self.PLUGIN_ID,
+        self.service.add_bookmark(
             name=name,
             url=url,
             category_name=category_name,
@@ -732,8 +731,7 @@ class BookmarkWidget(QWidget):
 
         category_name = self._current_category_name if self._current_category_name != "全部" else None
 
-        self.db.add_bookmark(
-            plugin_id=self.PLUGIN_ID,
+        self.service.add_bookmark(
             name=title,
             url=url,
             category_name=category_name,
@@ -779,7 +777,7 @@ class BookmarkWidget(QWidget):
             if not name:
                 return
 
-            self.db.add_category(self.PLUGIN_ID, name)
+            self.service.add_category(name)
             self._load_categories()
 
             InfoBar.success(
@@ -857,7 +855,7 @@ class BookmarkWidget(QWidget):
         # 移动分类
         move_menu = menu.addMenu("移动分类")
         current_cat = item.text(2) if item.columnCount() > 2 else ""
-        all_categories = self.db.get_categories(self.PLUGIN_ID)
+        all_categories = self.service.list_categories()
         for cat in all_categories:
             if cat['name'] == current_cat:
                 continue
@@ -880,7 +878,7 @@ class BookmarkWidget(QWidget):
         bm_id = item.data(0, Qt.UserRole)
         name = item.text(0)
         
-        self.db.update_bookmark(self.PLUGIN_ID, bm_id, category_id=new_category_id)
+        self.service.update_bookmark(bm_id, category_id=new_category_id)
         self._load_bookmarks()
         
         InfoBar.success(
@@ -910,7 +908,7 @@ class BookmarkWidget(QWidget):
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
 
-        self.db.update_bookmark(self.PLUGIN_ID, bm_id, name=name, url=url)
+        self.service.update_bookmark(bm_id, name=name, url=url)
         self._load_bookmarks()
 
         # 记录操作日志
@@ -925,7 +923,7 @@ class BookmarkWidget(QWidget):
             return
         notes = dialog.get_text()
         
-        self.db.update_bookmark(self.PLUGIN_ID, bm_id, notes=notes)
+        self.service.update_bookmark(bm_id, notes=notes)
         item.setText(3, notes)
     
     def _set_icon(self, item: QTreeWidgetItem) -> None:
@@ -950,7 +948,7 @@ class BookmarkWidget(QWidget):
         shutil.copy2(file_path, icon_path)
         
         relative_path = f"data/icons/{icon_filename}"
-        self.db.update_bookmark(self.PLUGIN_ID, bm_id, icon=relative_path)
+        self.service.update_bookmark(bm_id, icon=relative_path)
         
         item.setIcon(0, QIcon(str(icon_path)))
         
@@ -970,7 +968,7 @@ class BookmarkWidget(QWidget):
         name = item.text(0)
 
         if MessageBox("确认删除", f"确定要删除 '{name}' 吗？", self).exec():
-            self.db.delete_bookmark(self.PLUGIN_ID, bm_id)
+            self.service.delete_bookmark(bm_id)
             self._load_bookmarks()
             # 记录操作日志
             if hasattr(self, 'core') and self.core and hasattr(self.core, 'logger'):
@@ -1032,7 +1030,7 @@ class BookmarkWidget(QWidget):
             for item in selected_items:
                 bm_id = item.data(0, Qt.UserRole)
                 deleted_names.append(item.text(0))
-                self.db.delete_bookmark(self.PLUGIN_ID, bm_id)
+                self.service.delete_bookmark(bm_id)
 
             self._exit_batch_mode()
             self._load_bookmarks()
@@ -1082,9 +1080,8 @@ class Plugin(PluginInterface):
         return True
     
     def search(self, query: str):
-        db = DatabaseManager()
         results = []
-        bookmarks = db.search_bookmarks(self.PLUGIN_ID, query)
+        bookmarks = BookmarkService(self.PLUGIN_ID).search(query)
         for bm in bookmarks[:20]:
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,

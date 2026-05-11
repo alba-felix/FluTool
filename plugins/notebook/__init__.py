@@ -10,116 +10,14 @@ from qfluentwidgets import (
 from qfluentwidgets import FluentIcon as FIF
 
 from core import PluginInterface
-from storage import DatabaseManager
 from ui import CustomFluentIcon as CFIF
 from core import SearchResult
+from plugins.notebook.service import NotebookService
 from .sidebar import NotebookSidebar
 from .toolbar import NotebookToolBar
 from .editor import NotebookEditor
 from .quick_replace import QuickReplacePanel
 from .text_processor import TextProcessor
-
-
-class NotebookDatabase:
-    """随手记数据库操作类"""
-    
-    def __init__(self):
-        """初始化数据库连接"""
-        from storage import DatabaseManager
-        self.db = DatabaseManager()
-    
-    def add_note(self, plugin_id: str, title: str, content: str,
-                 category_name: str = None, note_type: str = 'markdown',
-                 sort_order: int = 0, color: str = None) -> int:
-        """添加笔记"""
-        with self.db.get_connection() as conn:
-            category_id = None
-            if category_name:
-                cursor = conn.execute(
-                    "SELECT id FROM categories WHERE plugin_id = ? AND name = ?",
-                    (plugin_id, category_name)
-                )
-                row = cursor.fetchone()
-                if row:
-                    category_id = row['id']
-            cursor = conn.execute(
-                """INSERT INTO notebook (plugin_id, category_id, title, content, note_type, sort_order, color) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (plugin_id, category_id, title, content, note_type, sort_order, color)
-            )
-            conn.commit()
-            return cursor.lastrowid
-    
-    def note_exists(self, plugin_id: str, title: str) -> bool:
-        """检查笔记是否存在"""
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT 1 FROM notebook WHERE plugin_id = ? AND title = ?",
-                (plugin_id, title)
-            )
-            return cursor.fetchone() is not None
-    
-    def get_notes(self, plugin_id: str, category_id: int = None) -> List[Dict[str, Any]]:
-        """获取笔记列表"""
-        with self.db.get_connection() as conn:
-            if category_id:
-                cursor = conn.execute(
-                    """SELECT n.*, c.name as category_name 
-                       FROM notebook n 
-                       LEFT JOIN categories c ON n.category_id = c.id 
-                       WHERE n.plugin_id = ? AND n.category_id = ?
-                       ORDER BY n.sort_order, n.id DESC""",
-                    (plugin_id, category_id)
-                )
-            else:
-                cursor = conn.execute(
-                    """SELECT n.*, c.name as category_name 
-                       FROM notebook n 
-                       LEFT JOIN categories c ON n.category_id = c.id 
-                       WHERE n.plugin_id = ?
-                       ORDER BY n.sort_order, n.id DESC""",
-                    (plugin_id,)
-                )
-            return [dict(row) for row in cursor.fetchall()]
-    
-    def update_note(self, plugin_id: str, note_id: int, **kwargs) -> bool:
-        """更新笔记"""
-        allowed_fields = {'title', 'content', 'note_type', 'category_id', 'sort_order', 'color'}
-        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
-        if not updates:
-            return False
-        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
-        values = list(updates.values()) + [plugin_id, note_id]
-        with self.db.get_connection() as conn:
-            conn.execute(
-                f"UPDATE notebook SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE plugin_id = ? AND id = ?",
-                values
-            )
-            conn.commit()
-            return True
-    
-    def delete_note(self, plugin_id: str, note_id: int) -> bool:
-        """删除笔记"""
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(
-                "DELETE FROM notebook WHERE plugin_id = ? AND id = ?",
-                (plugin_id, note_id)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
-    
-    def search_notes(self, plugin_id: str, keyword: str) -> List[Dict[str, Any]]:
-        """搜索笔记"""
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(
-                """SELECT n.*, c.name as category_name 
-                   FROM notebook n 
-                   LEFT JOIN categories c ON n.category_id = c.id 
-                   WHERE n.plugin_id = ? AND (n.title LIKE ? OR n.content LIKE ?)
-                   ORDER BY n.sort_order, n.id DESC""",
-                (plugin_id, f'%{keyword}%', f'%{keyword}%')
-            )
-            return [dict(row) for row in cursor.fetchall()]
 
 
 class NotebookWidget(QWidget):
@@ -131,8 +29,8 @@ class NotebookWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = NotebookDatabase()
         self.PLUGIN_ID = "notebook"
+        self.service = NotebookService(self.PLUGIN_ID)
         self._current_note_id = None
         self._quick_replace_visible = False
         self._setup_ui()
@@ -354,19 +252,18 @@ class NotebookWidget(QWidget):
     
     def load_data(self):
         """加载数据"""
-        self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+        self._sidebar.load_notes(self.service.list_notes())
     
     def _load_note(self, note_id: int):
         """加载笔记"""
-        notes = self.db.get_notes(self.PLUGIN_ID)
-        for note in notes:
-            if note['id'] == note_id:
-                self._current_note_id = note_id
-                self._editor.set_content(note['content'])
-                self._toolbar.set_note_type(note.get('note_type', 'markdown'))
-                self._editor._editor.setLineWrapMode(1)
-                self._toolbar.set_wrap_state(True)
-                break
+        note = self.service.get_note(note_id)
+        if not note:
+            return
+        self._current_note_id = note_id
+        self._editor.set_content(note['content'])
+        self._toolbar.set_note_type(note.get('note_type', 'markdown'))
+        self._editor._editor.setLineWrapMode(1)
+        self._toolbar.set_wrap_state(True)
     
     def _create_new_note(self):
         """创建新笔记"""
@@ -385,21 +282,16 @@ class NotebookWidget(QWidget):
         note_type = self._toolbar.get_note_type()
 
         if self._current_note_id:
-            notes = self.db.get_notes(self.PLUGIN_ID)
-            current_title = ""
-            for note in notes:
-                if note['id'] == self._current_note_id:
-                    current_title = note['title']
-                    break
+            note = self.service.get_note(self._current_note_id)
+            current_title = note['title'] if note else ""
 
-            self.db.update_note(
-                self.PLUGIN_ID,
+            self.service.update_note(
                 self._current_note_id,
                 content=content,
                 note_type=note_type
             )
             InfoBar.success("保存成功", f"笔记 '{current_title}' 已更新", parent=self)
-            self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+            self._sidebar.load_notes(self.service.list_notes())
             self.note_saved.emit()
             # 记录操作日志
             if self.core and hasattr(self.core, 'logger'):
@@ -423,8 +315,7 @@ class NotebookWidget(QWidget):
             if not title:
                 title = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            note_id = self.db.add_note(
-                self.PLUGIN_ID,
+            note_id = self.service.add_note(
                 title=title,
                 content=content,
                 note_type=note_type
@@ -432,7 +323,7 @@ class NotebookWidget(QWidget):
             self._current_note_id = note_id
             InfoBar.success("创建成功", f"笔记 '{title}' 已创建", parent=self)
 
-            self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+            self._sidebar.load_notes(self.service.list_notes())
             self.note_saved.emit()
             # 记录操作日志
             if self.core and hasattr(self.core, 'logger'):
@@ -447,17 +338,13 @@ class NotebookWidget(QWidget):
         box = MessageBox("删除笔记", "确定要删除当前笔记吗？", self)
         if box.exec():
             # 获取笔记标题用于日志
-            notes = self.db.get_notes(self.PLUGIN_ID)
-            note_title = ""
-            for note in notes:
-                if note['id'] == self._current_note_id:
-                    note_title = note['title']
-                    break
+            note = self.service.get_note(self._current_note_id)
+            note_title = note['title'] if note else ""
 
-            self.db.delete_note(self.PLUGIN_ID, self._current_note_id)
+            self.service.delete_note(self._current_note_id)
             self._current_note_id = None
             self._editor.clear()
-            self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+            self._sidebar.load_notes(self.service.list_notes())
             InfoBar.success("删除成功", "笔记已删除", parent=self)
             self.note_deleted.emit()
             # 记录操作日志
@@ -469,18 +356,14 @@ class NotebookWidget(QWidget):
         box = MessageBox("删除笔记", "确定要删除该笔记吗？", self)
         if box.exec():
             # 获取笔记标题用于日志
-            notes = self.db.get_notes(self.PLUGIN_ID)
-            note_title = ""
-            for note in notes:
-                if note['id'] == note_id:
-                    note_title = note['title']
-                    break
+            note = self.service.get_note(note_id)
+            note_title = note['title'] if note else ""
 
-            self.db.delete_note(self.PLUGIN_ID, note_id)
+            self.service.delete_note(note_id)
             if self._current_note_id == note_id:
                 self._current_note_id = None
                 self._editor.clear()
-            self._sidebar.load_notes(self.db.get_notes(self.PLUGIN_ID))
+            self._sidebar.load_notes(self.service.list_notes())
             InfoBar.success("删除成功", "笔记已删除", parent=self)
             self.note_deleted.emit()
             # 记录操作日志
@@ -489,11 +372,11 @@ class NotebookWidget(QWidget):
 
     def _rename_note(self, note_id: int, new_title: str):
         """重命名笔记"""
-        if self.db.note_exists(self.PLUGIN_ID, new_title):
+        if self.service.note_exists(new_title):
             InfoBar.warning("提示", "已存在同名笔记", parent=self)
             return
 
-        self.db.update_note(self.PLUGIN_ID, note_id, title=new_title)
+        self.service.update_note(note_id, title=new_title)
         self._sidebar.update_note_title(note_id, new_title)
         InfoBar.success("重命名成功", f"笔记已重命名为 '{new_title}'", parent=self)
         # 记录操作日志
@@ -620,14 +503,12 @@ class NotebookWidget(QWidget):
         line_count = len(content.splitlines())
         word_count = len(content.split())
         
-        notes = self.db.get_notes(self.PLUGIN_ID)
         created_at = ""
         updated_at = ""
-        for note in notes:
-            if note['id'] == self._current_note_id:
-                created_at = note.get('created_at', '')
-                updated_at = note.get('updated_at', '')
-                break
+        note = self.service.get_note(self._current_note_id)
+        if note:
+            created_at = note.get('created_at', '')
+            updated_at = note.get('updated_at', '')
         
         info_text = f"""字符数：{char_count}
 字符数(不含空白)：{char_no_space}
@@ -708,19 +589,15 @@ class NotebookWidget(QWidget):
             InfoBar.warning("提示", "请先选择要导出的笔记", parent=self)
             return
         
-        notes = self.db.get_notes(self.PLUGIN_ID)
-        for note in notes:
-            if note['id'] == self._current_note_id:
-                self._do_export_note(note)
-                break
+        note = self.service.get_note(self._current_note_id)
+        if note:
+            self._do_export_note(note)
     
     def _export_note_by_id(self, note_id: int):
         """通过ID导出笔记"""
-        notes = self.db.get_notes(self.PLUGIN_ID)
-        for note in notes:
-            if note['id'] == note_id:
-                self._do_export_note(note)
-                break
+        note = self.service.get_note(note_id)
+        if note:
+            self._do_export_note(note)
     
     def _do_export_note(self, note: dict):
         """执行导出"""
@@ -848,9 +725,9 @@ class Plugin(PluginInterface):
         return True
     
     def search(self, query: str):
-        db = NotebookDatabase()
+        service = NotebookService(self.PLUGIN_ID)
         results = []
-        notes = db.search_notes(self.PLUGIN_ID, query)
+        notes = service.search_notes(query)
         for note in notes[:20]:
             content_preview = note.get('content', '')[:100] + '...' if len(note.get('content', '')) > 100 else note.get('content', '')
             result = SearchResult(

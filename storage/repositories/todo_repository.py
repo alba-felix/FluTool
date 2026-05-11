@@ -122,7 +122,7 @@ class TodoRepository:
     def search(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
         """搜索待办事项"""
         sql = """
-            SELECT id, title, description, priority, due_date, completed, pinned 
+            SELECT id, title, description, priority, due_date, completed, pinned, status 
             FROM todos 
             WHERE title LIKE ? OR description LIKE ? OR tags LIKE ?
             ORDER BY pinned DESC, id DESC 

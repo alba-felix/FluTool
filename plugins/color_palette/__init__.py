@@ -18,7 +18,7 @@ from qfluentwidgets import (
     CardWidget, SpinBox, isDarkTheme, qconfig
 )
 from core import PluginInterface, SearchResult
-from storage import DatabaseManager
+from plugins.color_palette.service import ColorPaletteService
 
 # Windows Hook 常量
 WH_MOUSE_LL = 14
@@ -244,7 +244,7 @@ class ColorPaletteWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.db = DatabaseManager()
+        self.service = ColorPaletteService(self.PLUGIN_ID)
         self.current_color = QColor(255, 255, 255)
         self.is_picking = False
         self.updating_display = False
@@ -254,11 +254,11 @@ class ColorPaletteWidget(QWidget):
         self.init_ui()
         self.setup_style()
         self.load_colors()
-        qconfig.themeChanged.connect(self.on_theme_changed)
+        qconfig.themeChangedFinished.connect(self.on_theme_changed)
 
     def on_theme_changed(self):
         """主题变化时更新样式"""
-        self.setupStyle()
+        QTimer.singleShot(0, self.setup_style)
 
     def init_ui(self):
         """初始化界面"""
@@ -1027,7 +1027,7 @@ class ColorPaletteWidget(QWidget):
         color_hex = self.current_color.name()
         color_rgb = f"{self.current_color.red()},{self.current_color.green()},{self.current_color.blue()}"
 
-        if self.db.color_exists(self.PLUGIN_ID, color_hex):
+        if self.service.color_exists(color_hex):
             InfoBar.warning(
                 title="已存在",
                 content=f"颜色 {color_hex} 已存在于数据库中",
@@ -1037,8 +1037,7 @@ class ColorPaletteWidget(QWidget):
             return
 
         color_name = color_hex
-        self.db.add_color(
-            plugin_id=self.PLUGIN_ID,
+        self.service.add_color(
             name=color_name,
             color_hex=color_hex,
             color_rgb=color_rgb
@@ -1055,7 +1054,7 @@ class ColorPaletteWidget(QWidget):
     def load_colors(self):
         """加载颜色列表"""
         self.favorite_list.clear()
-        colors = self.db.get_colors(self.PLUGIN_ID)
+        colors = self.service.list_colors()
 
         for color_data in colors:
             item = QListWidgetItem()
@@ -1086,9 +1085,7 @@ class ColorPaletteWidget(QWidget):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            colors = self.db.get_colors(self.PLUGIN_ID)
-            for color_data in colors:
-                self.db.delete_color(self.PLUGIN_ID, color_data['id'])
+            self.service.clear_colors()
             self.load_colors()
             InfoBar.success(
                 title="清空成功",
@@ -1104,7 +1101,7 @@ class ColorPaletteWidget(QWidget):
             self.load_colors()
             return
 
-        colors = self.db.search_colors(self.PLUGIN_ID, keyword)
+        colors = self.service.search_colors(keyword)
         for color_data in colors:
             item = QListWidgetItem()
             item.setText(color_data['color_hex'])
@@ -1158,13 +1155,7 @@ class ColorPaletteWidget(QWidget):
         )
 
         if reply == QMessageBox.Yes:
-            for item in items:
-                color_hex = item.text()
-                colors = self.db.get_colors(self.PLUGIN_ID)
-                for color_data in colors:
-                    if color_data['color_hex'] == color_hex:
-                        self.db.delete_color(self.PLUGIN_ID, color_data['id'])
-                        break
+            self.service.delete_colors_by_hex([item.text() for item in items])
 
             self.load_colors()
             InfoBar.success(
@@ -1217,9 +1208,9 @@ class Plugin(PluginInterface):
 
     def search(self, query: str):
         """搜索颜色"""
-        db = DatabaseManager()
+        service = ColorPaletteService(self.PLUGIN_ID)
         results = []
-        colors = db.search_colors(self.PLUGIN_ID, query)
+        colors = service.search_colors(query)
         for color in colors[:20]:
             result = SearchResult(
                 plugin_id=self.PLUGIN_ID,
