@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "default_provider": "doubao",
-  "default_model": "doubao-seed-1-6-251015",
+  "default_provider": "deepseek",
+  "default_model": "deepseek-chat",
   "providers": {
     "siliconflow": {
       "base_url": "https://api.siliconflow.cn/v1",
