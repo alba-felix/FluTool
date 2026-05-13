@@ -3,7 +3,7 @@
 from typing import Optional, Dict, Any, List
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QMenu, QAction, QHeaderView, QApplication
+    QAction, QHeaderView, QApplication
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QCursor
@@ -12,7 +12,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     setCustomStyleSheet, isDarkTheme, qconfig,
     MessageBoxBase, SubtitleLabel, TransparentToolButton,
-    SingleDirectionScrollArea, ComboBox
+    SingleDirectionScrollArea, ComboBox, RoundMenu
 )
 from functools import partial
 import subprocess
@@ -329,8 +329,7 @@ class ToolkitWidget(QWidget):
 
     def _show_category_menu(self, category: dict, pos) -> None:
         """分类右键菜单"""
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
 
         edit_action = QAction("编辑分类", self)
         edit_action.triggered.connect(partial(self._edit_category, category))
@@ -507,8 +506,7 @@ class ToolkitWidget(QWidget):
             return
 
         tool_id = item.data(0, Qt.UserRole)
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
 
         launch_action = QAction("启动", self)
         launch_action.triggered.connect(lambda: self._launch_tool(item))

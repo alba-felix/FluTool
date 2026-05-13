@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QMenu, QAction, QFormLayout,
+    QAction, QFormLayout,
     QApplication
 )
 from PyQt5.QtCore import Qt, QTimer, QTimer
@@ -17,7 +17,7 @@ from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit, TextEdit, BodyLabel,
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     setCustomStyleSheet, isDarkTheme, qconfig, MessageBoxBase, SubtitleLabel,
-    MessageBox, PlainTextEdit
+    MessageBox, PlainTextEdit, RoundMenu
 )
 
 from core import PluginInterface
@@ -602,7 +602,7 @@ class PasswordWidget(QWidget):
         if not item:
             return
         
-        menu = QMenu(self)
+        menu = RoundMenu(parent=self)
         
         if item.parent():
             encrypted_pwd = item.data(1, Qt.UserRole)
@@ -619,7 +619,8 @@ class PasswordWidget(QWidget):
             edit_action.triggered.connect(lambda: self._edit_password(item))
             menu.addAction(edit_action)
             
-            move_menu = menu.addMenu("移动分类")
+            move_menu = RoundMenu("移动分类", self)
+            menu.addMenu(move_menu)
             current_category = item.parent()
             all_categories = self._get_all_categories()
             for cat_name, cat_id in all_categories:

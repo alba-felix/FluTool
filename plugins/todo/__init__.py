@@ -16,7 +16,7 @@ from qfluentwidgets import (
     InfoBar, InfoBarPosition, TreeWidget, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig,
     MessageBoxBase, TransparentToolButton, CaptionLabel, ComboBox,
-    TextEdit, CheckBox, SubtitleLabel, BodyLabel, MessageBox
+    TextEdit, CheckBox, SubtitleLabel, BodyLabel, MessageBox, RoundMenu
 )
 from core import PluginInterface
 from .service import TodoService
@@ -665,7 +665,7 @@ class TodoWidget(QWidget):
     def _show_context_menu(self, pos):
         """显示右键菜单"""
         from PyQt5.QtGui import QCursor
-        from PyQt5.QtWidgets import QMenu, QAction
+        from PyQt5.QtWidgets import QAction
         
         item = self.tree.itemAt(pos)
         if not item:
@@ -676,8 +676,7 @@ class TodoWidget(QWidget):
             return
         todo = self.todos[todo_idx]
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         if todo.get("completed", False):
             toggle_action = QAction("标记为未完成", self)

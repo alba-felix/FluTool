@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any, List
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QMenu, QAction,
+    QAction,
     QFormLayout, QHeaderView, QApplication, QLabel
 )
 from PyQt5.QtGui import QColor
@@ -11,7 +11,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     ProgressBar, TransparentToolButton, SingleDirectionScrollArea,
     setCustomStyleSheet, isDarkTheme, qconfig, MessageBoxBase,
-    SubtitleLabel, ComboBox, CaptionLabel, MessageBox
+    SubtitleLabel, ComboBox, CaptionLabel, MessageBox, RoundMenu
 )
 from core import PluginInterface
 from core.async_loader import BaseAsyncLoader
@@ -345,8 +345,7 @@ class CommandWidget(QWidget):
         """显示分类右键菜单"""
         from PyQt5.QtGui import QCursor
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         edit_action = QAction("编辑分类", self)
         edit_action.triggered.connect(partial(self._edit_category, category))
@@ -545,8 +544,7 @@ class CommandWidget(QWidget):
         if not item:
             return
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         copy_action = QAction("复制命令", self)
         copy_action.triggered.connect(partial(self._copy_command, item))
@@ -559,7 +557,8 @@ class CommandWidget(QWidget):
         menu.addAction(edit_action)
         
         # 移动分类
-        move_menu = menu.addMenu("移动分类")
+        move_menu = RoundMenu("移动分类", self)
+        menu.addMenu(move_menu)
         current_cat = item.text(3) if item.columnCount() > 3 else ""
         all_categories = self.service.list_categories()
         for cat in all_categories:

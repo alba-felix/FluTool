@@ -2,8 +2,8 @@
 
 from typing import List, Dict, Any
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QHBoxLayout, QMenu, QAction
-from qfluentwidgets import SearchLineEdit, ToolButton, FluentIcon as FIF, isDarkTheme
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QHBoxLayout, QAction
+from qfluentwidgets import SearchLineEdit, ToolButton, FluentIcon as FIF, isDarkTheme, RoundMenu
 from ui import CustomFluentIcon as CFIF
 
 
@@ -123,22 +123,7 @@ class NotebookSidebar(QWidget):
         
         note_id = item.data(Qt.UserRole)
         
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2d2d2d;
-                border: 1px solid #3d3d3d;
-                border-radius: 4px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-                border-radius: 2px;
-            }
-            QMenu::item:selected {
-                background-color: rgba(0, 120, 215, 0.2);
-            }
-        """)
+        menu = RoundMenu(parent=self)
         
         rename_action = QAction("重命名", self)
         rename_action.triggered.connect(lambda: self._rename_note(note_id))

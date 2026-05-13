@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QMenu, QAction, QFileDialog, QHeaderView,
+    QAction, QFileDialog, QHeaderView,
     QApplication
 )
 from PyQt5.QtCore import Qt, QUrl, QThread, pyqtSignal
@@ -15,7 +15,7 @@ from qfluentwidgets import (
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     setCustomStyleSheet, isDarkTheme, qconfig, IndeterminateProgressBar,
     MessageBoxBase, SubtitleLabel, MessageBox, SingleDirectionScrollArea,
-    TransparentToolButton
+    TransparentToolButton, RoundMenu
 )
 from core import PluginInterface
 from functools import partial
@@ -426,8 +426,7 @@ class BookmarkWidget(QWidget):
         """显示分类右键菜单"""
         from PyQt5.QtGui import QCursor
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         edit_action = QAction("编辑分类", self)
         edit_action.triggered.connect(partial(self._edit_category, category))
@@ -829,8 +828,7 @@ class BookmarkWidget(QWidget):
         if not item:
             return
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         open_action = QAction("打开网站", self)
         open_action.triggered.connect(partial(self._open_website, item))
@@ -853,7 +851,8 @@ class BookmarkWidget(QWidget):
         menu.addSeparator()
         
         # 移动分类
-        move_menu = menu.addMenu("移动分类")
+        move_menu = RoundMenu("移动分类", self)
+        menu.addMenu(move_menu)
         current_cat = item.text(2) if item.columnCount() > 2 else ""
         all_categories = self.service.list_categories()
         for cat in all_categories:

@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any, List
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeWidgetItem,
-    QMenu, QAction, QFormLayout, QHeaderView, QApplication,
+    QAction, QFormLayout, QHeaderView, QApplication,
     QLabel, QSplitter, QFileDialog
 )
 from PyQt5.QtGui import QColor, QFont
@@ -13,7 +13,8 @@ from qfluentwidgets import (
     FluentIcon as FIF, InfoBar, InfoBarPosition, TreeWidget,
     ProgressBar, TransparentToolButton, SingleDirectionScrollArea,
     setCustomStyleSheet, isDarkTheme, qconfig, MessageBoxBase,
-    SubtitleLabel, ComboBox, CaptionLabel, MessageBox, PlainTextEdit
+    SubtitleLabel, ComboBox, CaptionLabel, MessageBox, PlainTextEdit,
+    RoundMenu
 )
 from core import PluginInterface
 from core.async_loader import BaseAsyncLoader
@@ -518,8 +519,7 @@ class ScriptWidget(QWidget):
     def _show_category_menu(self, category: dict, pos) -> None:
         from PyQt5.QtGui import QCursor
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         edit_action = QAction("编辑分类", self)
         edit_action.triggered.connect(partial(self._edit_category, category))
@@ -697,8 +697,7 @@ class ScriptWidget(QWidget):
         if not item:
             return
         
-        menu = QMenu(self)
-        menu.setAttribute(Qt.WA_DeleteOnClose)
+        menu = RoundMenu(parent=self)
         
         edit_action = QAction("编辑信息", self)
         edit_action.triggered.connect(partial(self._edit_script_info, item))

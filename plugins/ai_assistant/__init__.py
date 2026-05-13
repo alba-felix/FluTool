@@ -18,6 +18,7 @@ from qfluentwidgets import (
     isDarkTheme, ToolButton,
     LineEdit,
     PushButton,
+    RoundMenu,
 )
 
 from core import PluginInterface
@@ -485,11 +486,11 @@ class AIAssistantWidget(QWidget):
         """)
 
     def _show_history_context_menu(self, pos) -> None:
-        from PyQt5.QtWidgets import QMenu, QAction
+        from PyQt5.QtWidgets import QAction
         item = self._sidebar.history_list.itemAt(pos)
         if not item:
             return
-        menu = QMenu(self)
+        menu = RoundMenu(parent=self)
         
         rename_action = QAction("重命名", self)
         rename_action.triggered.connect(lambda: self._rename_conversation(item))

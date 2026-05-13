@@ -17,7 +17,7 @@ from PyQt5.QtCore import Qt, QSize, QFileInfo, QTimer, pyqtSignal, QRect
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
     QFileDialog, QFileIconProvider, QScrollArea,
-    QTabWidget, QTabBar, QMenu, QAction, QLabel, QFrame, QSizePolicy
+    QTabWidget, QTabBar, QAction, QLabel, QFrame, QSizePolicy
 )
 from PyQt5.QtGui import QIcon, QPixmap, QCursor, QPainter, QColor, QBrush, QPen, QImage
 from qfluentwidgets import (
@@ -26,7 +26,8 @@ from qfluentwidgets import (
     TransparentToolButton, BodyLabel, IconWidget, CaptionLabel,
     MessageBox, setCustomStyleSheet, MessageBoxBase,
     StyleSheetBase, Theme, qconfig, isDarkTheme, PrimaryPushButton,
-    ScrollArea, SmoothScrollArea, SubtitleLabel, ComboBox, TextEdit, CheckBox
+    ScrollArea, SmoothScrollArea, SubtitleLabel, ComboBox, TextEdit, CheckBox,
+    RoundMenu
 )
 from qfluentwidgets.common.icon import drawIcon
 
@@ -1051,8 +1052,7 @@ class AppCard(CardWidget):
     
     def _show_context_menu(self):
         """显示右键菜单"""
-        menu = QMenu(self)
-        menu.setStyleSheet(get_menu_style())
+        menu = RoundMenu(parent=self)
         
         # 收藏/取消收藏
         is_favorite = self.app_data.get('is_favorite', 0)
@@ -1335,8 +1335,7 @@ class CategoryTab(QScrollArea):
     
     def _show_context_menu(self, pos):
         """显示右键菜单"""
-        menu = QMenu(self)
-        menu.setStyleSheet(get_menu_style())
+        menu = RoundMenu(parent=self)
         add_action = QAction("添加应用", self)
         add_action.triggered.connect(self.add_app_clicked.emit)
         menu.addAction(add_action)
@@ -2143,8 +2142,7 @@ class AppLauncherWidget(QWidget):
     
     def _show_category_menu(self, category_id: int, pos):
         """显示分类右键菜单"""
-        menu = QMenu(self)
-        menu.setStyleSheet(get_menu_style())
+        menu = RoundMenu(parent=self)
         
         edit_action = QAction("编辑分类", self)
         edit_action.triggered.connect(lambda: self._edit_category(category_id))
@@ -2753,8 +2751,7 @@ class AppLauncherWidget(QWidget):
     
     def _show_sort_menu(self):
         """显示排序菜单"""
-        menu = QMenu(self)
-        menu.setStyleSheet(get_menu_style())
+        menu = RoundMenu(parent=self)
         
         # 按名称排序
         name_action = QAction("按名称排序", self)

@@ -10,12 +10,12 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QColorDialog,
     QGridLayout, QScrollArea, QFrame, QTabWidget,
     QSplitter, QListWidget, QListWidgetItem, QMessageBox, QToolTip,
-    QMenu, QAction, QApplication
+    QAction, QApplication
 )
 from qfluentwidgets import (
     StrongBodyLabel, PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, ScrollArea, PrimaryPushButton, ToolButton,
-    CardWidget, SpinBox, isDarkTheme, qconfig
+    CardWidget, SpinBox, isDarkTheme, qconfig, RoundMenu
 )
 from core import PluginInterface, SearchResult
 from plugins.color_palette.service import ColorPaletteService
@@ -1132,7 +1132,7 @@ class ColorPaletteWidget(QWidget):
         if not selected_items:
             return
 
-        menu = QMenu()
+        menu = RoundMenu(parent=self)
 
         delete_action = QAction("删除所选颜色", self)
         delete_action.triggered.connect(lambda: self.delete_favorite_color(selected_items))

@@ -12,7 +12,7 @@ from qfluentwidgets import (
     PushButton, TransparentToolButton, StrongBodyLabel,
     ComboBox, LineEdit, InfoBar, InfoBarPosition,
     TextEdit as FluentTextEdit, SegmentedWidget, ListWidget,
-    CardWidget, CheckBox
+    CardWidget, CheckBox, RoundMenu
 )
 
 from .page_interface import TabPageInterface
@@ -451,53 +451,13 @@ class VocabularyPanel(QWidget):
 
     def _on_word_context_menu(self, pos) -> None:
         """单词列表右键菜单"""
-        from PyQt5.QtWidgets import QMenu, QAction
-        from qfluentwidgets import isDarkTheme
+        from PyQt5.QtWidgets import QAction
 
         item = self._word_list.itemAt(pos)
         if not item:
             return
 
-        menu = QMenu(self)
-        
-        # 根据当前主题设置样式
-        dark = isDarkTheme()
-        if dark:
-            menu.setStyleSheet("""
-                QMenu {
-                    background-color: #2d2d2d;
-                    border: 1px solid #3d3d3d;
-                    border-radius: 4px;
-                    padding: 4px;
-                    color: #ffffff;
-                }
-                QMenu::item {
-                    padding: 6px 20px;
-                    border-radius: 2px;
-                    color: #ffffff;
-                }
-                QMenu::item:selected {
-                    background-color: rgba(0, 120, 215, 0.3);
-                }
-            """)
-        else:
-            menu.setStyleSheet("""
-                QMenu {
-                    background-color: #ffffff;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 4px;
-                    padding: 4px;
-                    color: #333333;
-                }
-                QMenu::item {
-                    padding: 6px 20px;
-                    border-radius: 2px;
-                    color: #333333;
-                }
-                QMenu::item:selected {
-                    background-color: rgba(0, 120, 215, 0.15);
-                }
-            """)
+        menu = RoundMenu(parent=self)
 
         edit_action = QAction("编辑", self)
         edit_action.triggered.connect(lambda: self._on_edit_word(item))
@@ -786,53 +746,13 @@ class HistoryPanel(QWidget):
 
     def _on_history_context_menu(self, pos) -> None:
         """历史记录右键菜单"""
-        from PyQt5.QtWidgets import QMenu, QAction
-        from qfluentwidgets import isDarkTheme
+        from PyQt5.QtWidgets import QAction
 
         item = self._history_list.itemAt(pos)
         if not item:
             return
 
-        menu = QMenu(self)
-        
-        # 根据当前主题设置样式
-        dark = isDarkTheme()
-        if dark:
-            menu.setStyleSheet("""
-                QMenu {
-                    background-color: #2d2d2d;
-                    border: 1px solid #3d3d3d;
-                    border-radius: 4px;
-                    padding: 4px;
-                    color: #ffffff;
-                }
-                QMenu::item {
-                    padding: 6px 20px;
-                    border-radius: 2px;
-                    color: #ffffff;
-                }
-                QMenu::item:selected {
-                    background-color: rgba(0, 120, 215, 0.3);
-                }
-            """)
-        else:
-            menu.setStyleSheet("""
-                QMenu {
-                    background-color: #ffffff;
-                    border: 1px solid #e0e0e0;
-                    border-radius: 4px;
-                    padding: 4px;
-                    color: #333333;
-                }
-                QMenu::item {
-                    padding: 6px 20px;
-                    border-radius: 2px;
-                    color: #333333;
-                }
-                QMenu::item:selected {
-                    background-color: rgba(0, 120, 215, 0.15);
-                }
-            """)
+        menu = RoundMenu(parent=self)
 
         use_action = QAction("使用此翻译", self)
         use_action.triggered.connect(lambda: self._on_item_double_click(item))
