@@ -44,7 +44,9 @@ class AISettingsBridge:
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         config = self._settings.get_provider_config(provider)
         if config:
-            config["api_key"] = self._api_key_manager.get(provider)
+            api_key = self._api_key_manager.get(provider)
+            if api_key:
+                config["api_key"] = api_key
         return config
     
     def set_api_key(self, provider: str, api_key: str) -> None:

@@ -147,7 +147,7 @@ class Plugin(PluginInterface):
 
 ## 6. 打包规则
 
-`build.bat` 使用 PyInstaller。插件模块应进入 PYZ，不复制 `plugins` 源码目录：
+`build.bat` 使用 PyInstaller。插件模块应进入 PYZ；运行时 `data/`、`config/` 由 `core/runtime_layout.py` 在 exe 同级或开发环境项目根目录创建，不作为打包资源复制：
 
 ```batch
 pyinstaller --noconfirm --onedir --windowed ^
@@ -156,17 +156,18 @@ pyinstaller --noconfirm --onedir --windowed ^
   --additional-hooks-dir "hooks" ^
   --collect-all qfluentwidgets ^
   --collect-submodules plugins ^
-  --add-data "data;data/" ^
-  --add-data "config;config/" ^
+  --add-data "logo.ico;." ^
+  --add-data "ui/resources;ui/resources/" ^
   "main.py"
 ```
 
 打包检查：
 
 - 不使用 `--add-data "plugins;plugins/"`。
+- 不使用 `--add-data "data;data/"` 和 `--add-data "config;config/"`。
 - `hooks/hook-plugins.py` 收集插件子模块。
 - `plugins/plugin_index.py` 提供打包环境插件发现元信息。
-- `dist/FluTool/_internal/plugins` 不应作为源码目录存在。
+- `dist/FluTool/_internal/plugins` 不应作为源码目录存在，`dist/FluTool/data` 和 `dist/FluTool/config` 应由首次启动创建。
 - 启动日志应显示正确插件数量，例如 `Application started ..., 21 plugins loaded`。
 
 ## 7. 测试

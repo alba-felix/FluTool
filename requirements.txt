@@ -1,5 +1,7 @@
 PyQt5
 PyQt-Fluent-Widgets[full]
+loguru
+markdown
 requests
 charset_normalizer
 beautifulsoup4

@@ -787,14 +787,20 @@ class PushFluentWindow(FramelessMainWindow):
 
 	def _apply_theme_change(self, theme: Theme) -> None:
 		"""延迟执行主题切换，让提示先完成绘制。"""
+		from qfluentwidgets import qconfig
 		try:
+			qconfig.themeChangedFinished.connect(self._finish_theme_change)
 			setTheme(theme)
-			QTimer.singleShot(350, self._finish_theme_change)
 		except Exception as e:
 			self.core.logger.error(f"Failed to switch theme: {e}")
 			self._finish_theme_change()
 
 	def _finish_theme_change(self) -> None:
+		from qfluentwidgets import qconfig
+		try:
+			qconfig.themeChangedFinished.disconnect(self._finish_theme_change)
+		except TypeError:
+			pass
 		self._theme_switching = False
 		self._theme_btn.setEnabled(True)
 	
@@ -1211,6 +1217,18 @@ class MainWindow(PushFluentWindow):
 
 	def _load_plugin_data(self, plugin_id: str) -> None:
 		self._plugin_host.load_plugin_data(plugin_id)
+
+	def suspend_plugin_io(self) -> None:
+		"""暂停已加载插件交互，避免恢复期间继续写入。"""
+		self._plugin_host.suspend_loaded_plugins()
+
+	def resume_plugin_io(self) -> None:
+		"""恢复已加载插件交互。"""
+		self._plugin_host.resume_loaded_plugins()
+
+	def reload_loaded_plugins(self) -> None:
+		"""恢复后统一刷新所有已加载插件。"""
+		self._plugin_host.reload_loaded_plugins()
 	
 	def add_plugin(self, plugin) -> None:
 		plugin_id = plugin.get_id()

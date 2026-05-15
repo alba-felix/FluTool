@@ -47,6 +47,20 @@ class DatabaseManager:
         
         # 初始化所有 Repository
         self._init_repositories()
+
+    def reinitialize(self, db_path: Optional[str] = None) -> None:
+        """重新初始化数据库连接和仓储，用于数据恢复后重建状态。"""
+        if db_path is not None:
+            self._db_path = Path(db_path)
+        if self._db_path is None:
+            raise RuntimeError("Database path is not configured. Call initialize() first.")
+
+        self._initialized = True
+        self._connection = DatabaseConnection(self._db_path)
+        self._repositories = None
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._create_tables()
+        self._init_repositories()
     
     def _init_repositories(self):
         """初始化所有 Repository 实例"""

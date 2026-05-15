@@ -114,10 +114,6 @@ class YoudaoTranslator:
 class TranslationService:
     """翻译服务类"""
 
-    # 有道API配置
-    YOUDAO_APP_KEY = "08ac98926c63f043"
-    YOUDAO_APP_SECRET = "rWQ11KTuMA5rIHPawf26XcszYirHmjXv"
-
     def __init__(self):
         # 使用词典管理器支持多文件
         self._dict_manager = get_dictionary_manager()
@@ -128,9 +124,17 @@ class TranslationService:
         if os.path.exists(dicts_dir):
             self._dict_manager.load_from_directory(dicts_dir, "*.py")
 
+        # 从配置读取有道 API 凭据
         self._youdao = None
-        if self.YOUDAO_APP_SECRET:
-            self._youdao = YoudaoTranslator(self.YOUDAO_APP_KEY, self.YOUDAO_APP_SECRET)
+        try:
+            from core.api_key_manager import get_api_key_manager
+            mgr = get_api_key_manager()
+            app_key = mgr.get("youdao_app_key")
+            app_secret = mgr.get("youdao_app_secret")
+            if app_key and app_secret:
+                self._youdao = YoudaoTranslator(app_key, app_secret)
+        except Exception:
+            pass
 
     def translate(
         self,
@@ -192,10 +196,20 @@ class TranslationService:
         """从目录加载词典文件"""
         return self._dict_manager.load_from_directory(directory, pattern)
 
-    def set_api_secret(self, secret: str) -> None:
-        """设置API密钥并初始化有道翻译"""
-        self.YOUDAO_APP_SECRET = secret
-        self._youdao = YoudaoTranslator(self.YOUDAO_APP_KEY, secret)
+    def set_api_secret(self, secret: str, app_key: str = None) -> None:
+        """设置API凭据并初始化有道翻译"""
+        try:
+            from core.api_key_manager import get_api_key_manager
+            mgr = get_api_key_manager()
+            if app_key:
+                mgr.set("youdao_app_key", app_key)
+            else:
+                app_key = mgr.get("youdao_app_key")
+            mgr.set("youdao_app_secret", secret)
+            if app_key and secret:
+                self._youdao = YoudaoTranslator(app_key, secret)
+        except Exception:
+            pass
 
 
 # 全局翻译服务实例

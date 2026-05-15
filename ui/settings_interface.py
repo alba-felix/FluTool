@@ -1,7 +1,5 @@
 import os
 import sys
-import zipfile
-import shutil
 from pathlib import Path
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog
 from PyQt5.QtCore import Qt
@@ -290,6 +288,8 @@ class SettingsInterface(ScrollArea):
             return
 
         self.ai_settings.save_provider_config(provider, {"api_key": input_edit.text().strip()})
+        if self.core.ai_settings:
+            self.core.ai_settings.set_api_key(provider, input_edit.text().strip())
         self._refresh_ai_cards()
 
     def _edit_ai_base_url(self) -> None:
@@ -485,7 +485,7 @@ class SettingsInterface(ScrollArea):
                 self.core.logger.error(f"Failed to change navigation expanded: {e}")
 
     def _backup_data(self) -> None:
-        """备份数据到 zip 文件"""
+        """通过 BackupManager 备份数据到 zip 文件"""
         main_window = self._get_main_window()
         
         default_name = "flutool_data_backup.zip"
@@ -504,14 +504,9 @@ class SettingsInterface(ScrollArea):
             file_path += '.zip'
         
         try:
-            with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                if self.data_dir.exists():
-                    for root, dirs, files in os.walk(self.data_dir):
-                        for file in files:
-                            file_path_full = Path(root) / file
-                            arcname = file_path_full.relative_to(self.project_root)
-                            zipf.write(file_path_full, arcname)
-            
+            ok = self.core.backup_manager.manual_backup(file_path)
+            if not ok:
+                raise RuntimeError("BackupManager returned False")
             InfoBar.success(
                 title="备份成功",
                 content=f"数据已备份到 {Path(file_path).name}",
@@ -525,7 +520,7 @@ class SettingsInterface(ScrollArea):
             MessageBox("备份失败", f"无法创建备份文件：{str(e)}", main_window).exec()
 
     def _load_data(self) -> None:
-        """从 zip 文件恢复数据"""
+        """通过 BackupManager 从 zip 文件恢复数据"""
         main_window = self._get_main_window()
         
         confirm = MessageBox(
@@ -550,31 +545,12 @@ class SettingsInterface(ScrollArea):
             return
         
         try:
-            if self.data_dir.exists():
-                shutil.rmtree(self.data_dir)
-            
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-            
-            with zipfile.ZipFile(file_path, 'r') as zipf:
-                for member in zipf.namelist():
-                    if member.startswith('data/'):
-                        zipf.extract(member, self.project_root)
-            
-            # 发布数据恢复事件，通知各插件热刷新
-            try:
-                self.core.event_bus.emit("data_restored")
-            except Exception:
-                pass
-            
-            # 记录操作日志
-            try:
-                self.core.logger.log_operation("RESTORE", f"从备份文件恢复数据: {os.path.basename(file_path)}")
-            except Exception:
-                pass
-            
+            ok, message = self.core.backup_manager.restore_backup(file_path)
+            if not ok:
+                raise RuntimeError(message)
             InfoBar.success(
                 title="恢复成功",
-                content="数据已恢复，各插件已自动刷新",
+                content=message,
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,

@@ -1,13 +1,11 @@
 from typing import Optional
 from pathlib import Path
-import sys
-import shutil
-import traceback
 from .plugin_manager import PluginManager
 from .event_bus import EventBus
 from .log import LogManager
 from .config import AppConfig
-from .utils import get_app_data_path, get_resource_path
+from .utils import get_app_data_path
+from .runtime_layout import ensure_runtime_layout
 from .backup_manager import BackupManager
 from .efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
 from .search import GlobalSearchManager
@@ -18,59 +16,8 @@ from storage import DatabaseManager
 
 
 def init_app_data() -> None:
-    """
-    初始化应用数据目录
-    
-    打包后首次运行时，将 data 和 config 从 MEIPASS 复制到 %LOCALAPPDATA%\\FluTool 目录
-    """
-    if not getattr(sys, 'frozen', False):
-        return
-    
-    try:
-        data_dir = get_app_data_path("data")
-        config_dir = get_app_data_path("config")
-        
-        src_data = get_resource_path("data")
-        src_config = get_resource_path("config")
-        
-        print(f"[init_app_data] data_dir: {data_dir}")
-        print(f"[init_app_data] src_data: {src_data}")
-        print(f"[init_app_data] src_data exists: {src_data.exists()}")
-        
-        if not data_dir.exists():
-            if src_data.exists():
-                print(f"[init_app_data] Copying data directory...")
-                shutil.copytree(src_data, data_dir)
-                print(f"[init_app_data] Data directory copied to: {data_dir}")
-            else:
-                print(f"[init_app_data] Source data directory not found!")
-                data_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            if src_data.exists():
-                for item in src_data.rglob('*'):
-                    if item.is_file():
-                        rel_path = item.relative_to(src_data)
-                        dst_item = data_dir / rel_path
-                        if not dst_item.exists():
-                            dst_item.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(item, dst_item)
-                            print(f"[init_app_data] Copied: {rel_path}")
-        
-        if not config_dir.exists():
-            if src_config.exists():
-                print(f"[init_app_data] Copying config directory...")
-                shutil.copytree(src_config, config_dir)
-                print(f"[init_app_data] Config directory copied to: {config_dir}")
-            else:
-                print(f"[init_app_data] Source config directory not found!")
-                config_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError as e:
-        print(f"[init_app_data] Permission denied: {e}")
-    except OSError as e:
-        print(f"[init_app_data] OS error: {e}")
-    except Exception as e:
-        print(f"[init_app_data] Unexpected error: {e}")
-        traceback.print_exc()
+    """初始化 exe 同级或项目根目录下的运行时目录。"""
+    ensure_runtime_layout()
 
 
 class AppCore:
@@ -101,6 +48,7 @@ class AppCore:
         self._settings_manager: Optional[AISettingsManager] = None
         self._ai_settings: Optional[AISettingsBridge] = None
         self._ai_chat_service: Optional[AIChatService] = None
+        self._main_window = None
 
     def initialize(self, config_path: str = None) -> None:
         """
@@ -257,3 +205,11 @@ class AppCore:
     @property
     def ai_chat_service(self) -> Optional[AIChatService]:
         return self._ai_chat_service
+
+    @property
+    def main_window(self):
+        return self._main_window
+
+    @main_window.setter
+    def main_window(self, window) -> None:
+        self._main_window = window

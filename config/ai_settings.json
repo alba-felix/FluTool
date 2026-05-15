@@ -16,7 +16,7 @@
       "enabled": true,
       "timeout_sec": 120,
       "extra_headers": {},
-      "api_key": "sk-21c74d7992f54a5089d0eac2d596e9b6"
+      "api_key": "!ENC:(ZkHGRMJSMOOHUKJPKFNOSFTPRHSKOLTOQL"
     },
     "doubao": {
       "base_url": "https://ark.cn-beijing.volces.com/api/v3",
@@ -24,7 +24,7 @@
       "enabled": true,
       "timeout_sec": 60,
       "extra_headers": {},
-      "api_key": "0bfe6952-050d-4f5e-a4db-f8e96c601ec6"
+      "api_key": "!ENC:FQUTLOKHkFKFSkJUKTkPJSQkUNTOLRLFGTRL"
     },
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",

@@ -174,6 +174,7 @@ out/
 .cursor/
 .qoder/
 .claude/
+.opencode/
 
 # Eclipse
 .project

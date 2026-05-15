@@ -403,24 +403,34 @@ class TestFolderTreeWidgetLogic:
 
         config_dir = tmp_path / "FluTool"
         config_dir.mkdir(parents=True, exist_ok=True)
-        cfg_path = config_dir / "folder_tree_config.json"
+        data_dir = config_dir / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        cfg_path = data_dir / "folder_tree_config.json"
         cfg_path.write_text(json.dumps({"scan_depth": 2}, ensure_ascii=False), encoding="utf-8")
 
         widget = FolderTreeWidget.__new__(FolderTreeWidget)
-        with patch('plugins.folder_tree.get_app_data_path', return_value=config_dir):
+        with patch('plugins.folder_tree.get_app_data_path',
+                   side_effect=lambda rel: config_dir / rel):
             depth = widget._load_scan_depth()
             assert depth == 2
 
     def test_scan_depth_persistence_default(self, qapp, tmp_path: Path):
         """测试扫描深度持久化默认值"""
         from plugins.folder_tree import FolderTreeWidget
+        from unittest.mock import patch
+
+        empty_dir = tmp_path / "FluTool"
+        empty_dir.mkdir(parents=True, exist_ok=True)
 
         widget = FolderTreeWidget.__new__(FolderTreeWidget)
-        depth = widget._load_scan_depth()
-        assert depth == -1
+        with patch('plugins.folder_tree.get_app_data_path',
+                   side_effect=lambda rel: empty_dir / rel):
+            depth = widget._load_scan_depth()
+            assert depth == -1
 
     def test_scan_depth_persistence_save(self, qapp, tmp_path: Path):
         """测试保存扫描深度"""
+        import json
         from plugins.folder_tree import FolderTreeWidget
         from unittest.mock import patch
 
@@ -428,9 +438,10 @@ class TestFolderTreeWidgetLogic:
         config_dir.mkdir(parents=True, exist_ok=True)
 
         widget = FolderTreeWidget.__new__(FolderTreeWidget)
-        with patch('plugins.folder_tree.get_app_data_path', return_value=config_dir):
+        with patch('plugins.folder_tree.get_app_data_path',
+                   side_effect=lambda rel: config_dir / rel):
             widget._save_scan_depth(3)
-            cfg_path = config_dir / "folder_tree_config.json"
+            cfg_path = config_dir / "data/folder_tree_config.json"
             assert cfg_path.exists()
             cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             assert cfg["scan_depth"] == 3

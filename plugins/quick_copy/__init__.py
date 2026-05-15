@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QGridLayout, QLabel, QHBoxLayout,
     QFrame, QPushButton, QSizePolicy, QApplication
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
 from qfluentwidgets import (
     StrongBodyLabel, InfoBar, InfoBarPosition, PushButton,
@@ -191,6 +191,13 @@ class QuickCopyCard(HeaderCardWidget):
 
         # 填充初始内容
         self._refresh_content()
+
+        # 主题切换时刷新图标
+        qconfig.themeChangedFinished.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self):
+        """主题变化时重建内容行，刷新图标"""
+        QTimer.singleShot(0, self._refresh_content)
 
     def _refresh_content(self):
         """刷新内容显示（清空现有行，重新添加）"""

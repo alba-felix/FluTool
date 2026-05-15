@@ -16,6 +16,7 @@ class PluginHost:
 		self.plugin_containers: Dict[str, QWidget] = {}
 		self.plugin_widgets: Dict[str, QWidget] = {}
 		self.plugin_initialized: Dict[str, bool] = {}
+		self._suspended = False
 
 	def create_container(self, plugin_id: str) -> QWidget:
 		"""创建并注册插件容器。"""
@@ -69,7 +70,7 @@ class PluginHost:
 
 	def load_plugin_data(self, plugin_id: str) -> None:
 		"""触发插件数据加载。"""
-		if not plugin_id:
+		if not plugin_id or self._suspended:
 			return
 
 		plugin = self.core.plugin_manager.get_plugin(plugin_id)
@@ -80,6 +81,38 @@ class PluginHost:
 			plugin.load_data()
 		except Exception as e:
 			self.core.logger.error(f"Failed to load plugin data {plugin_id}: {e}")
+
+	def suspend_loaded_plugins(self) -> None:
+		"""恢复前暂停已加载插件的交互和数据刷新。"""
+		self._suspended = True
+		for plugin_id, widget in self.plugin_widgets.items():
+			try:
+				if widget is not None:
+					widget.setEnabled(False)
+			except Exception as e:
+				self.core.logger.warning(f"Failed to suspend plugin widget {plugin_id}: {e}")
+
+	def resume_loaded_plugins(self) -> None:
+		"""恢复插件交互。"""
+		for plugin_id, widget in self.plugin_widgets.items():
+			try:
+				if widget is not None:
+					widget.setEnabled(True)
+			except Exception as e:
+				self.core.logger.warning(f"Failed to resume plugin widget {plugin_id}: {e}")
+		self._suspended = False
+
+	def reload_loaded_plugins(self) -> None:
+		"""强制所有已加载插件重新 load_data。"""
+		for plugin_id in list(self.plugin_widgets.keys()):
+			plugin = self.core.plugin_manager.get_plugin(plugin_id)
+			if plugin is None:
+				continue
+			try:
+				plugin._data_loaded = False
+				plugin.load_data()
+			except Exception as e:
+				self.core.logger.error(f"Failed to reload plugin data {plugin_id}: {e}")
 
 	def attach_loaded_plugin(self, plugin) -> QWidget:
 		"""注册已经加载完成的插件并立即创建界面。"""

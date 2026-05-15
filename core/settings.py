@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from PyQt5.QtCore import QSettings
+from .runtime_layout import DEFAULT_AI_PROVIDERS, DEFAULT_AI_SETTINGS
+from .utils import get_app_data_path
 from utils.crypto_utils import CharCryptoTool
 
 
@@ -227,7 +229,7 @@ class AISettingsManager:
 
     def __init__(self, config_path: Optional[Path] = None):
         if config_path is None:
-            config_path = Path(__file__).parent.parent / "config" / "ai_settings.json"
+            config_path = get_app_data_path("config/ai_settings.json")
         
         self._file_manager = FileSettingsManager(config_path)
         self._provider_templates = self._load_provider_templates()
@@ -236,7 +238,14 @@ class AISettingsManager:
 
     def _load_provider_templates(self) -> Dict[str, Dict[str, Any]]:
         """加载提供商模板（从 ai_providers.json）"""
-        config_path = Path(__file__).parent.parent / "config" / "ai_providers.json"
+        config_path = get_app_data_path("config/ai_providers.json")
+        if not config_path.exists():
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(
+                json.dumps(DEFAULT_AI_PROVIDERS, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+
         if not config_path.exists():
             return {item["provider_id"]: item for item in self.DEFAULT_PROVIDERS}
 
@@ -263,11 +272,11 @@ class AISettingsManager:
         """确保默认配置存在"""
         # 确保默认提供商设置
         if not self._file_manager.get("default_provider"):
-            self._file_manager.set("default_provider", "deepseek")
+            self._file_manager.set("default_provider", DEFAULT_AI_SETTINGS["default_provider"])
         
         # 确保默认模型设置
         if not self._file_manager.get("default_model"):
-            self._file_manager.set("default_model", "deepseek-chat")
+            self._file_manager.set("default_model", DEFAULT_AI_SETTINGS["default_model"])
         
         # 确保 providers 配置存在
         if not self._file_manager.get("providers"):
@@ -319,10 +328,12 @@ class AISettingsManager:
                         # 尝试解密旧的加密值
                         crypto = CharCryptoTool()
                         decrypted = crypto.shift_decrypt(old_api_key, 20260406)
-                        self._file_manager.set(f"{file_prefix}/api_key", decrypted)
+                        encrypted = self._encrypt_api_key(decrypted)
+                        self._file_manager.set(f"{file_prefix}/api_key", encrypted)
                     except:
                         # 如果不是加密的，直接保存
-                        self._file_manager.set(f"{file_prefix}/api_key", old_api_key)
+                        encrypted = self._encrypt_api_key(old_api_key)
+                        self._file_manager.set(f"{file_prefix}/api_key", encrypted)
                 
                 # 迁移其他字段
                 for field in ["base_url", "default_model", "timeout_sec"]:
@@ -403,6 +414,29 @@ class AISettingsManager:
             providers.append(self.get_provider_config(provider_id))
         return providers
 
+    @staticmethod
+    def _encrypt_api_key(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            crypto = CharCryptoTool()
+            encrypted = crypto.shift_encrypt(value, 20260406)
+            return f"!ENC:{encrypted}"
+        except Exception:
+            return value
+
+    @staticmethod
+    def _decrypt_api_key(value: str) -> str:
+        if not value:
+            return ""
+        if value.startswith("!ENC:"):
+            try:
+                crypto = CharCryptoTool()
+                return crypto.shift_decrypt(value[5:], 20260406)
+            except Exception:
+                pass
+        return value
+
     def get_provider_config(self, provider: str) -> Dict[str, Any]:
         template = self._provider_templates.get(provider, {})
         prefix = f"providers/{provider}"
@@ -422,7 +456,9 @@ class AISettingsManager:
             "name": str(template.get("name", provider)),
             "provider_type": str(template.get("provider_type", provider)),
             "base_url": str(self._file_manager.get(f"{prefix}/base_url", template.get("base_url", ""))),
-            "api_key": str(self._file_manager.get(f"{prefix}/api_key", "")).strip(),
+            "api_key": self._decrypt_api_key(
+                str(self._file_manager.get(f"{prefix}/api_key", "")).strip()
+            ),
             "default_model": str(
                 self._file_manager.get(f"{prefix}/default_model", template.get("default_model", ""))
             ).strip(),
@@ -441,7 +477,8 @@ class AISettingsManager:
         if "base_url" in config:
             self._file_manager.set(f"{prefix}/base_url", str(config.get("base_url", "")))
         if "api_key" in config:
-            self._file_manager.set(f"{prefix}/api_key", str(config.get("api_key", "")).strip())
+            encrypted = self._encrypt_api_key(str(config.get("api_key", "")).strip())
+            self._file_manager.set(f"{prefix}/api_key", encrypted)
         if "enabled" in config:
             self._file_manager.set(f"{prefix}/enabled", self._to_bool(config.get("enabled"), True))
         if "default_model" in config:

@@ -32,8 +32,6 @@ pyinstaller --noconfirm --onedir --windowed ^
       --hidden-import "ui.common" ^
       --hidden-import "ui.common.dialogs" ^
       --hidden-import "core.async_loader" ^
-      --add-data "data;data/" ^
-      --add-data "config;config/" ^
       --add-data "logo.ico;." ^
       --add-data "ui/resources;ui/resources/" ^
       --add-data "plugins_sourcecode;plugins_sourcecode/" ^

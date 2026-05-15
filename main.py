@@ -202,6 +202,7 @@ def main():
         
         from ui.main_window import MainWindow
         window = MainWindow(core)
+        core.main_window = window
         
         logo_path = get_resource_path("logo.ico")
         if logo_path.exists():

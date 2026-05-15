@@ -1357,7 +1357,7 @@ class FolderTreeWidget(QWidget):
     def _load_scan_depth(self) -> int:
         """加载保存的扫描深度"""
         try:
-            cfg_path = get_app_data_path() / "folder_tree_config.json"
+            cfg_path = get_app_data_path("data/folder_tree_config.json")
             if cfg_path.exists():
                 cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
                 return cfg.get("scan_depth", -1)
@@ -1368,9 +1368,8 @@ class FolderTreeWidget(QWidget):
     def _save_scan_depth(self, depth: int):
         """保存扫描深度"""
         try:
-            app_data = get_app_data_path()
-            app_data.mkdir(parents=True, exist_ok=True)
-            cfg_path = app_data / "folder_tree_config.json"
+            cfg_path = get_app_data_path("data/folder_tree_config.json")
+            cfg_path.parent.mkdir(parents=True, exist_ok=True)
             cfg = {"scan_depth": depth}
             cfg_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
         except Exception:
@@ -1388,7 +1387,7 @@ class FolderTreeWidget(QWidget):
             return
         
         # 默认保存位置
-        default_dir = Path("data/temp_text")
+        default_dir = get_app_data_path("data/temp_text")
         default_dir.mkdir(parents=True, exist_ok=True)
         
         default_path = default_dir / f"{self.current_folder.name}_tree.txt"

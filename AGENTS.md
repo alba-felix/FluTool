@@ -16,10 +16,11 @@
 2. `plugins/__init__.py` 必须保持轻量，禁止导入子插件。
 3. 新增或改名插件时同步 `plugins/<plugin>/plugin.json` 和 `plugins/plugin_index.py`。
 4. 打包不要恢复 `--add-data "plugins;plugins/"`；插件通过 `hooks/hook-plugins.py` / `--collect-submodules plugins` 收集。
-5. 复杂插件按 `Widget -> Service -> Repository/DatabaseManager` 拆分，Widget 不直接承载事务、校验和数据库异常处理。
-6. 路径使用 `core.utils.get_resource_path()` / `get_app_data_path()`，不要硬编码本机路径。
-7. 数据库连接必须启用外键约束，相关逻辑集中在连接层。
-8. 关键流程使用 `LogManager` 记录日志，异常日志要保留上下文。
+5. 打包不要恢复 `--add-data "data;data/"` 和 `--add-data "config;config/"`；运行时目录由 `core/runtime_layout.py` 创建。
+6. 复杂插件按 `Widget -> Service -> Repository/DatabaseManager` 拆分，Widget 不直接承载事务、校验和数据库异常处理。
+7. 路径使用 `core.utils.get_resource_path()` / `get_app_data_path()`，不要硬编码本机路径。
+8. 数据库连接必须启用外键约束，相关逻辑集中在连接层。
+9. 关键流程使用 `LogManager` 记录日志，异常日志要保留上下文。
 9. 每次改动后，都要运行测试位于 `tests/`。比如:pytest tests/bookmark/ -v( 针对 BookmarkService 的局部链路测试).跑全部用例，防止新代码破坏原有功能,pytest -q --basetemp=.pytest_tmp
 
 ## 按需阅读
