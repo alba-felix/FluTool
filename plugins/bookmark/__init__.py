@@ -666,35 +666,18 @@ class BookmarkWidget(QWidget):
             self._start_fetch_website(url)
     
     def _normalize_url(self, url: str) -> str:
-        """规范化URL，确保有协议和www前缀，无效URL返回空字符串"""
+        """规范化URL，仅补协议，不强制添加 www 前缀"""
         url = url.strip()
         if not url:
             return ""
-        
+
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
-        
+
         qurl = QUrl(url)
-        host = qurl.host()
-        print(f"[DEBUG] normalize_url - 原始host: {host}")
-        
-        if not host:
+        if not qurl.isValid() or not qurl.host():
             return ""
-        
-        if not host.startswith('www.') and '.' not in host:
-            new_host = f'www.{host}.com'
-            url = url.replace(f'://{host}', f'://{new_host}')
-            print(f"[DEBUG] normalize_url - 补全为: {new_host}")
-        elif not host.startswith('www.') and host.count('.') == 1:
-            new_host = f'www.{host}'
-            url = url.replace(f'://{host}', f'://{new_host}')
-            print(f"[DEBUG] normalize_url - 添加www: {new_host}")
-        
-        new_host = QUrl(url).host()
-        if not new_host or '.' not in new_host:
-            return ""
-        
-        print(f"[DEBUG] normalize_url - 最终URL: {url}")
+
         return url
     
     def _start_fetch_website(self, url: str) -> None:
@@ -711,9 +694,22 @@ class BookmarkWidget(QWidget):
         """获取网站信息失败"""
         self.progress_bar.setVisible(False)
         self._set_ui_enabled(True)
-        
-        print(f"[ERROR] 获取网站信息失败 - {url}: {error_msg}")
-        
+
+        InfoBar.warning(
+            title="获取失败",
+            content=f"无法获取 {url} 的信息，书签已使用默认名称添加",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=4000,
+            parent=self
+        )
+
+        self._add_bookmark_with_name(
+            url=url,
+            name=QUrl(url).host() or url,
+        )
+
         if self._fetcher:
             self._fetcher.deleteLater()
             self._fetcher = None
@@ -723,7 +719,7 @@ class BookmarkWidget(QWidget):
         self.progress_bar.setVisible(False)
         self._set_ui_enabled(True)
 
-        dialog = InputDialog("备注", "请输入备注（可选）", parent=self)
+        dialog = InputDialog("备注", "请输入备注（可选）", parent=self, validator=lambda t: True)
         notes = ""
         if dialog.exec():
             notes = dialog.get_text()
