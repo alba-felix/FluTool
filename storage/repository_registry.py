@@ -15,6 +15,7 @@ from storage.repositories import (
     ScriptRepository,
     TodoRepository,
     VocabularyRepository,
+    LearningCardRepository,
 )
 
 
@@ -36,6 +37,7 @@ class RepositoryRegistry:
         self.ai = AIRepository(db_manager)
         self.notebooks = NotebookRepository(db_manager)
         self.vocab_words = VocabularyRepository(db_manager)
+        self.learning_cards = LearningCardRepository(db_manager)
 
     def as_dict(self) -> dict:
         """返回兼容 DatabaseManager 旧属性名的仓储映射。"""
@@ -54,5 +56,6 @@ class RepositoryRegistry:
             "ai": self.ai,
             "notebooks": self.notebooks,
             "vocab_words": self.vocab_words,
+            "learning_cards": self.learning_cards,
         }
 

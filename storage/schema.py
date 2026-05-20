@@ -202,6 +202,19 @@ CREATE_TABLES_SQL = '''
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS learning_cards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plugin_id TEXT NOT NULL,
+        category_id INTEGER,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        note TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+    );
 '''
 
 INDEXES = [
@@ -229,6 +242,8 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_ai_messages_created_at ON ai_messages(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_vocabulary_words_plugin_id ON vocabulary_words(plugin_id)",
     "CREATE INDEX IF NOT EXISTS idx_vocabulary_words_category_id ON vocabulary_words(category_id)",
+    "CREATE INDEX IF NOT EXISTS idx_learning_cards_plugin_id ON learning_cards(plugin_id)",
+    "CREATE INDEX IF NOT EXISTS idx_learning_cards_category_id ON learning_cards(category_id)",
 ]
 
 

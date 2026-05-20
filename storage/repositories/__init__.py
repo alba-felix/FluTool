@@ -19,6 +19,7 @@ from .ai_repository import AIRepository
 from .category_repository import CategoryRepository
 from .notebook_repository import NotebookRepository
 from .vocabulary_repository import VocabularyRepository
+from .learning_card_repository import LearningCardRepository
 
 __all__ = [
     'BaseRepository',
@@ -37,4 +38,5 @@ __all__ = [
     'CategoryRepository',
     'NotebookRepository',
     'VocabularyRepository',
+    'LearningCardRepository',
 ]
