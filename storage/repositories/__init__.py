@@ -18,6 +18,7 @@ from .todo_repository import TodoRepository
 from .ai_repository import AIRepository
 from .category_repository import CategoryRepository
 from .notebook_repository import NotebookRepository
+from .vocabulary_repository import VocabularyRepository
 
 __all__ = [
     'BaseRepository',
@@ -35,4 +36,5 @@ __all__ = [
     'AIRepository',
     'CategoryRepository',
     'NotebookRepository',
+    'VocabularyRepository',
 ]

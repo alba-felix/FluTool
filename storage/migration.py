@@ -88,3 +88,34 @@ class MigrationManager:
                 conn.commit()
         except Exception:
             pass
+
+        self._migrate_vocabulary_tables(conn)
+
+    def _migrate_vocabulary_tables(self, conn) -> None:
+        """词汇背诵表结构重构：vocabulary_words 增加 plugin_id 列、废弃独立的 word_categories 表。"""
+        try:
+            cursor = conn.execute("PRAGMA table_info(vocabulary_words)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            if "plugin_id" in columns:
+                return
+
+            conn.execute("DROP TABLE IF EXISTS vocabulary_words")
+            conn.execute("DROP TABLE IF EXISTS word_categories")
+            conn.execute("""
+                CREATE TABLE vocabulary_words (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plugin_id TEXT NOT NULL,
+                    category_id INTEGER,
+                    chinese TEXT NOT NULL,
+                    english TEXT NOT NULL,
+                    pronunciation TEXT DEFAULT '',
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+                )
+            """)
+            conn.commit()
+        except Exception:
+            pass

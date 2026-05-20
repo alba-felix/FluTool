@@ -912,7 +912,7 @@ class MainWindow(PushFluentWindow):
 			raise ValueError("Core instance cannot be None")
 		self.core = core
 		self.setWindowTitle("FluTool")
-		self.resize(1000, 700)
+		self.resize(1100, 730)
 		self._center_window()
 		
 		self._plugin_host = PluginHost(core)

@@ -20,6 +20,7 @@ from core import PluginInterface
 from .page_interface import TabPageInterface
 from .translator_manager import TranslatorPage
 from .hex_converter import HexConverterPage
+from .vocabulary_page import VocabularyPage
 
 
 class TabPageInterface:
@@ -382,6 +383,7 @@ class Plugin(PluginInterface):
         self._tab_manager = TabManager()
         self._tab_manager.register(TranslatorPage)
         self._tab_manager.register(HexConverterPage)
+        self._tab_manager.register(VocabularyPage)
 
         self._widget = None
 

@@ -189,6 +189,19 @@ CREATE_TABLES_SQL = '''
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (conversation_id) REFERENCES ai_conversations(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS vocabulary_words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plugin_id TEXT NOT NULL,
+        category_id INTEGER,
+        chinese TEXT NOT NULL,
+        english TEXT NOT NULL,
+        pronunciation TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+    );
 '''
 
 INDEXES = [
@@ -214,6 +227,8 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_ai_conversations_updated_at ON ai_conversations(updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id)",
     "CREATE INDEX IF NOT EXISTS idx_ai_messages_created_at ON ai_messages(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_vocabulary_words_plugin_id ON vocabulary_words(plugin_id)",
+    "CREATE INDEX IF NOT EXISTS idx_vocabulary_words_category_id ON vocabulary_words(category_id)",
 ]
 
 
