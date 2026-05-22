@@ -17,6 +17,7 @@ from core import PluginInterface
 from plugins.text_tools.page_interface import TabPageInterface
 from .cron_tool import CronToolPage
 from .deepseek_tool import DeepSeekToolPage
+from .svg_viewer_tool import SvgViewerTool
 
 
 class OverflowPopup(QWidget):
@@ -385,6 +386,7 @@ class Plugin(PluginInterface):
         # 在这里注册开发工具的标签页
         self._tab_manager.register(CronToolPage)
         self._tab_manager.register(DeepSeekToolPage)
+        self._tab_manager.register(SvgViewerTool)
 
         self._widget = None
 
