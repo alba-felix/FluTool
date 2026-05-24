@@ -11,17 +11,18 @@ class TodoRepository:
     
     def add(self, title: str, description: str = '', priority: str = '中',
             start_date: str = '', due_date: str = '', tags: list = None,
-            completed: int = 0, pinned: int = 0, status: str = '进行中') -> int:
+            completed: int = 0, pinned: int = 0, status: str = '进行中',
+            remind_before: int = 0, last_reminded: str = '', due_time: str = '23:59') -> int:
         """添加待办事项"""
         tags_json = json.dumps(tags) if tags else '[]'
         sql = """
-            INSERT INTO todos (title, description, priority, start_date, due_date, tags, completed, pinned, status) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO todos (title, description, priority, start_date, due_date, tags, completed, pinned, status, remind_before, last_reminded, due_time) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with self.db.get_connection() as conn:
             cursor = conn.execute(sql, (
                 title, description, priority, start_date, due_date, 
-                tags_json, completed, pinned, status
+                tags_json, completed, pinned, status, remind_before, last_reminded, due_time
             ))
             conn.commit()
             return cursor.lastrowid
@@ -63,7 +64,7 @@ class TodoRepository:
     
     def update(self, todo_id: int, **kwargs) -> bool:
         """更新待办事项"""
-        allowed_fields = {'title', 'description', 'priority', 'start_date', 'due_date', 'tags', 'completed', 'pinned', 'sort_order', 'status'}
+        allowed_fields = {'title', 'description', 'priority', 'start_date', 'due_date', 'tags', 'completed', 'pinned', 'sort_order', 'status', 'remind_before', 'last_reminded', 'due_time'}
         filtered = {k: v for k, v in kwargs.items() if k in allowed_fields}
         
         if 'tags' in filtered:

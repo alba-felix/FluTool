@@ -339,7 +339,7 @@ class QuickCopyWidget(QWidget):
         # 临时占位符（将在加载数据时被替换）
         placeholder = QLabel("暂无快速复制项目", scroll_content)
         placeholder.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self._scroll_layout.addWidget(placeholder, 0, 0, 1, 3)
+        self._scroll_layout.addWidget(placeholder, 0, 0, 1, 5)
 
         scroll_area.setWidget(scroll_content)
 
@@ -401,7 +401,7 @@ class QuickCopyWidget(QWidget):
         for i, card_data in enumerate(self.cards_data):
             card = QuickCopyCard(card_data, self)
             card.edit_clicked.connect(self._on_card_edit)
-            self._scroll_layout.addWidget(card, i // 4, i % 4, 1, 1)
+            self._scroll_layout.addWidget(card, i // 5, i % 5, 1, 1)
             self._cards.append(card)
             self._item_count = i + 1
 

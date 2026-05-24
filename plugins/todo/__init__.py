@@ -2,21 +2,23 @@
 代办事项插件
 提供任务管理功能，支持优先级、截止日期、标签、置顶等
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
-from PyQt5.QtCore import Qt, QDate, QTimer
+from PyQt5.QtCore import Qt, QDate, QTime, QTimer, QObject
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QApplication, QFileDialog, QWidget, QVBoxLayout, QHBoxLayout,
-    QTreeWidgetItem, QHeaderView, QDateEdit
+    QTreeWidgetItem, QHeaderView, QDateEdit, QTimeEdit, QSystemTrayIcon,
+    QDialog
 )
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, TreeWidget, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig,
     MessageBoxBase, TransparentToolButton, CaptionLabel, ComboBox,
-    TextEdit, CheckBox, SubtitleLabel, BodyLabel, MessageBox, RoundMenu
+    TextEdit, CheckBox, SubtitleLabel, BodyLabel, MessageBox, RoundMenu,
+    TeachingTip, TeachingTipTailPosition
 )
 from core import PluginInterface
 from .service import TodoService
@@ -72,6 +74,10 @@ class AddTodoDialog(MessageBoxBase):
         self.due_date_edit.setDate(QDate.currentDate().addDays(7))
         self.due_date_edit.setCalendarPopup(True)
         due_date_layout.addWidget(self.due_date_edit, 1)
+        self.due_time_edit = QTimeEdit()
+        self.due_time_edit.setDisplayFormat("HH:mm")
+        self.due_time_edit.setTime(QTime(23, 59))
+        due_date_layout.addWidget(self.due_time_edit)
         self.viewLayout.addLayout(due_date_layout)
         
         self.viewLayout.addWidget(StrongBodyLabel("标签:", self))
@@ -79,12 +85,21 @@ class AddTodoDialog(MessageBoxBase):
         self.tags_input.setPlaceholderText("用逗号分隔多个标签")
         self.tags_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.tags_input)
-        
+
+        remind_layout = QHBoxLayout()
+        remind_layout.addWidget(StrongBodyLabel("提醒:", self))
+        self.remind_combo = ComboBox(self)
+        for _, label in TodoReminderManager.REMINDER_OPTIONS:
+            self.remind_combo.addItem(label)
+        self.remind_combo.setCurrentIndex(0)
+        remind_layout.addWidget(self.remind_combo, 1)
+        self.viewLayout.addLayout(remind_layout)
+
         self.yesButton.setText("添加")
         self.cancelButton.setText("取消")
-        
+
         self.widget.setMinimumWidth(400)
-    
+
     def get_data(self) -> Dict[str, Any]:
         """获取对话框数据"""
         return {
@@ -93,10 +108,13 @@ class AddTodoDialog(MessageBoxBase):
             "priority": self.priority_combo.currentText(),
             "start_date": self.start_date_edit.date().toString("yyyy-MM-dd"),
             "due_date": self.due_date_edit.date().toString("yyyy-MM-dd"),
+            "due_time": self.due_time_edit.time().toString("HH:mm"),
             "tags": [tag.strip() for tag in self.tags_input.text().split(",") if tag.strip()],
             "completed": False,
             "status": "进行中",
             "pinned": False,
+            "remind_before": TodoReminderManager.REMINDER_OPTIONS[self.remind_combo.currentIndex()][0],
+            "last_reminded": "",
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
@@ -150,6 +168,9 @@ class EditTodoDialog(MessageBoxBase):
         self.due_date_edit = QDateEdit()
         self.due_date_edit.setCalendarPopup(True)
         due_date_layout.addWidget(self.due_date_edit, 1)
+        self.due_time_edit = QTimeEdit()
+        self.due_time_edit.setDisplayFormat("HH:mm")
+        due_date_layout.addWidget(self.due_time_edit)
         self.viewLayout.addLayout(due_date_layout)
         
         self.viewLayout.addWidget(StrongBodyLabel("标签:", self))
@@ -157,7 +178,15 @@ class EditTodoDialog(MessageBoxBase):
         self.tags_input.setPlaceholderText("用逗号分隔多个标签")
         self.tags_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.tags_input)
-        
+
+        remind_layout = QHBoxLayout()
+        remind_layout.addWidget(StrongBodyLabel("提醒:", self))
+        self.remind_combo = ComboBox(self)
+        for _, label in TodoReminderManager.REMINDER_OPTIONS:
+            self.remind_combo.addItem(label)
+        remind_layout.addWidget(self.remind_combo, 1)
+        self.viewLayout.addLayout(remind_layout)
+
         self.completed_checkbox = CheckBox("已完成", self)
         self.viewLayout.addWidget(self.completed_checkbox)
         
@@ -191,8 +220,16 @@ class EditTodoDialog(MessageBoxBase):
         else:
             self.due_date_edit.setDate(QDate.currentDate().addDays(7))
         
+        due_time = self.todo_data.get("due_time", "23:59")
+        self.due_time_edit.setTime(QTime.fromString(due_time, "HH:mm"))
+        
         tags = self.todo_data.get("tags", [])
         self.tags_input.setText(", ".join(tags))
+        
+        remind_before = self.todo_data.get("remind_before", 0)
+        self.remind_combo.setCurrentIndex(
+            max(i for i, (v, _) in enumerate(TodoReminderManager.REMINDER_OPTIONS) if v <= remind_before)
+        )
         
         self.completed_checkbox.setChecked(self.todo_data.get("completed", False))
         self.pinned_checkbox.setChecked(self.todo_data.get("pinned", False))
@@ -207,13 +244,175 @@ class EditTodoDialog(MessageBoxBase):
             "priority": self.priority_combo.currentText(),
             "start_date": self.start_date_edit.date().toString("yyyy-MM-dd"),
             "due_date": self.due_date_edit.date().toString("yyyy-MM-dd"),
+            "due_time": self.due_time_edit.time().toString("HH:mm"),
             "tags": [tag.strip() for tag in self.tags_input.text().split(",") if tag.strip()],
             "completed": completed,
             "status": "已完成" if completed else self.todo_data.get("status", "进行中"),
             "pinned": self.pinned_checkbox.isChecked(),
+            "remind_before": TodoReminderManager.REMINDER_OPTIONS[self.remind_combo.currentIndex()][0],
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         return data
+
+
+class TodoReminderManager(QObject):
+    """待办事项提醒管理器"""
+
+    REMINDER_OPTIONS = [
+        (0, "不提醒"),
+        (1, "1 分钟"),      # 临时测试
+        (5, "5 分钟"),
+        (30, "30 分钟"),
+        (60, "1 小时前"),
+        (120, "2 小时前"),
+        (360, "6 小时前"),
+        (720, "12 小时前"),
+        (1440, "1 天前"),
+        (2880, "2 天前"),
+    ]
+
+    def __init__(self, core, parent=None):
+        super().__init__(parent)
+        self.core = core
+        self._reminded_todos: set = set()
+
+    def check_and_notify(self, todos: List[Dict]) -> None:
+        """检查所有待办事项，在需要时发送提醒"""
+        now = datetime.now()
+        logger = getattr(self.core, 'logger', None)
+
+        for todo in todos:
+            if todo.get("completed", False):
+                continue
+
+            remind_before = todo.get("remind_before", 0)
+            if remind_before <= 0:
+                continue
+
+            due_date = todo.get("due_date", "")
+            if not due_date:
+                continue
+
+            due_time = todo.get("due_time", "23:59")
+            try:
+                deadline = datetime.strptime(f"{due_date} {due_time}", "%Y-%m-%d %H:%M")
+            except ValueError:
+                try:
+                    deadline = datetime.strptime(f"{due_date} 23:59", "%Y-%m-%d %H:%M")
+                except ValueError:
+                    continue
+
+            if now > deadline:
+                if logger:
+                    logger.info(f"[提醒] 待办已过期，跳过: {todo.get('title')}")
+                continue
+
+            remaining = deadline - now
+            remaining_minutes = remaining.total_seconds() / 60
+
+            if logger:
+                logger.info(f"[提醒] 待办 '{todo.get('title')}' 剩余 {remaining_minutes:.1f} 分钟, 阈值 {remind_before} 分钟")
+
+            if not (0 < remaining_minutes <= remind_before):
+                continue
+
+            key = (todo.get("id"), due_date)
+            if key in self._reminded_todos:
+                if logger:
+                    logger.info(f"[提醒] 已会话提醒过，跳过: {todo.get('title')}")
+                continue
+
+            last_reminded = todo.get("last_reminded", "")
+            if last_reminded:
+                try:
+                    last_time = datetime.fromisoformat(last_reminded)
+                    cooldown_minutes = min(remind_before / 2, 60)
+                    if (now - last_time).total_seconds() < cooldown_minutes * 60:
+                        if logger:
+                            logger.info(f"[提醒] 冷却中，跳过: {todo.get('title')}")
+                        continue
+                except (ValueError, TypeError):
+                    pass
+
+            if logger:
+                logger.info(f"[提醒] 触发通知: {todo.get('title')}")
+            self._show_notification(todo, remaining_minutes)
+            self._reminded_todos.add(key)
+
+    def _show_notification(self, todo: Dict, remaining_minutes: float) -> None:
+        """显示提醒通知（独立置顶弹窗，手动关闭）"""
+        title = todo.get("title", "未命名")
+        logger = getattr(self.core, 'logger', None)
+
+        if remaining_minutes < 60:
+            time_text = f"{int(remaining_minutes)} 分钟"
+        else:
+            hours = int(remaining_minutes / 60)
+            time_text = f"{hours} 小时"
+
+        message = f"代办事项「{title}」将在 {time_text} 后到期"
+
+        try:
+            dialog = QDialog(None, Qt.WindowStaysOnTopHint | Qt.Dialog)
+            dialog.setWindowTitle("代办事项提醒")
+            dialog.setFixedSize(400, 160)
+            layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(20, 20, 20, 20)
+            layout.setSpacing(15)
+
+            title_label = BodyLabel("代办事项提醒", dialog)
+            title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+            layout.addWidget(title_label)
+
+            msg_label = BodyLabel(message, dialog)
+            msg_label.setWordWrap(True)
+            layout.addWidget(msg_label)
+
+            layout.addStretch()
+            btn_layout = QHBoxLayout()
+            btn_layout.addStretch()
+            ok_btn = PushButton("知道了", dialog)
+            ok_btn.setFixedWidth(120)
+            ok_btn.clicked.connect(dialog.close)
+            btn_layout.addWidget(ok_btn)
+            layout.addLayout(btn_layout)
+
+            qconfig.themeChanged.connect(
+                lambda: self._style_notification_dialog(dialog)
+            )
+            self._style_notification_dialog(dialog)
+            dialog.show()
+
+            if logger:
+                logger.info(f"[提醒] 独立弹窗已显示: {title}")
+        except Exception as e:
+            if logger:
+                logger.warning(f"[提醒] 独立弹窗失败: {e}")
+
+    @staticmethod
+    def _style_notification_dialog(dialog: QDialog) -> None:
+        """设置提醒弹窗样式"""
+        bg = "#2d2d2d" if isDarkTheme() else "#ffffff"
+        fg = "#ffffff" if isDarkTheme() else "#000000"
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {bg};
+                color: {fg};
+                border: 1px solid #3d3d3d;
+                border-radius: 8px;
+            }}
+        """)
+
+    def clear_reminded(self, todo_id: int) -> None:
+        """清除某条待办的已提醒状态（编辑后重置）"""
+        self._reminded_todos = {k for k in self._reminded_todos if k[0] != todo_id}
+
+    def get_remind_before_index(self, remind_before: int) -> int:
+        """根据提醒小时数获取 ComboBox 索引"""
+        for i, (value, _) in enumerate(self.REMINDER_OPTIONS):
+            if value == remind_before:
+                return i
+        return 0
 
 
 class TodoWidget(QWidget):
@@ -226,6 +425,7 @@ class TodoWidget(QWidget):
         self.core = core
         self.service = TodoService()
         self.todos: List[Dict[str, Any]] = []
+        self._reminder_manager = TodoReminderManager(core, self)
 
         self._setup_ui()
         self._load_todos()
@@ -368,10 +568,74 @@ class TodoWidget(QWidget):
             """)
     
     def _setup_timer(self):
-        """设置定时器"""
+        """设置自适应定时器"""
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self._check_overdue_tasks)
-        self.timer.start(60000)
+        self.timer.timeout.connect(self._check_and_optimize_timer)
+        self.timer.start(15000)
+        self._check_and_optimize_timer()
+
+    def _check_and_optimize_timer(self):
+        """检查提醒并动态调整下次检查间隔"""
+        self._check_overdue_tasks()
+
+        now = datetime.now()
+        next_check = float('inf')
+
+        for todo in self.todos:
+            if todo.get("completed", False):
+                continue
+            remind_before = todo.get("remind_before", 0)
+            if remind_before <= 0:
+                continue
+            due_date = todo.get("due_date", "")
+            if not due_date:
+                continue
+            due_time = todo.get("due_time", "23:59")
+            try:
+                deadline = datetime.strptime(f"{due_date} {due_time}", "%Y-%m-%d %H:%M")
+            except ValueError:
+                try:
+                    deadline = datetime.strptime(f"{due_date} 23:59", "%Y-%m-%d %H:%M")
+                except ValueError:
+                    continue
+            if now > deadline:
+                continue
+            trigger_time = deadline.replace(second=0) - timedelta(minutes=remind_before)
+            if trigger_time <= now:
+                # 已经在提醒窗口内，应保持高频检查
+                next_check = min(next_check, 15)
+            else:
+                seconds_until = (trigger_time - now).total_seconds()
+                if seconds_until < next_check:
+                    next_check = seconds_until
+
+        overdue_exists = any(
+            not todo.get("completed", False) and todo.get("due_date", "") and
+            todo.get("due_date", "") < now.strftime("%Y-%m-%d")
+            for todo in self.todos
+        )
+
+        if overdue_exists:
+            next_check = min(next_check, 300)
+
+        if next_check == float('inf'):
+            next_check = 1800
+
+        if next_check < 60:
+            interval = 15000
+        elif next_check < 300:
+            interval = 30000
+        elif next_check < 1800:
+            interval = 60000
+        elif next_check < 7200:
+            interval = 300000
+        elif next_check < 43200:
+            interval = 900000
+        else:
+            interval = 1800000
+
+        if self.timer.interval() != interval:
+            self.timer.setInterval(interval)
     
     def _load_todos(self):
         """从数据库加载代办事项"""
@@ -386,6 +650,7 @@ class TodoWidget(QWidget):
         
         self._display_todos()
         self._update_stats()
+        self._check_and_optimize_timer()
     
     def _display_todos(self):
         """显示代办事项列表"""
@@ -416,7 +681,16 @@ class TodoWidget(QWidget):
             item.setText(1, todo.get("title", "未命名"))
             item.setText(2, todo.get("priority", "中"))
             item.setText(3, todo.get("created_at", ""))
-            item.setText(4, todo.get("due_date", ""))
+            due_date = todo.get("due_date", "")
+            due_time = todo.get("due_time", "")
+            if due_date:
+                if due_time and due_time != "23:59":
+                    display = f"{due_date} {due_time}"
+                else:
+                    display = due_date
+            else:
+                display = ""
+            item.setText(4, display)
             item.setText(5, ", ".join(todo.get("tags", [])))
             item.setData(0, Qt.UserRole, idx)
             
@@ -544,6 +818,7 @@ class TodoWidget(QWidget):
                 todo_id = todo_data.get("id")
                 if todo_id:
                     self.service.update_todo(todo_id, updated_data)
+                    self._reminder_manager.clear_reminded(todo_id)
                 self.todos[todo_idx] = updated_data
                 self._display_todos()
                 self._update_stats()
@@ -705,7 +980,7 @@ class TodoWidget(QWidget):
         menu.exec_(QCursor.pos())
     
     def _check_overdue_tasks(self):
-        """检查过期任务"""
+        """检查过期任务和提醒"""
         today = datetime.now().strftime("%Y-%m-%d")
         overdue_count = sum(1 for todo in self.todos
                              if not todo.get("completed", False) and
@@ -714,6 +989,8 @@ class TodoWidget(QWidget):
         
         if overdue_count > 0:
             self._update_stats()
+        
+        self._reminder_manager.check_and_notify(self.todos)
     
     def _mark_all_uncompleted(self):
         """批量标记所有任务为未完成"""

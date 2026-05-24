@@ -361,11 +361,15 @@ class DatabaseManager:
     # Todo 方法
     def add_todo(self, title: str, description: str = '', priority: str = '中',
                  start_date: str = '', due_date: str = '', tags: list = None,
-                 completed: int = 0, pinned: int = 0, status: str = '进行中') -> int:
+                 completed: int = 0, pinned: int = 0, status: str = '进行中',
+                 remind_before: int = 0, last_reminded: str = '',
+                 due_time: str = '23:59') -> int:
         return self.todos.add(
             title=title, description=description, priority=priority,
             start_date=start_date, due_date=due_date, tags=tags,
-            completed=completed, pinned=pinned, status=status
+            completed=completed, pinned=pinned, status=status,
+            remind_before=remind_before, last_reminded=last_reminded,
+            due_time=due_time
         )
     
     def get_todos(self, completed: int = None) -> list:

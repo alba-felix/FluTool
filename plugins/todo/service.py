@@ -25,6 +25,9 @@ class TodoService:
             completed=1 if todo_data.get("completed", False) else 0,
             pinned=1 if todo_data.get("pinned", False) else 0,
             status=todo_data.get("status", "进行中"),
+            remind_before=todo_data.get("remind_before", 0),
+            last_reminded=todo_data.get("last_reminded", ""),
+            due_time=todo_data.get("due_time", "23:59"),
         )
 
     def update_todo(self, todo_id: int, todo_data: Dict) -> bool:
@@ -40,6 +43,9 @@ class TodoService:
             completed=1 if todo_data.get("completed", False) else 0,
             pinned=1 if todo_data.get("pinned", False) else 0,
             status=todo_data.get("status", "进行中"),
+            remind_before=todo_data.get("remind_before", 0),
+            last_reminded=todo_data.get("last_reminded", ""),
+            due_time=todo_data.get("due_time", "23:59"),
         )
 
     def update_fields(self, todo_id: int, **kwargs) -> bool:

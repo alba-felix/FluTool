@@ -64,19 +64,6 @@ class ImagePreviewWidget(QWidget):
         self.scroll_area.setWidget(self.scroll_content)
         layout.addWidget(self.scroll_area)
         
-        # 信息栏
-        info_layout = QHBoxLayout()
-        info_layout.setSpacing(20)
-        
-        self.size_label = BodyLabel("尺寸: -", self)
-        info_layout.addWidget(self.size_label)
-        
-        self.file_size_label = BodyLabel("大小: -", self)
-        info_layout.addWidget(self.file_size_label)
-        
-        info_layout.addStretch()
-        layout.addLayout(info_layout)
-        
         self._apply_style()
     
     def _apply_style(self):
@@ -204,7 +191,6 @@ class ImagePreviewWidget(QWidget):
         """设置图片"""
         self._original_pixmap = pixmap
         self._scale_factor = 1.0
-        self._update_info(pixmap)
         self.fit_to_window()
     
     def _update_preview(self):
@@ -231,16 +217,16 @@ class ImagePreviewWidget(QWidget):
         total_height = scaled_pixmap.height() + content_margins.top() + content_margins.bottom()
         self.scroll_content.setFixedSize(total_width, total_height)
     
-    def _update_info(self, pixmap: QPixmap):
-        """更新信息"""
+    def get_image_info(self, pixmap: QPixmap) -> str:
+        """获取图片信息文本"""
         size = pixmap.size()
-        self.size_label.setText(f"尺寸: {size.width()} x {size.height()}")
         
         buffer = QBuffer()
         buffer.open(QIODevice.WriteOnly)
         pixmap.save(buffer, "PNG")
         file_size = buffer.size()
-        self.file_size_label.setText(f"大小: {self._format_size(file_size)}")
+        
+        return f"尺寸: {size.width()} x {size.height()} | 大小: {self._format_size(file_size)}"
     
     def _format_size(self, size: int) -> str:
         """格式化文件大小"""
@@ -382,7 +368,8 @@ class ImageAssistantWidget(QWidget):
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(10, 10, 10, 10)
         
-        left_layout.addWidget(SubtitleLabel("图片列表", left_widget))
+        self._list_title = SubtitleLabel("图片列表", left_widget)
+        left_layout.addWidget(self._list_title)
         
         self.image_list = QListWidget(left_widget)
         self.image_list.setIconSize(QSize(80, 80))
@@ -398,7 +385,8 @@ class ImageAssistantWidget(QWidget):
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(10, 10, 10, 10)
         
-        right_layout.addWidget(SubtitleLabel("图片预览", right_widget))
+        self._preview_title = SubtitleLabel("图片预览", right_widget)
+        right_layout.addWidget(self._preview_title)
         
         self.preview_widget = ImagePreviewWidget(right_widget)
         right_layout.addWidget(self.preview_widget)
@@ -427,6 +415,8 @@ class ImageAssistantWidget(QWidget):
     def _apply_style(self):
         """应用样式"""
         if isDarkTheme():
+            self._list_title.setTextColor("#ffffff", "#ffffff")
+            self._preview_title.setTextColor("#ffffff", "#ffffff")
             self.setStyleSheet("""
                 QWidget#imageAssistantWidget {
                     background-color: #1e1e1e;
@@ -439,14 +429,9 @@ class ImageAssistantWidget(QWidget):
                     color: #ffffff;
                 }
             """)
-            self.preview_widget.preview_label.setStyleSheet("""
-                QLabel {
-                    background-color: #252525;
-                    border: 2px dashed #3d3d3d;
-                    border-radius: 8px;
-                }
-            """)
         else:
+            self._list_title.setTextColor("#000000", "#000000")
+            self._preview_title.setTextColor("#000000", "#000000")
             self.setStyleSheet("""
                 QWidget#imageAssistantWidget {
                     background-color: #f5f5f5;
@@ -459,13 +444,8 @@ class ImageAssistantWidget(QWidget):
                     color: #000000;
                 }
             """)
-            self.preview_widget.preview_label.setStyleSheet("""
-                QLabel {
-                    background-color: #ffffff;
-                    border: 2px dashed #d0d0d0;
-                    border-radius: 8px;
-                }
-            """)
+
+        self.preview_widget._apply_style()
     
     def _apply_list_style(self):
         """应用列表样式"""
@@ -800,7 +780,8 @@ class ImageAssistantWidget(QWidget):
             pixmap = QPixmap(image_info["path"])
             if not pixmap.isNull():
                 self.preview_widget.set_image(pixmap)
-                self.status_bar.showMessage(f"来源: {image_info['source']} | 添加时间: {image_info['added_at']}")
+                info_text = self.preview_widget.get_image_info(pixmap)
+                self.status_bar.showMessage(f"{info_text} | 来源: {image_info['source']} | 添加时间: {image_info['added_at']}")
     
     def _on_image_double_clicked(self, item: QListWidgetItem):
         """双击图片"""
