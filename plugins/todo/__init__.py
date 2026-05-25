@@ -342,6 +342,7 @@ class TodoReminderManager(QObject):
     def _show_notification(self, todo: Dict, remaining_minutes: float) -> None:
         """显示提醒通知（独立置顶弹窗，手动关闭）"""
         title = todo.get("title", "未命名")
+        description = todo.get("description", "")
         logger = getattr(self.core, 'logger', None)
 
         if remaining_minutes < 60:
@@ -355,10 +356,10 @@ class TodoReminderManager(QObject):
         try:
             dialog = QDialog(None, Qt.WindowStaysOnTopHint | Qt.Dialog)
             dialog.setWindowTitle("代办事项提醒")
-            dialog.setFixedSize(400, 160)
+            dialog.setFixedSize(400, 220)
             layout = QVBoxLayout(dialog)
             layout.setContentsMargins(20, 20, 20, 20)
-            layout.setSpacing(15)
+            layout.setSpacing(12)
 
             title_label = BodyLabel("代办事项提醒", dialog)
             title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
@@ -367,6 +368,15 @@ class TodoReminderManager(QObject):
             msg_label = BodyLabel(message, dialog)
             msg_label.setWordWrap(True)
             layout.addWidget(msg_label)
+
+            if description:
+                desc_label = BodyLabel(dialog)
+                max_len = 80
+                display_desc = description if len(description) <= max_len else description[:max_len] + "..."
+                desc_label.setText(f"内容: {display_desc}")
+                desc_label.setWordWrap(True)
+                desc_label.setStyleSheet("color: #888888; font-size: 12px;")
+                layout.addWidget(desc_label)
 
             layout.addStretch()
             btn_layout = QHBoxLayout()
@@ -478,18 +488,21 @@ class TodoWidget(QWidget):
         main_layout.addLayout(header_layout)
         
         self.tree = TreeWidget(self)
-        self.tree.setHeaderLabels(["状态", "标题", "优先级", "创建时间", "截止日期", "标签"])
+        self.tree.setHeaderLabels(["状态", "标题", "优先级", "内容", "创建时间", "截止日期", "标签"])
         self.tree.header().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
         self.tree.header().setSectionResizeMode(2, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(3, QHeaderView.Fixed)
+        self.tree.header().setSectionResizeMode(3, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(4, QHeaderView.Fixed)
         self.tree.header().setSectionResizeMode(5, QHeaderView.Fixed)
+        self.tree.header().setSectionResizeMode(6, QHeaderView.Fixed)
         self.tree.setColumnWidth(0, 100)
+        self.tree.setColumnWidth(1, 100)
         self.tree.setColumnWidth(2, 80)
-        self.tree.setColumnWidth(3, 150)
-        self.tree.setColumnWidth(4, 100)
+        self.tree.setColumnWidth(4, 150)
         self.tree.setColumnWidth(5, 150)
+        self.tree.setColumnWidth(6, 50)
+        self.tree.header().setStretchLastSection(False)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
         self.tree.itemDoubleClicked.connect(self._edit_todo)
@@ -634,7 +647,7 @@ class TodoWidget(QWidget):
         else:
             interval = 1800000
 
-        if self.timer.interval() != interval:
+        if hasattr(self, 'timer') and self.timer and self.timer.interval() != interval:
             self.timer.setInterval(interval)
     
     def _load_todos(self):
@@ -644,6 +657,9 @@ class TodoWidget(QWidget):
             for todo in self.todos:
                 if "status" not in todo:
                     todo["status"] = "已完成" if todo.get("completed", False) else "进行中"
+                todo.setdefault("due_time", "23:59")
+                todo.setdefault("remind_before", 0)
+                todo.setdefault("last_reminded", "")
         except Exception as e:
             self.core.logger.error(f"加载代办事项失败: {e}")
             self.todos = []
@@ -670,7 +686,7 @@ class TodoWidget(QWidget):
             else:
                 todo_status = todo.get("status", "进行中")
                 if todo_status == "未完成":
-                    status = "○未完成"
+                    status = "✗未完成"
                 else:
                     status = "▶进行中"
             
@@ -680,7 +696,8 @@ class TodoWidget(QWidget):
             item.setText(0, status)
             item.setText(1, todo.get("title", "未命名"))
             item.setText(2, todo.get("priority", "中"))
-            item.setText(3, todo.get("created_at", ""))
+            item.setText(3, todo.get("description", ""))
+            item.setText(4, todo.get("created_at", ""))
             due_date = todo.get("due_date", "")
             due_time = todo.get("due_time", "")
             if due_date:
@@ -690,24 +707,27 @@ class TodoWidget(QWidget):
                     display = due_date
             else:
                 display = ""
-            item.setText(4, display)
-            item.setText(5, ", ".join(todo.get("tags", [])))
+            item.setText(5, display)
+            item.setText(6, ", ".join(todo.get("tags", [])))
             item.setData(0, Qt.UserRole, idx)
             
             if todo.get("completed", False):
-                for col in range(6):
+                for col in range(7):
                     item.setForeground(col, Qt.gray)
             else:
                 priority = todo.get("priority", "中")
                 if priority == "紧急":
-                    for col in range(6):
+                    for col in range(7):
                         item.setForeground(col, Qt.red)
                         font = item.font(col)
                         font.setBold(True)
                         item.setFont(col, font)
                 elif priority == "高":
-                    for col in range(6):
+                    for col in range(7):
                         item.setForeground(col, QColor(200, 0, 0))
+                elif todo.get("status") == "未完成":
+                    for col in range(7):
+                        item.setForeground(col, Qt.red)
             
             self.tree.addTopLevelItem(item)
     
@@ -753,21 +773,24 @@ class TodoWidget(QWidget):
         """更新统计信息"""
         total = len(self.todos)
         completed = sum(1 for todo in self.todos if todo.get("completed", False))
-        pending = total - completed
-        
+        uncompleted = sum(1 for todo in self.todos if not todo.get("completed", False) and todo.get("status") == "未完成")
+        in_progress = total - completed - uncompleted
+
         urgent_pending = sum(1 for todo in self.todos
                          if not todo.get("completed", False) and todo.get("priority", "中") == "紧急")
         high_pending = sum(1 for todo in self.todos
                         if not todo.get("completed", False) and todo.get("priority", "中") == "高")
-        
+
         today = datetime.now().strftime("%Y-%m-%d")
         overdue = sum(1 for todo in self.todos
                      if not todo.get("completed", False) and
                      todo.get("due_date", "") and
                      todo.get("due_date", "") < today)
-        
+
         self.stats_label.setText(
-            f"总计: {total} | 待完成: {pending} (紧急: {urgent_pending} ❗ | 高: {high_pending} ⚠️) | 已完成: {completed} | 过期: {overdue}"
+            f"总计: {total} | 进行中: {in_progress} | 未完成: {uncompleted} "
+            f"(紧急: {urgent_pending}❗ | 高: {high_pending}⚠️) | "
+            f"已完成: {completed} | 过期: {overdue}"
         )
     
     def _add_todo(self):
@@ -1083,7 +1106,7 @@ class Plugin(PluginInterface):
             if completed:
                 status = "✓已完成"
             elif todo_status == "未完成":
-                status = "○未完成"
+                status = "✗未完成"
             else:
                 status = "▶进行中"
             pinned = "📌" if todo['pinned'] else ""
