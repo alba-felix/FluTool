@@ -32,6 +32,7 @@ MIGRATIONS = [
     ("app_launcher", "is_favorite", "INTEGER DEFAULT 0"),
     ("categories", "icon_name", "TEXT DEFAULT ''"),
     ("categories", "color", "TEXT DEFAULT ''"),
+    ("quick_copy_items", "remark", "TEXT DEFAULT ''"),
 ]
 
 

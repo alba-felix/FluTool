@@ -143,6 +143,7 @@ CREATE_TABLES_SQL = '''
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         card_id INTEGER NOT NULL,
         content TEXT NOT NULL,
+        remark TEXT DEFAULT '',
         sort_order INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (card_id) REFERENCES quick_copy_cards(id) ON DELETE CASCADE

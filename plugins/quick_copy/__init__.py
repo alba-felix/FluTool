@@ -43,20 +43,37 @@ class EditCardDialog(MessageBoxBase):
         self.title_input.returnPressed.connect(lambda: self.yesButton.click())
         self.viewLayout.addWidget(self.title_input)
 
-        # 内容项输入（四个单独输入框）
+        # 内容项输入（四项，每项带备注）
         self.viewLayout.addWidget(StrongBodyLabel("内容项:", self))
 
-        self.item_inputs = []
-        items = self.card_data.get("items", ["", "", "", ""])
+        self.item_rows = []  # List[Tuple[LineEdit, LineEdit]] — (content, remark)
+        raw_items = self.card_data.get("items", [])
 
         for i in range(4):
-            item_input = LineEdit(self)
-            item_input.setPlaceholderText(f"内容 {i + 1}")
-            if i < len(items):
-                item_input.setText(items[i])
-            item_input.returnPressed.connect(lambda: self.yesButton.click())
-            self.item_inputs.append(item_input)
-            self.viewLayout.addWidget(item_input)
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+
+            content_input = LineEdit(self)
+            content_input.setPlaceholderText(f"内容 {i + 1}")
+            content_input.returnPressed.connect(lambda: self.yesButton.click())
+            row_layout.addWidget(content_input, 7)
+
+            remark_input = LineEdit(self)
+            remark_input.setPlaceholderText("备注")
+            row_layout.addWidget(remark_input, 3)
+
+            if i < len(raw_items):
+                item = raw_items[i]
+                if isinstance(item, str):
+                    content_input.setText(item)
+                else:
+                    content_input.setText(item.get("content", ""))
+                    remark_input.setText(item.get("remark", ""))
+
+            self.item_rows.append((content_input, remark_input))
+            self.viewLayout.addWidget(row_widget)
 
         self.yesButton.setText("保存")
         self.cancelButton.setText("取消")
@@ -76,7 +93,7 @@ class EditCardDialog(MessageBoxBase):
         self.deleteButton.clicked.connect(self._on_delete_clicked)
         self.buttonLayout.insertWidget(0, self.deleteButton, 0, Qt.AlignVCenter)
         self.buttonLayout.insertStretch(1, 1)
-        self.widget.setMinimumWidth(400)
+        self.widget.setMinimumWidth(600)
 
     def _on_delete_clicked(self) -> None:
         """发出删除卡片请求"""
@@ -88,10 +105,11 @@ class EditCardDialog(MessageBoxBase):
     def get_data(self) -> Dict[str, Any]:
         """获取编辑后的数据"""
         items = []
-        for item_input in self.item_inputs:
-            text = item_input.text().strip()
+        for content_input, remark_input in self.item_rows:
+            text = content_input.text().strip()
             if text:
-                items.append(text)
+                remark = remark_input.text().strip()
+                items.append({"content": text, "remark": remark})
 
         return {
             "id": self.card_data.get("id"),
@@ -114,7 +132,7 @@ class EditCardDialog(MessageBoxBase):
             )
             return False
 
-        has_item = any(item_input.text().strip() for item_input in self.item_inputs)
+        has_item = any(content_input.text().strip() for content_input, _ in self.item_rows)
         if not has_item:
             InfoBar.warning(
                 title="无法保存",
@@ -210,9 +228,15 @@ class QuickCopyCard(HeaderCardWidget):
 
         # 获取数据中的内容项，跳过空字符串
         items = self.card_data.get("items", [])
-        for item_text in items:
-            if item_text.strip():      # 只添加非空内容
-                self._add_content_row(item_text, "复制")
+        for item in items:
+            if isinstance(item, str):
+                text = item
+                remark = ""
+            else:
+                text = item.get("content", "")
+                remark = item.get("remark", "")
+            if text.strip():
+                self._add_content_row(text, "复制", remark)
     
     def _on_header_clicked(self, event):
         """标题栏点击事件"""
@@ -231,7 +255,7 @@ class QuickCopyCard(HeaderCardWidget):
         self.setTitle(card_data.get("title", "未命名"))
         self._refresh_content()
 
-    def _add_content_row(self, text: str, btn_text: str) -> None:
+    def _add_content_row(self, text: str, btn_text: str, remark: str = "") -> None:
         """添加内容行"""
         row_widget = QWidget()
         row_widget.setStyleSheet("background-color: transparent;")
@@ -243,6 +267,8 @@ class QuickCopyCard(HeaderCardWidget):
         # 内容标签（左侧）
         content_label = BodyLabel(text)
         content_label.setWordWrap(True)
+        if remark:
+            content_label.setToolTip(remark)
         row_layout.addWidget(content_label, 1)
 
         # 复制按钮（右侧）
@@ -293,7 +319,11 @@ class QuickCopyWidget(QWidget):
         self._scroll_layout = None
         self._item_count = 0
         self._cards = []
+        self._current_cols = 3
         self._setup_ui()
+        self._rebuild_timer = QTimer(self)
+        self._rebuild_timer.setSingleShot(True)
+        self._rebuild_timer.timeout.connect(self._display_cards)
     
     def _init_paths(self) -> None:
         """初始化路径"""
@@ -324,8 +354,9 @@ class QuickCopyWidget(QWidget):
 
         # 滚动区域
         scroll_area = QScrollArea(self)
+        self._scroll_area = scroll_area
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         layout.addWidget(scroll_area)
 
@@ -339,7 +370,7 @@ class QuickCopyWidget(QWidget):
         # 临时占位符（将在加载数据时被替换）
         placeholder = QLabel("暂无快速复制项目", scroll_content)
         placeholder.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self._scroll_layout.addWidget(placeholder, 0, 0, 1, 5)
+        self._scroll_layout.addWidget(placeholder, 0, 0)
 
         scroll_area.setWidget(scroll_content)
 
@@ -377,6 +408,18 @@ class QuickCopyWidget(QWidget):
         
         self._display_cards()
     
+    def _calc_columns(self) -> int:
+        """根据视口宽度计算每行可容纳的卡片数"""
+        vp = self._scroll_area.viewport()
+        if vp is None or vp.width() <= 0:
+            return 3
+        margins = self._scroll_layout.contentsMargins()
+        card_width = 200
+        spacing = self._scroll_layout.spacing()
+        usable = vp.width() - margins.left() - margins.right()
+        cols = max(1, (usable + spacing) // (card_width + spacing))
+        return cols
+
     def _display_cards(self) -> None:
         """显示卡片列表（每次调用先清空现有控件）"""
         # 1. 彻底移除布局中所有已有控件
@@ -394,16 +437,29 @@ class QuickCopyWidget(QWidget):
         if not self.cards_data:
             placeholder = QLabel("暂无快速复制项目")
             placeholder.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            self._scroll_layout.addWidget(placeholder, 0, 0, 1, 3)
+            cols = self._calc_columns()
+            self._current_cols = cols
+            self._scroll_layout.addWidget(placeholder, 0, 0, 1, cols)
             return
 
-        # 4. 重新创建所有卡片
+        # 4. 计算动态列数并重新创建所有卡片
+        cols = self._calc_columns()
+        self._current_cols = cols
         for i, card_data in enumerate(self.cards_data):
             card = QuickCopyCard(card_data, self)
             card.edit_clicked.connect(self._on_card_edit)
-            self._scroll_layout.addWidget(card, i // 5, i % 5, 1, 1)
+            self._scroll_layout.addWidget(card, i // cols, i % cols, 1, 1)
             self._cards.append(card)
             self._item_count = i + 1
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if not self.cards_data:
+            return
+        new_cols = self._calc_columns()
+        if new_cols != self._current_cols:
+            self._current_cols = new_cols
+            self._rebuild_timer.start(50)
 
     def _on_card_delete(self, card_id: int, dialog: EditCardDialog = None) -> None:
         """处理卡片删除请求"""

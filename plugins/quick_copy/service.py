@@ -1,8 +1,10 @@
 """快速复制业务服务。"""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from storage.database import DatabaseManager
+
+ItemType = Union[str, Dict[str, str]]
 
 
 class QuickCopyService:
@@ -18,7 +20,10 @@ class QuickCopyService:
             {
                 "id": card["id"],
                 "title": card["title"],
-                "items": [item["content"] for item in card.get("items", [])]
+                "items": [
+                    {"content": item["content"], "remark": item.get("remark", "")}
+                    for item in card.get("items", [])
+                ]
             }
             for card in cards
         ]
@@ -32,20 +37,28 @@ class QuickCopyService:
             "items": []
         }
 
-    def update_card(self, card_id: int, title: str, items: List[str]) -> None:
+    def update_card(self, card_id: int, title: str, items: List[ItemType]) -> None:
         """更新卡片标题和内容项。"""
         self.db.update_quick_copy_card(card_id, title=title)
 
         existing_items = self.db.get_quick_copy_items(card_id)
-        for index, content in enumerate(items):
+        for index, item in enumerate(items):
+            if isinstance(item, str):
+                content = item
+                remark = ""
+            else:
+                content = item.get("content", "")
+                remark = item.get("remark", "")
+
             if index < len(existing_items):
                 self.db.update_quick_copy_item(
                     existing_items[index]["id"],
                     content=content,
-                    sort_order=index
+                    sort_order=index,
+                    remark=remark
                 )
             else:
-                self.db.add_quick_copy_item(card_id, content, index)
+                self.db.add_quick_copy_item(card_id, content, index, remark)
 
         for item in existing_items[len(items):]:
             self.db.delete_quick_copy_item(item["id"])
@@ -57,4 +70,3 @@ class QuickCopyService:
     def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         """搜索快速复制内容。"""
         return self.db.search_quick_copy(query, limit)
-

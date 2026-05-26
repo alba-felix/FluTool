@@ -36,6 +36,7 @@ class QuickCopyRepository:
                 c.updated_at AS card_updated_at,
                 i.id AS item_id,
                 i.content AS item_content,
+                i.remark AS item_remark,
                 i.sort_order AS item_sort_order,
                 i.created_at AS item_created_at
             FROM quick_copy_cards c
@@ -64,6 +65,7 @@ class QuickCopyRepository:
                     "id": row["item_id"],
                     "card_id": card_id,
                     "content": row["item_content"],
+                    "remark": row["item_remark"] or "",
                     "sort_order": row["item_sort_order"],
                     "created_at": row["item_created_at"]
                 })
@@ -100,14 +102,14 @@ class QuickCopyRepository:
     
     # ============ 项目操作 ============
     
-    def add_item(self, card_id: int, content: str, sort_order: int = 0) -> int:
+    def add_item(self, card_id: int, content: str, sort_order: int = 0, remark: str = "") -> int:
         """添加快速复制项"""
         sql = """
-            INSERT INTO quick_copy_items (card_id, content, sort_order) 
-            VALUES (?, ?, ?)
+            INSERT INTO quick_copy_items (card_id, content, remark, sort_order) 
+            VALUES (?, ?, ?, ?)
         """
         with self.db.get_connection() as conn:
-            cursor = conn.execute(sql, (card_id, content, sort_order))
+            cursor = conn.execute(sql, (card_id, content, remark, sort_order))
             conn.commit()
             return cursor.lastrowid
     
@@ -124,7 +126,7 @@ class QuickCopyRepository:
     
     def update_item(self, item_id: int, **kwargs) -> bool:
         """更新快速复制项"""
-        allowed_fields = {'content', 'sort_order'}
+        allowed_fields = {'content', 'sort_order', 'remark'}
         filtered = {k: v for k, v in kwargs.items() if k in allowed_fields}
         if not filtered:
             return False

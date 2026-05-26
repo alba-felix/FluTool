@@ -72,7 +72,7 @@ def set_auto_start(enabled: bool) -> None:
                 if getattr(sys, 'frozen', False):
                     exe_path = f'"{sys.executable}" --minimized'
                 else:
-                    exe_path = f'"{Path(sys.executable).parent / "main.py"}" --minimized'
+                    exe_path = f'"{Path(__file__).resolve().parent.parent / "main.py"}" --minimized'
                 winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
             else:
                 try:

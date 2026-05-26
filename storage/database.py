@@ -343,8 +343,8 @@ class DatabaseManager:
     def delete_quick_copy_card(self, card_id: int) -> bool:
         return self.quick_copy.delete_card(card_id)
     
-    def add_quick_copy_item(self, card_id: int, content: str, sort_order: int = 0) -> int:
-        return self.quick_copy.add_item(card_id=card_id, content=content, sort_order=sort_order)
+    def add_quick_copy_item(self, card_id: int, content: str, sort_order: int = 0, remark: str = "") -> int:
+        return self.quick_copy.add_item(card_id=card_id, content=content, sort_order=sort_order, remark=remark)
     
     def get_quick_copy_items(self, card_id: int) -> list:
         return self.quick_copy.get_items(card_id)
