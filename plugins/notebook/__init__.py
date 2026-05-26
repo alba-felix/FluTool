@@ -305,6 +305,7 @@ class NotebookWidget(QWidget):
         name_layout.setSpacing(12)
         self._save_name_edit = LineEdit()
         self._save_name_edit.setPlaceholderText("输入笔记名称（留空则使用当前时间）")
+        self._save_name_edit.returnPressed.connect(dialog.yesButton.click)
         name_layout.addWidget(self._save_name_edit)
 
         dialog.viewLayout.addLayout(name_layout)
@@ -538,6 +539,7 @@ class NotebookWidget(QWidget):
         layout = QVBoxLayout()
         find_edit = LineEdit()
         find_edit.setPlaceholderText("输入要查找的内容")
+        find_edit.returnPressed.connect(dialog.yesButton.click)
         layout.addWidget(find_edit)
         dialog.viewLayout.addLayout(layout)
         
@@ -564,8 +566,10 @@ class NotebookWidget(QWidget):
         layout = QVBoxLayout()
         find_edit = LineEdit()
         find_edit.setPlaceholderText("查找内容")
+        find_edit.returnPressed.connect(dialog.yesButton.click)
         replace_edit = LineEdit()
         replace_edit.setPlaceholderText("替换为")
+        replace_edit.returnPressed.connect(dialog.yesButton.click)
         layout.addWidget(find_edit)
         layout.addWidget(replace_edit)
         dialog.viewLayout.addLayout(layout)

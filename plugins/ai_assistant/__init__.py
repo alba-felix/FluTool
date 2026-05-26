@@ -524,6 +524,7 @@ class AIAssistantWidget(QWidget):
                 self.input_edit.setText(title)
                 self.input_edit.setClearButtonEnabled(True)
                 self.input_edit.selectAll()
+                self.input_edit.returnPressed.connect(self.yesButton.click)
                 self.viewLayout.addWidget(self.input_edit)
                 
                 self.yesButton.setText("确定")

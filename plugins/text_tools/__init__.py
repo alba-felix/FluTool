@@ -12,7 +12,7 @@ from qfluentwidgets import (
     isDarkTheme, FluentIcon as FIF,
     PushButton, TransparentToolButton, StrongBodyLabel,
     LineEdit, ComboBox, MessageBoxBase, SubtitleLabel,
-    TextEdit, SpinBox
+    TextEdit, SpinBox, qconfig
 )
 
 from core import PluginInterface
@@ -328,6 +328,13 @@ class SubPluginWidget(QWidget):
         self.tab_bar.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self.tab_bar)
 
+        # 标签页下方水平分隔线
+        self._separator = QFrame(self)
+        self._separator.setFrameShape(QFrame.HLine)
+        self._separator.setFixedHeight(1)
+        self._separator.setObjectName("tabSeparator")
+        layout.addWidget(self._separator)
+
         # 创建滚动区域包裹 stacked_widget，启用双向滚动但不显示滚动条
         from PyQt5.QtWidgets import QScrollArea
         self._scroll_area = QScrollArea(self)
@@ -351,9 +358,18 @@ class SubPluginWidget(QWidget):
         layout.addWidget(self._scroll_area)
 
         self._init_tabs()
+        self._apply_separator_style()
+
+        qconfig.themeChangedFinished.connect(lambda: QTimer.singleShot(0, self._apply_separator_style))
 
     def _on_tab_changed(self, index: int) -> None:
         self.stacked_widget.setCurrentIndex(index)
+
+    def _apply_separator_style(self) -> None:
+        if isDarkTheme():
+            self._separator.setStyleSheet("QFrame#tabSeparator { background-color: #3d3d3d; border: none; }")
+        else:
+            self._separator.setStyleSheet("QFrame#tabSeparator { background-color: #e0e0e0; border: none; }")
 
     def _init_tabs(self) -> None:
         """初始化所有已注册的标签页"""

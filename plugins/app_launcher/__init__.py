@@ -610,6 +610,7 @@ class AppEditDialog(MessageBoxBase):
         self.name_edit = LineEdit(self)
         self.name_edit.setText(app_data.get('name', ''))
         self.name_edit.setClearButtonEnabled(True)
+        self.name_edit.returnPressed.connect(self.yesButton.click)
         self.viewLayout.addWidget(self.name_edit)
         
         # 目标路径
@@ -619,6 +620,7 @@ class AppEditDialog(MessageBoxBase):
         self.path_edit = LineEdit(self)
         self.path_edit.setText(app_data.get('target_path', ''))
         self.path_edit.setClearButtonEnabled(True)
+        self.path_edit.returnPressed.connect(self.yesButton.click)
         path_layout.addWidget(self.path_edit)
         
         self.browse_btn = PushButton("浏览", self)
@@ -634,6 +636,7 @@ class AppEditDialog(MessageBoxBase):
         self.args_edit.setText(app_data.get('arguments', ''))
         self.args_edit.setClearButtonEnabled(True)
         self.args_edit.setPlaceholderText("可选")
+        self.args_edit.returnPressed.connect(self.yesButton.click)
         self.viewLayout.addWidget(self.args_edit)
 
         # 备注信息
@@ -2815,7 +2818,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "app_launcher"
     PLUGIN_NAME = "应用启动"
     PLUGIN_ICON = FIF.APPLICATION
-    PLUGIN_PRIORITY = 15
+    PLUGIN_PRIORITY = 12
 
     def initialize(self, core) -> None:
         """初始化插件"""

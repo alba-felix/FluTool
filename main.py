@@ -6,7 +6,7 @@ from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
 from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox
 from PyQt5.QtGui import QIcon, QColor
-from qfluentwidgets import setThemeColor, setTheme, Theme, FluentIcon as FIF
+from qfluentwidgets import setThemeColor, setTheme, Theme, qconfig, FluentIcon as FIF
 from core.utils import get_resource_path
 
 project_root = Path(__file__).parent
@@ -136,6 +136,23 @@ def show_error_and_exit(title: str, message: str, exit_code: int = 1) -> int:
     return exit_code
 
 
+def _setup_tooltip_style():
+    """设置全局悬浮提示样式（深色风格，双主题通用）"""
+    app = QApplication.instance()
+    if app is None:
+        return
+    app.setStyleSheet("""
+        QToolTip {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+    """)
+
+
 def main():
     global _start_time
     _start_time = time.time()
@@ -170,16 +187,17 @@ def main():
     except Exception as e:
         return show_error_and_exit("启动失败", f"无法创建应用程序: {e}")
     
-    try:
-        setThemeColor("#0078d4")
-        setTheme(Theme.DARK)
-    except Exception as e:
-        print(f"[main] Theme setup failed: {e}")
-    
     splash = create_splash()
     splash.show()
     app.processEvents()
-    
+
+    try:
+        setThemeColor("#0078d4")
+        setTheme(Theme.DARK)
+        _setup_tooltip_style()
+    except Exception as e:
+        print(f"[main] Theme setup failed: {e}")
+
     # 初始化核心
     core = None
     try:

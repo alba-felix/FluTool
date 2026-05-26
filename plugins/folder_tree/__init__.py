@@ -963,6 +963,7 @@ class FolderTreeWidget(QWidget):
             rule_name = list_item_text.split(":")[0].strip()
             name_input.setText(rule_name)
         name_input.setPlaceholderText("例如：规则 2")
+        name_input.returnPressed.connect(editor.yesButton.click)
         content_layout.addWidget(name_input)
         content_layout.addSpacing(16)
         
@@ -978,6 +979,7 @@ class FolderTreeWidget(QWidget):
             if rule_name in self.custom_rules:
                 items_input.setText(', '.join(self.custom_rules[rule_name]))
         items_input.setPlaceholderText("例如：node_modules,.git,__pycache__")
+        items_input.returnPressed.connect(editor.yesButton.click)
         content_layout.addWidget(items_input)
         content_layout.addSpacing(8)
         

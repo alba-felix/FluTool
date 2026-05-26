@@ -156,6 +156,7 @@ class NotebookSidebar(QWidget):
         name_edit = LineEdit()
         name_edit.setText(current_title)
         name_edit.selectAll()
+        name_edit.returnPressed.connect(dialog.yesButton.click)
         layout.addWidget(name_edit)
         dialog.viewLayout.addLayout(layout)
         
