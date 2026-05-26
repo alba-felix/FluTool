@@ -4,10 +4,10 @@ import traceback
 from pathlib import Path
 from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
-from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox
+from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox, QSystemTrayIcon
 from PyQt5.QtGui import QIcon, QColor
 from qfluentwidgets import setThemeColor, setTheme, Theme, qconfig, FluentIcon as FIF
-from core.utils import get_resource_path
+from core.utils import get_resource_path, set_auto_start
 
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
@@ -158,7 +158,10 @@ def main():
     _start_time = time.time()
 
     _fix_uac_drag_drop()
-    
+
+    # 检测 --minimized 参数（开机自启传入）
+    _start_minimized = "--minimized" in sys.argv
+
     # 单实例检测
     try:
         single_instance = SingleInstance()
@@ -297,6 +300,27 @@ def main():
         return show_error_and_exit("启动失败", f"无法显示主窗口: {e}")
     finally:
         splash.deleteLater()
+    
+    # 最小化启动：检测 --minimized 参数（开机自启时由 set_auto_start 注入）
+    try:
+        if _start_minimized:
+            window.hide()
+            window.tray_icon.showMessage(
+                "FluTool",
+                "程序已最小化到系统托盘\n单击托盘图标恢复窗口",
+                QSystemTrayIcon.Information,
+                2000
+            )
+            core.logger.info("Started minimized to system tray")
+    except Exception as e:
+        core.logger.error(f"Failed to minimize to tray on startup: {e}")
+    
+    # 同步开机自启配置到注册表
+    try:
+        if core.config.auto_start.value:
+            set_auto_start(True)
+    except Exception as e:
+        core.logger.error(f"Failed to sync auto-start: {e}")
     
     # 记录启动时间
     if _start_time:

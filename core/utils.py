@@ -59,3 +59,25 @@ def get_local_app_data_dir() -> Path:
         return Path(sys.executable).parent
     else:
         return Path(__file__).parent.parent
+
+
+def set_auto_start(enabled: bool) -> None:
+    """设置开机自启（Windows 注册表）"""
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "FluTool"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE) as key:
+            if enabled:
+                if getattr(sys, 'frozen', False):
+                    exe_path = f'"{sys.executable}" --minimized'
+                else:
+                    exe_path = f'"{Path(sys.executable).parent / "main.py"}" --minimized'
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+            else:
+                try:
+                    winreg.DeleteValue(key, app_name)
+                except FileNotFoundError:
+                    pass
+    except Exception as e:
+        print(f"[utils] Auto-start setup failed: {e}")

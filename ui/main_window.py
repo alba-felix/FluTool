@@ -913,6 +913,7 @@ class MainWindow(PushFluentWindow):
 		self.core = core
 		self.setWindowTitle("FluTool")
 		self.resize(1100, 730)
+		self._ensure_window_fits_screen()
 		self._center_window()
 		
 		self._plugin_host = PluginHost(core)
@@ -935,6 +936,15 @@ class MainWindow(PushFluentWindow):
 		if screen:
 			geo = screen.availableGeometry()
 			self.move((geo.width() - self.width()) // 2, (geo.height() - self.height()) // 2)
+
+	def _ensure_window_fits_screen(self) -> None:
+		screen = QApplication.primaryScreen()
+		if screen:
+			geo = screen.availableGeometry()
+			new_w = min(self.width(), geo.width())
+			new_h = min(self.height(), geo.height())
+			if new_w != self.width() or new_h != self.height():
+				self.resize(new_w, new_h)
 	
 	def _setup_home_page(self) -> None:
 		home = QWidget()
@@ -1252,14 +1262,18 @@ class MainWindow(PushFluentWindow):
 		self.navigationInterface.removeItem(plugin_id)
 	
 	def closeEvent(self, event) -> None:
-		event.ignore()
-		self.hide()
-		self.tray_icon.showMessage(
-			"FluTool",
-			"程序已最小化到系统托盘\n单击托盘图标恢复窗口",
-			QSystemTrayIcon.Information,
-			2000
-		)
+		if self.core.config.minimize_to_tray.value:
+			event.ignore()
+			self.hide()
+			self.tray_icon.showMessage(
+				"FluTool",
+				"程序已最小化到系统托盘\n单击托盘图标恢复窗口",
+				QSystemTrayIcon.Information,
+				2000
+			)
+		else:
+			event.accept()
+			self.real_close()
 	
 	def real_close(self) -> None:
 		for plugin_id in list(self._plugin_initialized.keys()):

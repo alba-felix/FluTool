@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QApplication
 from PyQt5.QtCore import Qt
 from qfluentwidgets import (
     ScrollArea, SettingCardGroup, SwitchSettingCard,
@@ -13,6 +13,7 @@ from qfluentwidgets import (
 from core import get_app_data_path
 from core.efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
 from core.settings import AISettingsManager
+from core.utils import set_auto_start
 
 
 class SettingsInterface(ScrollArea):
@@ -105,6 +106,21 @@ class SettingsInterface(ScrollArea):
         )
         self.navExpandedCard.checkedChanged.connect(self._on_nav_expanded_changed)
         self.windowGroup.addSettingCard(self.navExpandedCard)
+        self.autoStartCard = SwitchSettingCard(
+            FIF.POWER_BUTTON,
+            "开机自启",
+            "系统启动时自动运行 FluTool",
+            configItem=self.core.config.auto_start
+        )
+        self.autoStartCard.checkedChanged.connect(self._on_auto_start_changed)
+        self.windowGroup.addSettingCard(self.autoStartCard)
+        self.minimizeToTrayCard = SwitchSettingCard(
+            FIF.MINIMIZE,
+            "最小化到系统托盘",
+            "关闭窗口时最小化到系统托盘而非退出程序",
+            configItem=self.core.config.minimize_to_tray
+        )
+        self.windowGroup.addSettingCard(self.minimizeToTrayCard)
         self.vBoxLayout.addWidget(self.windowGroup)
 
     def _create_data_group(self) -> None:
@@ -460,15 +476,20 @@ class SettingsInterface(ScrollArea):
 
     def _on_window_size_changed(self) -> None:
         """窗口大小配置改变"""
+        screen = QApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            w = min(self.core.config.window_width.value, geo.width())
+            h = min(self.core.config.window_height.value, geo.height())
+        else:
+            w = self.core.config.window_width.value
+            h = self.core.config.window_height.value
+
         main_window = self._get_main_window()
         if main_window:
-            main_window.resize(
-                self.core.config.window_width.value,
-                self.core.config.window_height.value
-            )
+            main_window.resize(w, h)
             self.core.logger.info(
-                f"Window size changed to: "
-                f"{self.core.config.window_width.value}x{self.core.config.window_height.value}"
+                f"Window size changed to: {w}x{h}"
             )
 
     def _on_nav_expanded_changed(self, checked: bool):
@@ -483,6 +504,11 @@ class SettingsInterface(ScrollArea):
                 self.core.logger.info(f"Navigation expanded changed to: {checked}")
             except Exception as e:
                 self.core.logger.error(f"Failed to change navigation expanded: {e}")
+
+    def _on_auto_start_changed(self, checked: bool):
+        """开机自启配置改变"""
+        set_auto_start(checked)
+        self.core.logger.info(f"Auto-start changed to: {checked}")
 
     def _backup_data(self) -> None:
         """通过 BackupManager 备份数据到 zip 文件"""

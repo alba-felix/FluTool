@@ -5,7 +5,9 @@
     },
     "General": {
         "AutoSave": true,
-        "EfficiencyMode": false
+        "AutoStart": false,
+        "EfficiencyMode": false,
+        "MinimizeToTray": true
     },
     "QFluentWidgets": {
         "FontFamilies": [
@@ -20,7 +22,7 @@
         "Expanded": false
     },
     "Window": {
-        "Height": 936,
-        "Width": 1391
+        "Height": 744,
+        "Width": 1214
     }
 }
