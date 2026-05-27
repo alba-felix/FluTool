@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import html
+import re
 import difflib
 import subprocess
 from typing import List, Dict, Any, Optional, Set, Tuple
@@ -2601,14 +2602,8 @@ class AppLauncherWidget(QWidget):
         ext = os.path.splitext(target_path)[1].lower()
         
         if ext == '.py':
-            if getattr(sys, 'frozen', False):
-                cmd = f'"{sys.executable}" --run-script "{target_path}"'
-            else:
-                python_exe = get_python_executable()
-                cmd = f'"{python_exe}" "{target_path}"'
-            if arguments:
-                cmd += f' {arguments}'
-            subprocess.Popen(cmd, shell=True)
+            self._launch_py_script(target_path, arguments)
+            return
         elif ext in ('.bat', '.cmd'):
             if arguments:
                 subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
@@ -2629,6 +2624,79 @@ class AppLauncherWidget(QWidget):
                 subprocess.Popen(f'"{target_path}" {arguments}', shell=True)
             else:
                 os.startfile(target_path)
+    
+    def _launch_py_script(self, target_path: str, arguments: str = ''):
+        """异步执行 Python 脚本并反馈结果"""
+        from PyQt5.QtCore import QProcess
+
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.MergedChannels)
+
+        if getattr(sys, 'frozen', False):
+            cmd = sys.executable
+            args = ['--run-script', target_path]
+        else:
+            cmd = get_python_executable()
+            args = [target_path]
+        if arguments:
+            import shlex
+            args.extend(shlex.split(arguments))
+
+        proc.finished.connect(
+            lambda exit_code, _: self._on_py_script_done(
+                target_path, exit_code, proc
+            )
+        )
+        proc.start(cmd, args)
+
+    def _on_py_script_done(self, target_path: str, exit_code: int, proc) -> None:
+        """Python 脚本执行完毕后的回调"""
+        output = proc.readAllStandardOutput().data().decode("utf-8", errors="replace").strip()
+        basename = os.path.basename(target_path)
+        output_lines = output.splitlines()
+
+        if exit_code == 0:
+            display = output[:200] if output else f"{basename} 已执行完毕"
+            InfoBar.success(
+                title="执行完成",
+                content=display,
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=4000,
+                parent=self,
+            )
+            self._open_script_output(output_lines)
+        else:
+            display = output[-300:] if output else f"{basename} 退出码 {exit_code}"
+            InfoBar.error(
+                title="执行出错",
+                content=display,
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=6000,
+                parent=self,
+            )
+
+    _OUTPUT_FILE_EXTENSIONS = re.compile(
+        r'[\'"]([^\'"]+\.(html?|csv|json|xml|md|txt|log|png|jpg|jpeg|gif|pdf|docx?|xlsx?|pptx?))[\'"]'
+        r'|'
+        r'(?:^|\s)((?:[a-zA-Z]:\\[^\s<>"]+\.(?:html?|csv|json|xml|md|txt|log|png|jpg|jpeg|gif|pdf|docx?|xlsx?|pptx?)))',
+        re.IGNORECASE,
+    )
+
+    def _open_script_output(self, output_lines) -> None:
+        """从脚本输出中检测生成的文件并打开"""
+        for line in output_lines:
+            for match in self._OUTPUT_FILE_EXTENSIONS.finditer(line):
+                file_path = match.group(1) or match.group(2)
+                if os.path.exists(file_path):
+                    try:
+                        os.startfile(file_path)
+                    except Exception:
+                        pass
+                    return
     
     def _toggle_favorite(self, app_data: Dict[str, Any]):
         """切换收藏状态"""

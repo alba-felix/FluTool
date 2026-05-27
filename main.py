@@ -137,7 +137,6 @@ def show_error_and_exit(title: str, message: str, exit_code: int = 1) -> int:
 
 
 def _setup_tooltip_style():
-    """设置全局悬浮提示样式（深色风格，双主题通用）"""
     app = QApplication.instance()
     if app is None:
         return
@@ -151,6 +150,57 @@ def _setup_tooltip_style():
             font-size: 12px;
         }
     """)
+
+
+def _handle_auth(auth, splash) -> bool:
+    """处理认证流程
+
+    Returns:
+        True 继续启动，False 退出程序
+    """
+    if not auth.is_registered():
+        from ui.login_dialog import RegisterDialog
+        dialog = RegisterDialog()
+        if dialog.exec_() != RegisterDialog.Accepted:
+            return False
+        dialog.deleteLater()
+        return True
+
+    ok, msg = auth.verify_machine()
+    if ok:
+        return True
+
+    if "未授权的设备" not in msg:
+        return show_error_and_exit("授权失败", msg) == 0
+
+    from ui.common.dialogs import InputDialog
+    dialog = InputDialog(
+        title="硬件变更",
+        label="检测到硬件变更，请输入注册时设置的密码以重新绑定本机",
+        is_password=True,
+        yes_text="恢复",
+        placeholder="请输入密码",
+        min_width=380,
+    )
+    if dialog.exec_() != InputDialog.Accepted:
+        return False
+
+    password = dialog.get_text()
+    ok, msg = auth.recover_machine(password)
+    if not ok:
+        return show_error_and_exit("恢复失败", msg) == 0
+
+    from qfluentwidgets import InfoBar, InfoBarPosition
+    InfoBar.success(
+        title="恢复成功",
+        content="机器绑定已更新，请重新启动程序",
+        orient=Qt.Horizontal,
+        isClosable=True,
+        position=InfoBarPosition.TOP,
+        duration=3000,
+        parent=splash,
+    )
+    return False
 
 
 def main():
@@ -200,6 +250,20 @@ def main():
         _setup_tooltip_style()
     except Exception as e:
         print(f"[main] Theme setup failed: {e}")
+
+    # 认证验证
+    try:
+        splash.showMessage("验证授权...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
+        app.processEvents()
+
+        from core.auth_service import AuthService
+        if not _handle_auth(AuthService(), splash):
+            splash.hide()
+            return 0
+    except Exception as e:
+        splash.hide()
+        traceback.print_exc()
+        return show_error_and_exit("认证失败", f"认证服务异常:\n{e}")
 
     # 初始化核心
     core = None
