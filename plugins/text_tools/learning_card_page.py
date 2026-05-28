@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QAbstractItemView,
     QTableWidgetItem, QFileDialog, QTextEdit,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QFont, QColor
 from qfluentwidgets import (
     FluentIcon as FIF, PushButton, ComboBox, LineEdit, InfoBar, InfoBarPosition,
@@ -254,15 +254,16 @@ class LearningCardWidget(QWidget):
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["标题", "内容", "备注", "分类"])
         self.table.verticalHeader().setVisible(True)
-        self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.verticalHeader().setDefaultSectionSize(60)
         self.table.verticalHeader().setMinimumSectionSize(40)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
 
         self.table.horizontalHeader().setSectionResizeMode(COL_TITLE, QHeaderView.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(COL_CONTENT, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(COL_NOTE, QHeaderView.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(COL_CATEGORY, QHeaderView.ResizeToContents)
-        self.table.setColumnWidth(COL_TITLE, 150)
-        self.table.setColumnWidth(COL_NOTE, 150)
+        self.table.setColumnWidth(COL_TITLE, 120)
+        self.table.setColumnWidth(COL_NOTE, 120)
 
         table_font = QFont()
         table_font.setPointSize(12)
@@ -347,11 +348,18 @@ class LearningCardWidget(QWidget):
 
             title_item.setData(Qt.UserRole, card["id"])
 
+            # 设置文本换行，让行高自适应能正确计算
+            title_item.setSizeHint(QSize(120, 60))
+            content_item.setSizeHint(QSize(300, 60))
+            note_item.setSizeHint(QSize(120, 60))
+            cat_item.setSizeHint(QSize(80, 60))
+
             self.table.setItem(row, COL_TITLE, title_item)
             self.table.setItem(row, COL_CONTENT, content_item)
             self.table.setItem(row, COL_NOTE, note_item)
             self.table.setItem(row, COL_CATEGORY, cat_item)
 
+        self.table.resizeRowsToContents()
         self.table.blockSignals(False)
         self._update_stats()
 

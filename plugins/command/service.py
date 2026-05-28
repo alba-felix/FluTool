@@ -51,6 +51,17 @@ class CommandService:
             sub_title=sub_title
         )
 
+    def batch_add_commands(self, commands_data: Dict[str, List[Dict[str, Any]]]) -> int:
+        """批量添加命令，按分类组织。
+        
+        Args:
+            commands_data: {分类名: [{name, content, sub_title?}, ...], ...}
+            
+        Returns:
+            实际添加的命令数量
+        """
+        return self.db.batch_add_commands(self.plugin_id, commands_data)
+
     def update_command(self, command_id: int, **kwargs) -> bool:
         """更新命令。"""
         return self.db.update_command(self.plugin_id, command_id, **kwargs)

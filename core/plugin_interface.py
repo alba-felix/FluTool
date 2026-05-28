@@ -145,8 +145,11 @@ class PluginInterface(QObject, metaclass=PluginMeta):
                 self.widget_created.emit()
             return self._widget
         except Exception as e:
-            print(f"[PluginInterface] Failed to create widget for {self.get_id()}: {e}")
-            traceback.print_exc()
+            error_msg = f"Failed to create widget for {self.get_id()}: {e}\n{traceback.format_exc()}"
+            if self.core and hasattr(self.core, 'logger'):
+                self.core.logger.error(error_msg)
+            else:
+                print(f"[PluginInterface] {error_msg}")
             return None
 
     def load_data(self) -> None:

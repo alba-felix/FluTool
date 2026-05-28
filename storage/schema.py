@@ -9,6 +9,8 @@ CREATE_TABLES_SQL = '''
         plugin_id TEXT NOT NULL,
         name TEXT NOT NULL,
         sort_order INTEGER DEFAULT 0,
+        icon_name TEXT DEFAULT '',
+        color TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(plugin_id, name)

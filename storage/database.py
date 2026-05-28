@@ -157,6 +157,28 @@ class DatabaseManager:
             name=name, sub_title=sub_title, content=content, sort_order=sort_order
         )
     
+    def batch_add_commands(self, plugin_id: str, 
+                           commands_data: Dict[str, List[Dict[str, Any]]]) -> int:
+        """批量添加命令，按分类组织。"""
+        count = 0
+        for category_name, commands in commands_data.items():
+            if not isinstance(commands, list):
+                continue
+            category_id = self.categories.add_or_get(plugin_id, category_name)
+            for cmd in commands:
+                if self.commands.exists(plugin_id, cmd['name'], category_name):
+                    continue
+                self.commands.add(
+                    plugin_id=plugin_id,
+                    category_id=category_id,
+                    name=cmd['name'],
+                    sub_title=cmd.get('sub_title', ''),
+                    content=cmd['content'],
+                    sort_order=cmd.get('sort_order', count)
+                )
+                count += 1
+        return count
+    
     def get_commands(self, plugin_id: str, category_id: int = None) -> list:
         return self.commands.get_by_plugin(plugin_id, category_id)
     

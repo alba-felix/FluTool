@@ -16,6 +16,7 @@ pyinstaller --noconfirm --onedir --windowed ^
       --collect-submodules ui ^
       --collect-submodules core ^
       --collect-submodules utils ^
+      --collect-submodules storage ^
       --hidden-import "uuid" ^
       --hidden-import "darkdetect" ^
       --hidden-import "PyQt5.sip" ^
@@ -29,9 +30,21 @@ pyinstaller --noconfirm --onedir --windowed ^
       --hidden-import "loguru" ^
       --hidden-import "configparser" ^
       --hidden-import "markdown" ^
+      --hidden-import "markdown.extensions.fenced_code" ^
+      --hidden-import "markdown.extensions.tables" ^
+      --hidden-import "markdown.extensions.toc" ^
       --hidden-import "ui.common" ^
       --hidden-import "ui.common.dialogs" ^
       --hidden-import "core.async_loader" ^
+      --hidden-import "core.ai" ^
+      --hidden-import "core.ai.types" ^
+      --hidden-import "core.ai.settings_bridge" ^
+      --hidden-import "core.ai.search_bridge" ^
+      --hidden-import "core.ai.chat_service" ^
+      --hidden-import "core.ai.providers" ^
+      --hidden-import "core.ai.providers.openai_compatible" ^
+      --hidden-import "core.ai.providers.ollama" ^
+      --hidden-import "core.ai.providers.deepseek" ^
       --add-data "logo.ico;." ^
       --add-data "ui/resources;ui/resources/" ^
       --add-data "plugins_sourcecode;plugins_sourcecode/" ^

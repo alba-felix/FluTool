@@ -1586,6 +1586,7 @@ class AppLauncherWidget(QWidget):
         self.batch_mode = False
         self._current_sort_by = "sort_order"
         self._ignore_tab_move = False
+        self._running_py_processes: Dict[str, 'QProcess'] = {}
         self._init_paths()
         self._load_view_preferences()
         self._init_scroll_buttons()
@@ -2629,6 +2630,16 @@ class AppLauncherWidget(QWidget):
         """异步执行 Python 脚本并反馈结果"""
         from PyQt5.QtCore import QProcess
 
+        # 如果已有同名脚本在运行，先断开旧进程
+        old_proc = self._running_py_processes.get(target_path)
+        if old_proc is not None:
+            try:
+                old_proc.finished.disconnect()
+                old_proc.errorOccurred.disconnect()
+            except TypeError:
+                pass
+            old_proc.deleteLater()
+
         proc = QProcess(self)
         proc.setProcessChannelMode(QProcess.MergedChannels)
 
@@ -2644,13 +2655,23 @@ class AppLauncherWidget(QWidget):
 
         proc.finished.connect(
             lambda exit_code, _: self._on_py_script_done(
-                target_path, exit_code, proc
+                target_path, exit_code
             )
         )
+        proc.errorOccurred.connect(
+            lambda error: self._on_py_script_error(
+                target_path, error
+            )
+        )
+        self._running_py_processes[target_path] = proc
         proc.start(cmd, args)
 
-    def _on_py_script_done(self, target_path: str, exit_code: int, proc) -> None:
+    def _on_py_script_done(self, target_path: str, exit_code: int) -> None:
         """Python 脚本执行完毕后的回调"""
+        proc = self._running_py_processes.pop(target_path, None)
+        if proc is None:
+            return
+
         output = proc.readAllStandardOutput().data().decode("utf-8", errors="replace").strip()
         basename = os.path.basename(target_path)
         output_lines = output.splitlines()
@@ -2678,6 +2699,31 @@ class AppLauncherWidget(QWidget):
                 duration=6000,
                 parent=self,
             )
+        proc.deleteLater()
+
+    def _on_py_script_error(self, target_path: str, error) -> None:
+        """Python 脚本启动失败的回调"""
+        self._running_py_processes.pop(target_path, None)
+        basename = os.path.basename(target_path)
+        error_name = {
+            0: "连接失败",
+            1: "启动失败",
+            2: "崩溃",
+            3: "超时",
+            4: "写错误",
+            5: "读错误",
+            6: "未知错误",
+        }.get(error, f"错误码 {error}")
+        self.core.logger.error(f"脚本启动失败 {basename}: {error_name}")
+        InfoBar.error(
+            title="启动失败",
+            content=f"{basename}: {error_name}",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=4000,
+            parent=self,
+        )
 
     _OUTPUT_FILE_EXTENSIONS = re.compile(
         r'[\'"]([^\'"]+\.(html?|csv|json|xml|md|txt|log|png|jpg|jpeg|gif|pdf|docx?|xlsx?|pptx?))[\'"]'

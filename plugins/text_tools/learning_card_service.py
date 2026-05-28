@@ -64,3 +64,35 @@ class LearningCardService:
 
     def get_card_count(self, category_id: Optional[int] = None) -> int:
         return self.db.learning_cards.get_card_count(PLUGIN_ID, category_id)
+
+    # ============ 批量方法 ============
+
+    def batch_add_cards(self, cards: List[Dict[str, Any]]) -> List[int]:
+        """批量添加卡片，返回ID列表。每项应包含 title, content, 可选 note, category_id"""
+        ids = []
+        for card_data in cards:
+            card_id = self.add_card(
+                title=card_data.get('title', ''),
+                content=card_data.get('content', ''),
+                note=card_data.get('note', ''),
+                category_id=card_data.get('category_id')
+            )
+            ids.append(card_id)
+        return ids
+
+    def batch_delete_cards(self, card_ids: List[int]) -> bool:
+        """批量删除卡片"""
+        success = True
+        for cid in card_ids:
+            if not self.delete_card(cid):
+                success = False
+        return success
+
+    def batch_update_cards(self, updates: List[Dict[str, Any]]) -> bool:
+        """批量更新卡片。每项需包含 card_id 和要更新的字段。"""
+        success = True
+        for update in updates:
+            cid = update.pop('card_id')
+            if not self.update_card(cid, **update):
+                success = False
+        return success
