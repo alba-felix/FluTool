@@ -3,7 +3,7 @@
 from PyQt5.QtCore import Qt, pyqtSignal, QRect, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit
 from PyQt5.QtGui import QColor, QKeyEvent, QPainter, QFont, QFontMetrics
-from qfluentwidgets import isDarkTheme, qconfig
+from qfluentwidgets import isDarkTheme, qconfig, RoundMenu, Action
 
 from .highlighter import NotebookHighlighter
 
@@ -329,3 +329,49 @@ class CustomTextEdit(QPlainTextEdit):
                 return
 
         super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        """自定义右键菜单，使用中文菜单"""
+        menu = RoundMenu(parent=self)
+
+        cursor = self.textCursor()
+        has_selection = cursor.hasSelection()
+
+        undo_action = Action("撤销", self)
+        undo_action.triggered.connect(self.undo)
+        undo_action.setEnabled(self.document().isUndoAvailable())
+        menu.addAction(undo_action)
+
+        redo_action = Action("重做", self)
+        redo_action.triggered.connect(self.redo)
+        redo_action.setEnabled(self.document().isRedoAvailable())
+        menu.addAction(redo_action)
+
+        menu.addSeparator()
+
+        cut_action = Action("剪切", self)
+        cut_action.triggered.connect(self.cut)
+        cut_action.setEnabled(has_selection)
+        menu.addAction(cut_action)
+
+        copy_action = Action("复制", self)
+        copy_action.triggered.connect(self.copy)
+        copy_action.setEnabled(has_selection)
+        menu.addAction(copy_action)
+
+        paste_action = Action("粘贴", self)
+        paste_action.triggered.connect(self.paste)
+        menu.addAction(paste_action)
+
+        delete_action = Action("删除", self)
+        delete_action.triggered.connect(lambda: cursor.removeSelectedText())
+        delete_action.setEnabled(has_selection)
+        menu.addAction(delete_action)
+
+        menu.addSeparator()
+
+        select_all_action = Action("全选", self)
+        select_all_action.triggered.connect(self.selectAll)
+        menu.addAction(select_all_action)
+
+        menu.exec_(event.globalPos())

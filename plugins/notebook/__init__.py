@@ -613,7 +613,7 @@ class NotebookWidget(QWidget):
         
         export_layout = QVBoxLayout()
         format_combo = ComboBox()
-        format_combo.addItems(["TXT", "Markdown", "HTML"])
+        format_combo.addItems(["TXT 文本", "Markdown 文档", "HTML 网页"])
         export_layout.addWidget(format_combo)
         
         dialog.viewLayout.addLayout(export_layout)
@@ -623,7 +623,7 @@ class NotebookWidget(QWidget):
             content = note['content']
             
             file_path, _ = QFileDialog.getSaveFileName(
-                self, "保存文件", note['title'],
+                self, "选择保存位置", note['title'],
                 f"{format_type} 文件 (*.{format_type.lower()})"
             )
             

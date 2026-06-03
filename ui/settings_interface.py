@@ -62,6 +62,8 @@ class SettingsInterface(ScrollArea):
             "编辑后自动保存数据",
             configItem=self.core.config.auto_save
         )
+        self.autoSaveCard.switchButton.onText = "开"
+        self.autoSaveCard.switchButton.offText = "关"
         self.autoSaveCard.checkedChanged.connect(self._on_auto_save_changed)
         self.generalGroup.addSettingCard(self.autoSaveCard)
         
@@ -72,6 +74,8 @@ class SettingsInterface(ScrollArea):
                 "降低 CPU 占用，延长电池续航（需重启生效）",
                 configItem=self.core.config.efficiency_mode
             )
+            self.efficiencyModeCard.switchButton.onText = "开"
+            self.efficiencyModeCard.switchButton.offText = "关"
             self.efficiencyModeCard.checkedChanged.connect(self._on_efficiency_mode_changed)
             self.generalGroup.addSettingCard(self.efficiencyModeCard)
         
@@ -104,6 +108,8 @@ class SettingsInterface(ScrollArea):
             "启动时展开侧边导航栏",
             configItem=self.core.config.nav_expanded
         )
+        self.navExpandedCard.switchButton.onText = "开"
+        self.navExpandedCard.switchButton.offText = "关"
         self.navExpandedCard.checkedChanged.connect(self._on_nav_expanded_changed)
         self.windowGroup.addSettingCard(self.navExpandedCard)
         self.autoStartCard = SwitchSettingCard(
@@ -112,6 +118,8 @@ class SettingsInterface(ScrollArea):
             "系统启动时自动运行 FluTool",
             configItem=self.core.config.auto_start
         )
+        self.autoStartCard.switchButton.onText = "开"
+        self.autoStartCard.switchButton.offText = "关"
         self.autoStartCard.checkedChanged.connect(self._on_auto_start_changed)
         self.windowGroup.addSettingCard(self.autoStartCard)
         self.minimizeToTrayCard = SwitchSettingCard(
@@ -120,6 +128,8 @@ class SettingsInterface(ScrollArea):
             "关闭窗口时最小化到系统托盘而非退出程序",
             configItem=self.core.config.minimize_to_tray
         )
+        self.minimizeToTrayCard.switchButton.onText = "开"
+        self.minimizeToTrayCard.switchButton.offText = "关"
         self.windowGroup.addSettingCard(self.minimizeToTrayCard)
         self.vBoxLayout.addWidget(self.windowGroup)
 
@@ -133,6 +143,8 @@ class SettingsInterface(ScrollArea):
             "每次启动应用时自动备份数据到指定目录（每天一次）",
             configItem=self.core.config.auto_backup_enabled
         )
+        self.autoBackupCard.switchButton.onText = "开"
+        self.autoBackupCard.switchButton.offText = "关"
         self.autoBackupCard.checkedChanged.connect(self._on_auto_backup_changed)
         self.dataGroup.addSettingCard(self.autoBackupCard)
         
@@ -185,7 +197,7 @@ class SettingsInterface(ScrollArea):
         self.aiApiKeyCard = PushSettingCard(
             "编辑",
             FIF.SAVE,
-            "API Key",
+            "API 密钥",
             "",
             parent=self.view
         )
@@ -253,7 +265,7 @@ class SettingsInterface(ScrollArea):
         self.aiApiKeyCard.setContent(masked_key)
         self.aiApiUrlCard.setContent(base_url or "未设置")
         self.aiDefaultModelCard.setContent(default_model or "未设置")
-        self.aiEnabledCard.setContent("ON" if enabled else "OFF")
+        self.aiEnabledCard.setContent("启用" if enabled else "禁用")
 
     def _select_ai_provider(self) -> None:
         """选择 AI 服务商"""
@@ -290,10 +302,10 @@ class SettingsInterface(ScrollArea):
         provider = self._selected_ai_provider
         provider_config = self.ai_settings.get_provider_config(provider)
         dialog = MessageBoxBase(self)
-        title = SubtitleLabel(f"编辑 API Key ({provider})", dialog)
+        title = SubtitleLabel(f"编辑 API 密钥 ({provider})", dialog)
         dialog.viewLayout.addWidget(title)
         input_edit = LineEdit(dialog)
-        input_edit.setPlaceholderText("输入 API Key")
+        input_edit.setPlaceholderText("输入 API 密钥")
         # 设置密码模式，显示掩码
         input_edit.setEchoMode(LineEdit.Password)
         input_edit.setText(str(provider_config.get("api_key", "")))
@@ -316,7 +328,7 @@ class SettingsInterface(ScrollArea):
         title = SubtitleLabel(f"编辑 API 地址 ({provider})", dialog)
         dialog.viewLayout.addWidget(title)
         input_edit = LineEdit(dialog)
-        input_edit.setPlaceholderText("输入 Base URL")
+        input_edit.setPlaceholderText("输入 API 地址")
         input_edit.setText(str(provider_config.get("base_url", "")))
         dialog.viewLayout.addWidget(input_edit)
         dialog.yesButton.setText("保存")

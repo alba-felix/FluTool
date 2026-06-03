@@ -2,8 +2,8 @@
 
 from typing import List, Dict, Any
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QHBoxLayout, QAction
-from qfluentwidgets import SearchLineEdit, ToolButton, FluentIcon as FIF, isDarkTheme, RoundMenu
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QHBoxLayout
+from qfluentwidgets import SearchLineEdit, ToolButton, FluentIcon as FIF, isDarkTheme, RoundMenu, Action
 from ui import CustomFluentIcon as CFIF
 
 
@@ -124,21 +124,21 @@ class NotebookSidebar(QWidget):
         note_id = item.data(Qt.UserRole)
         
         menu = RoundMenu(parent=self)
-        
-        rename_action = QAction("重命名", self)
+
+        rename_action = Action(FIF.EDIT, "重命名", self)
         rename_action.triggered.connect(lambda: self._rename_note(note_id))
         menu.addAction(rename_action)
-        
-        delete_action = QAction("删除", self)
+
+        delete_action = Action(FIF.DELETE, "删除", self)
         delete_action.triggered.connect(lambda: self._delete_note(note_id))
         menu.addAction(delete_action)
-        
+
         menu.addSeparator()
-        
-        export_action = QAction("导出", self)
+
+        export_action = Action(FIF.SHARE, "导出", self)
         export_action.triggered.connect(lambda: self._export_note(note_id))
         menu.addAction(export_action)
-        
+
         menu.exec_(self._note_list.mapToGlobal(pos))
 
     def _rename_note(self, note_id: int):

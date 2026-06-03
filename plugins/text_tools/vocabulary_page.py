@@ -2,14 +2,15 @@ from typing import List, Dict, Any, Optional
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QAbstractItemView,
-    QTableWidgetItem, QFileDialog,
+    QTableWidgetItem, QFileDialog, QStackedWidget, QTextEdit,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QFont, QColor
 from qfluentwidgets import (
     FluentIcon as FIF, PushButton, ComboBox, LineEdit, InfoBar, InfoBarPosition,
     MessageBoxBase, SubtitleLabel, MessageBox, TableWidget, BodyLabel,
-    PrimaryPushButton, ProgressBar, RoundMenu, Action,
+    PrimaryPushButton, ProgressBar, RoundMenu, Action, CardWidget,
+    isDarkTheme, qconfig,
 )
 
 from .page_interface import TabPageInterface
@@ -155,6 +156,8 @@ class VocabularyWidget(QWidget):
         self._all_words: List[Dict[str, Any]] = []
         self._current_category_id: Optional[int] = None
         self._search_text = ""
+        self._study_index = 0
+        self._study_words: List[Dict[str, Any]] = []
         self._setup_ui()
         self._load_data()
 
@@ -163,7 +166,7 @@ class VocabularyWidget(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # ===== 顶部工具栏：搜索 + 分类 + 隐藏按钮 + 导入导出 =====
+        # ===== 顶部工具栏 =====
         top_bar = QWidget(self)
         top_layout = QHBoxLayout(top_bar)
         top_layout.setContentsMargins(0, 0, 0, 0)
@@ -181,30 +184,31 @@ class VocabularyWidget(QWidget):
         self.category_combo.currentIndexChanged.connect(self._on_category_changed)
         top_layout.addWidget(self.category_combo)
 
-        self.hide_cn_btn = PushButton("隐藏中文")
-        self.hide_cn_btn.setCheckable(True)
-        self.hide_cn_btn.clicked.connect(self._toggle_chinese)
-        top_layout.addWidget(self.hide_cn_btn)
+        self.add_btn = PrimaryPushButton("添加单词", self)
+        self.add_btn.clicked.connect(self._add_word)
+        top_layout.addWidget(self.add_btn)
 
-        self.hide_en_btn = PushButton("隐藏英文")
-        self.hide_en_btn.setCheckable(True)
-        self.hide_en_btn.clicked.connect(self._toggle_english)
-        top_layout.addWidget(self.hide_en_btn)
+        self.del_btn = PushButton("删除选中单词", self)
+        self.del_btn.clicked.connect(self._delete_word)
+        top_layout.addWidget(self.del_btn)
 
-        self.hide_pron_btn = PushButton("隐藏发音")
-        self.hide_pron_btn.setCheckable(True)
-        self.hide_pron_btn.clicked.connect(self._toggle_pronunciation)
-        top_layout.addWidget(self.hide_pron_btn)
-
-        self.import_btn = PushButton("导入单词")
-        self.import_btn.clicked.connect(self._import_words)
-        top_layout.addWidget(self.import_btn)
-
-        self.export_btn = PushButton("导出单词")
-        self.export_btn.clicked.connect(self._export_words)
-        top_layout.addWidget(self.export_btn)
+        self.save_btn = PushButton("保存修改", self)
+        self.save_btn.clicked.connect(self._save_changes)
+        top_layout.addWidget(self.save_btn)
 
         top_layout.addStretch()
+
+        self.study_btn = PrimaryPushButton("学习模式", self)
+        self.study_btn.setIcon(FIF.PLAY)
+        self.study_btn.clicked.connect(self._enter_study_mode)
+        top_layout.addWidget(self.study_btn)
+
+        # 更多操作菜单
+        self.more_btn = PushButton("更多", self)
+        self.more_btn.setIcon(FIF.MORE)
+        self.more_btn.clicked.connect(self._show_more_menu)
+        top_layout.addWidget(self.more_btn)
+
         layout.addWidget(top_bar)
 
         # ===== 统计信息栏 =====
@@ -230,7 +234,14 @@ class VocabularyWidget(QWidget):
         stats_layout.addStretch()
         layout.addWidget(stats_bar)
 
-        # ===== 单词表格（5列：行号 + 英文 + 中文 + 发音 + 分类） =====
+        # ===== 堆叠视图：表格 / 学习模式 =====
+        self.stack = QStackedWidget(self)
+
+        # 页面1：表格视图
+        self.table_page = QWidget()
+        table_layout = QVBoxLayout(self.table_page)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+
         self.table = TableWidget(self)
         self.table.setBorderRadius(8)
         self.table.setBorderVisible(True)
@@ -255,32 +266,28 @@ class VocabularyWidget(QWidget):
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
 
-        # 设置表格行高和高度为显示10行
         self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.setMinimumHeight(32 + 40 * 10)
 
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self.table, 1)
+        table_layout.addWidget(self.table, 1)
+
+        self.stack.addWidget(self.table_page)
+
+        # 页面2：学习模式视图
+        self.study_page = QWidget()
+        self._setup_study_ui()
+        self.stack.addWidget(self.study_page)
+
+        layout.addWidget(self.stack, 1)
 
         # ===== 底部操作栏 =====
         bottom_bar = QWidget(self)
         bottom_layout = QHBoxLayout(bottom_bar)
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.setSpacing(8)
-
-        self.add_btn = PrimaryPushButton("添加单词", self)
-        self.add_btn.clicked.connect(self._add_word)
-        bottom_layout.addWidget(self.add_btn)
-
-        self.del_btn = PushButton("删除选中单词", self)
-        self.del_btn.clicked.connect(self._delete_word)
-        bottom_layout.addWidget(self.del_btn)
-
-        self.save_btn = PushButton("保存修改", self)
-        self.save_btn.clicked.connect(self._save_changes)
-        bottom_layout.addWidget(self.save_btn)
 
         bottom_layout.addStretch()
         layout.addWidget(bottom_bar)
@@ -375,17 +382,279 @@ class VocabularyWidget(QWidget):
 
     # ============ 列显隐 ============
 
-    def _toggle_english(self):
-        self._show_english = not self.hide_en_btn.isChecked()
+    def _toggle_english(self, checked=None):
+        self._show_english = not self._show_english
         self._display_words()
 
-    def _toggle_chinese(self):
-        self._show_chinese = not self.hide_cn_btn.isChecked()
+    def _toggle_chinese(self, checked=None):
+        self._show_chinese = not self._show_chinese
         self._display_words()
 
-    def _toggle_pronunciation(self):
-        self._show_pronunciation = not self.hide_pron_btn.isChecked()
+    def _toggle_pronunciation(self, checked=None):
+        self._show_pronunciation = not self._show_pronunciation
         self._display_words()
+
+    # ============ 更多菜单 ============
+
+    def _show_more_menu(self):
+        """显示更多操作菜单"""
+        menu = RoundMenu("更多操作", parent=self)
+
+        add_cat_action = Action(FIF.ADD, "添加分类", self)
+        add_cat_action.triggered.connect(self._add_category)
+        menu.addAction(add_cat_action)
+
+        edit_cat_action = Action(FIF.EDIT, "编辑分类", self)
+        edit_cat_action.triggered.connect(self._edit_category)
+        menu.addAction(edit_cat_action)
+
+        del_cat_action = Action(FIF.DELETE, "删除分类", self)
+        del_cat_action.triggered.connect(self._delete_category)
+        menu.addAction(del_cat_action)
+
+        import_action = Action(FIF.DOWNLOAD, "导入单词", self)
+        import_action.triggered.connect(self._import_words)
+        menu.addAction(import_action)
+
+        export_action = Action(FIF.SHARE, "导出单词", self)
+        export_action.triggered.connect(self._export_words)
+        menu.addAction(export_action)
+
+        menu.addSeparator()
+
+        hide_en_action = Action("隐藏英文", self)
+        hide_en_action.setCheckable(True)
+        hide_en_action.setChecked(not self._show_english)
+        hide_en_action.triggered.connect(self._toggle_english)
+        menu.addAction(hide_en_action)
+
+        hide_cn_action = Action("隐藏中文", self)
+        hide_cn_action.setCheckable(True)
+        hide_cn_action.setChecked(not self._show_chinese)
+        hide_cn_action.triggered.connect(self._toggle_chinese)
+        menu.addAction(hide_cn_action)
+
+        hide_pron_action = Action("隐藏发音", self)
+        hide_pron_action.setCheckable(True)
+        hide_pron_action.setChecked(not self._show_pronunciation)
+        hide_pron_action.triggered.connect(self._toggle_pronunciation)
+        menu.addAction(hide_pron_action)
+
+        menu.exec(self.more_btn.mapToGlobal(
+            self.more_btn.rect().bottomLeft()
+        ))
+
+    # ============ 学习模式 ============
+
+    def _setup_study_ui(self):
+        """设置学习模式界面"""
+        layout = QVBoxLayout(self.study_page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        top_bar = QWidget()
+        top_layout = QHBoxLayout(top_bar)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.study_exit_btn = PushButton("退出学习", self)
+        self.study_exit_btn.setIcon(FIF.CLOSE)
+        self.study_exit_btn.clicked.connect(self._exit_study_mode)
+        top_layout.addWidget(self.study_exit_btn)
+
+        top_layout.addStretch()
+
+        self.study_counter = BodyLabel("1 / 10", self)
+        study_counter_font = QFont()
+        study_counter_font.setPointSize(14)
+        study_counter_font.setBold(True)
+        self.study_counter.setFont(study_counter_font)
+        top_layout.addWidget(self.study_counter)
+
+        top_layout.addStretch()
+
+        self.study_hide_en_btn = PushButton("隐藏英文")
+        self.study_hide_en_btn.setCheckable(True)
+        self.study_hide_en_btn.clicked.connect(self._toggle_study_english)
+        top_layout.addWidget(self.study_hide_en_btn)
+
+        self.study_hide_cn_btn = PushButton("隐藏中文")
+        self.study_hide_cn_btn.setCheckable(True)
+        self.study_hide_cn_btn.clicked.connect(self._toggle_study_chinese)
+        top_layout.addWidget(self.study_hide_cn_btn)
+
+        self.study_hide_pron_btn = PushButton("隐藏发音")
+        self.study_hide_pron_btn.setCheckable(True)
+        self.study_hide_pron_btn.clicked.connect(self._toggle_study_pronunciation)
+        top_layout.addWidget(self.study_hide_pron_btn)
+
+        layout.addWidget(top_bar)
+
+        center_wrap = QWidget()
+        center_layout = QHBoxLayout(center_wrap)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.study_card = CardWidget(self)
+        self.study_card.setMaximumWidth(800)
+        card_layout = QVBoxLayout(self.study_card)
+        card_layout.setContentsMargins(32, 32, 32, 32)
+        card_layout.setSpacing(16)
+
+        self.study_category_label = BodyLabel("分类", self)
+        category_font = QFont()
+        category_font.setPointSize(12)
+        self.study_category_label.setFont(category_font)
+        card_layout.addWidget(self.study_category_label)
+
+        self.study_english_label = SubtitleLabel("English", self)
+        en_font = QFont()
+        en_font.setPointSize(24)
+        en_font.setBold(True)
+        self.study_english_label.setFont(en_font)
+        card_layout.addWidget(self.study_english_label)
+
+        self.study_chinese_area = QTextEdit(self)
+        self.study_chinese_area.setReadOnly(True)
+        cn_font = QFont()
+        cn_font.setPointSize(16)
+        self.study_chinese_area.setFont(cn_font)
+        card_layout.addWidget(self.study_chinese_area, 1)
+
+        self.study_pronunciation_label = BodyLabel("", self)
+        pron_font = QFont()
+        pron_font.setPointSize(12)
+        self.study_pronunciation_label.setFont(pron_font)
+        card_layout.addWidget(self.study_pronunciation_label)
+
+        center_layout.addStretch()
+        center_layout.addWidget(self.study_card)
+        center_layout.addStretch()
+
+        layout.addWidget(center_wrap, 1)
+
+        nav_bar = QWidget()
+        nav_layout = QHBoxLayout(nav_bar)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.study_prev_btn = PushButton("← 上一张", self)
+        self.study_prev_btn.setIcon(FIF.LEFT_ARROW)
+        self.study_prev_btn.clicked.connect(self._study_prev)
+        nav_layout.addWidget(self.study_prev_btn)
+
+        nav_layout.addStretch()
+
+        self.study_hint = BodyLabel("按 ← → 方向键切换卡片", self)
+        nav_layout.addWidget(self.study_hint)
+
+        nav_layout.addStretch()
+
+        self.study_next_btn = PushButton("下一张 →", self)
+        self.study_next_btn.setIcon(FIF.RIGHT_ARROW)
+        self.study_next_btn.clicked.connect(self._study_next)
+        nav_layout.addWidget(self.study_next_btn)
+
+        layout.addWidget(nav_bar)
+
+        self._apply_study_theme()
+        qconfig.themeChangedFinished.connect(self._apply_study_theme)
+
+        self.study_page.setFocusPolicy(Qt.StrongFocus)
+
+    def _apply_study_theme(self):
+        """根据当前主题设置学习模式样式"""
+        dark = isDarkTheme()
+        bg = "#2b2b2b" if dark else "#f5f5f5"
+        border = "#3d3d3d" if dark else "#ddd"
+        fg = "#e0e0e0" if dark else "#333"
+        label_color = "#a0a0a0" if dark else "#666"
+
+        self.study_category_label.setStyleSheet(f"color: {label_color};")
+        self.study_chinese_area.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: 8px;
+                padding: 16px;
+                color: {fg};
+            }}
+        """)
+        self.study_pronunciation_label.setStyleSheet(f"color: {label_color};")
+
+    def keyPressEvent(self, event):
+        if self.stack.currentIndex() == 1:
+            if event.key() == Qt.Key_Left:
+                self._study_prev()
+            elif event.key() == Qt.Key_Right:
+                self._study_next()
+            elif event.key() == Qt.Key_Escape:
+                self._exit_study_mode()
+            else:
+                super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
+
+    def _enter_study_mode(self):
+        if not self._displayed_words:
+            InfoBar.warning(
+                title="提示", content="没有可学习的单词",
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=2000, parent=self,
+            )
+            return
+        self._study_words = self._displayed_words.copy()
+        self._study_index = 0
+        self._update_study_word()
+        self.stack.setCurrentIndex(1)
+        self.study_page.setFocus()
+
+    def _exit_study_mode(self):
+        self.stack.setCurrentIndex(0)
+
+    def _update_study_word(self):
+        if not self._study_words or self._study_index < 0 or self._study_index >= len(self._study_words):
+            return
+
+        word = self._study_words[self._study_index]
+        total = len(self._study_words)
+
+        self.study_counter.setText(f"{self._study_index + 1} / {total}")
+        self.study_category_label.setText(word.get("category_name", "") or "未分类")
+
+        en_text = word.get("english", "") if self._show_english else "******"
+        cn_text = word.get("chinese", "") if self._show_chinese else "******"
+        pron_text = word.get("pronunciation", "")
+
+        self.study_english_label.setText(en_text)
+        self.study_chinese_area.setPlainText(cn_text)
+        self.study_pronunciation_label.setText(f"[{pron_text}]" if pron_text else "")
+
+        self.study_prev_btn.setEnabled(self._study_index > 0)
+        self.study_next_btn.setEnabled(self._study_index < total - 1)
+
+        self.study_hide_en_btn.setChecked(not self._show_english)
+        self.study_hide_cn_btn.setChecked(not self._show_chinese)
+        self.study_hide_pron_btn.setChecked(not self._show_pronunciation)
+
+    def _study_prev(self):
+        if self._study_index > 0:
+            self._study_index -= 1
+            self._update_study_word()
+
+    def _study_next(self):
+        if self._study_index < len(self._study_words) - 1:
+            self._study_index += 1
+            self._update_study_word()
+
+    def _toggle_study_english(self, checked=None):
+        self._show_english = not self.study_hide_en_btn.isChecked()
+        self._update_study_word()
+
+    def _toggle_study_chinese(self, checked=None):
+        self._show_chinese = not self.study_hide_cn_btn.isChecked()
+        self._update_study_word()
+
+    def _toggle_study_pronunciation(self, checked=None):
+        self._show_pronunciation = not self.study_hide_pron_btn.isChecked()
+        self._update_study_word()
 
     # ============ 分类筛选 ============
 

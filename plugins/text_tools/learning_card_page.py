@@ -2,14 +2,15 @@ from typing import List, Dict, Any, Optional
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QAbstractItemView,
-    QTableWidgetItem, QFileDialog, QTextEdit,
+    QTableWidgetItem, QFileDialog, QTextEdit, QStackedWidget,
 )
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QFont, QColor
 from qfluentwidgets import (
     FluentIcon as FIF, PushButton, ComboBox, LineEdit, InfoBar, InfoBarPosition,
     MessageBoxBase, SubtitleLabel, MessageBox, TableWidget, BodyLabel,
-    PrimaryPushButton, ProgressBar, RoundMenu, Action,
+    PrimaryPushButton, ProgressBar, RoundMenu, Action, CardWidget, IconWidget,
+    isDarkTheme, qconfig,
 )
 
 from .page_interface import TabPageInterface
@@ -152,6 +153,8 @@ class LearningCardWidget(QWidget):
         self._all_cards: List[Dict[str, Any]] = []
         self._current_category_id: Optional[int] = None
         self._search_text = ""
+        self._study_index = 0
+        self._study_cards: List[Dict[str, Any]] = []
         self._setup_ui()
         self._load_data()
 
@@ -178,49 +181,23 @@ class LearningCardWidget(QWidget):
         self.category_combo.currentIndexChanged.connect(self._on_category_changed)
         top_layout.addWidget(self.category_combo)
 
-        self.add_cat_btn = PushButton("添加分类", self)
-        self.add_cat_btn.clicked.connect(self._add_category)
-        top_layout.addWidget(self.add_cat_btn)
-
-        self.edit_cat_btn = PushButton("编辑分类", self)
-        self.edit_cat_btn.clicked.connect(self._edit_category)
-        top_layout.addWidget(self.edit_cat_btn)
-
-        self.del_cat_btn = PushButton("删除分类", self)
-        self.del_cat_btn.clicked.connect(self._delete_category)
-        top_layout.addWidget(self.del_cat_btn)
-
-        top_layout.addSpacing(16)
-
         self.add_btn = PrimaryPushButton("添加卡片", self)
         self.add_btn.clicked.connect(self._add_card)
         top_layout.addWidget(self.add_btn)
 
-        self.del_btn = PushButton("删除选中", self)
-        self.del_btn.clicked.connect(self._delete_card)
-        top_layout.addWidget(self.del_btn)
+        self.study_btn = PrimaryPushButton("学习模式", self)
+        self.study_btn.setIcon(FIF.PLAY)
+        self.study_btn.clicked.connect(self._enter_study_mode)
+        top_layout.addWidget(self.study_btn)
 
-        top_layout.addSpacing(16)
-
-        self.hide_title_btn = PushButton("隐藏标题")
-        self.hide_title_btn.setCheckable(True)
-        self.hide_title_btn.clicked.connect(self._toggle_title)
-        top_layout.addWidget(self.hide_title_btn)
-
-        self.hide_content_btn = PushButton("隐藏内容")
-        self.hide_content_btn.setCheckable(True)
-        self.hide_content_btn.clicked.connect(self._toggle_content)
-        top_layout.addWidget(self.hide_content_btn)
-
-        self.import_btn = PushButton("导入")
-        self.import_btn.clicked.connect(self._import_cards)
-        top_layout.addWidget(self.import_btn)
-
-        self.export_btn = PushButton("导出")
-        self.export_btn.clicked.connect(self._export_cards)
-        top_layout.addWidget(self.export_btn)
+        # 更多操作菜单
+        self.more_btn = PushButton("更多", self)
+        self.more_btn.setIcon(FIF.MORE)
+        self.more_btn.clicked.connect(self._show_more_menu)
+        top_layout.addWidget(self.more_btn)
 
         top_layout.addStretch()
+
         layout.addWidget(top_bar)
 
         # ===== 统计信息栏 =====
@@ -246,7 +223,14 @@ class LearningCardWidget(QWidget):
         stats_layout.addStretch()
         layout.addWidget(stats_bar)
 
-        # ===== 卡片表格 =====
+        # ===== 堆叠视图：表格 / 学习模式 =====
+        self.stack = QStackedWidget(self)
+
+        # 页面1：表格视图
+        self.table_page = QWidget()
+        table_layout = QVBoxLayout(self.table_page)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+
         self.table = TableWidget(self)
         self.table.setBorderRadius(8)
         self.table.setBorderVisible(True)
@@ -279,7 +263,232 @@ class LearningCardWidget(QWidget):
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
-        layout.addWidget(self.table, 1)
+        table_layout.addWidget(self.table, 1)
+
+        self.stack.addWidget(self.table_page)
+
+        # 页面2：学习模式视图
+        self.study_page = QWidget()
+        self._setup_study_ui()
+        self.stack.addWidget(self.study_page)
+
+        layout.addWidget(self.stack, 1)
+
+    def _setup_study_ui(self):
+        """设置学习模式界面"""
+        layout = QVBoxLayout(self.study_page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # 顶部工具栏
+        top_bar = QWidget()
+        top_layout = QHBoxLayout(top_bar)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.study_exit_btn = PushButton("退出学习", self)
+        self.study_exit_btn.setIcon(FIF.CLOSE)
+        self.study_exit_btn.clicked.connect(self._exit_study_mode)
+        top_layout.addWidget(self.study_exit_btn)
+
+        top_layout.addStretch()
+
+        self.study_counter = BodyLabel("1 / 10", self)
+        study_counter_font = QFont()
+        study_counter_font.setPointSize(14)
+        study_counter_font.setBold(True)
+        self.study_counter.setFont(study_counter_font)
+        top_layout.addWidget(self.study_counter)
+
+        top_layout.addStretch()
+
+        self.study_hide_title_btn = PushButton("隐藏标题")
+        self.study_hide_title_btn.setCheckable(True)
+        self.study_hide_title_btn.clicked.connect(self._toggle_study_title)
+        top_layout.addWidget(self.study_hide_title_btn)
+
+        self.study_hide_content_btn = PushButton("隐藏内容")
+        self.study_hide_content_btn.setCheckable(True)
+        self.study_hide_content_btn.clicked.connect(self._toggle_study_content)
+        top_layout.addWidget(self.study_hide_content_btn)
+
+        layout.addWidget(top_bar)
+
+        # 居中容器：卡片居中显示，最大宽度 800px
+        center_wrap = QWidget()
+        center_layout = QHBoxLayout(center_wrap)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.study_card = CardWidget(self)
+        self.study_card.setMaximumWidth(800)
+        card_layout = QVBoxLayout(self.study_card)
+        card_layout.setContentsMargins(32, 32, 32, 32)
+        card_layout.setSpacing(16)
+
+        self.study_category_label = BodyLabel("分类", self)
+        category_font = QFont()
+        category_font.setPointSize(12)
+        self.study_category_label.setFont(category_font)
+        card_layout.addWidget(self.study_category_label)
+
+        self.study_title = SubtitleLabel("标题", self)
+        title_font = QFont()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        self.study_title.setFont(title_font)
+        card_layout.addWidget(self.study_title)
+
+        self.study_content = QTextEdit(self)
+        self.study_content.setReadOnly(True)
+        content_font = QFont("Consolas, Monaco, monospace")
+        content_font.setPointSize(16)
+        self.study_content.setFont(content_font)
+        card_layout.addWidget(self.study_content, 1)
+
+        self.study_note = BodyLabel("备注", self)
+        note_font = QFont()
+        note_font.setPointSize(12)
+        self.study_note.setFont(note_font)
+        card_layout.addWidget(self.study_note)
+
+        center_layout.addStretch()
+        center_layout.addWidget(self.study_card)
+        center_layout.addStretch()
+
+        layout.addWidget(center_wrap, 1)
+
+        # 底部导航
+        nav_bar = QWidget()
+        nav_layout = QHBoxLayout(nav_bar)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.study_prev_btn = PushButton("← 上一张", self)
+        self.study_prev_btn.setIcon(FIF.LEFT_ARROW)
+        self.study_prev_btn.clicked.connect(self._study_prev)
+        nav_layout.addWidget(self.study_prev_btn)
+
+        nav_layout.addStretch()
+
+        self.study_hint = BodyLabel("按 ← → 方向键切换卡片", self)
+        nav_layout.addWidget(self.study_hint)
+
+        nav_layout.addStretch()
+
+        self.study_next_btn = PushButton("下一张 →", self)
+        self.study_next_btn.setIcon(FIF.RIGHT_ARROW)
+        self.study_next_btn.clicked.connect(self._study_next)
+        nav_layout.addWidget(self.study_next_btn)
+
+        layout.addWidget(nav_bar)
+
+        self._apply_study_theme()
+        qconfig.themeChangedFinished.connect(self._apply_study_theme)
+
+        self.study_page.setFocusPolicy(Qt.StrongFocus)
+
+    def _apply_study_theme(self):
+        """根据当前主题设置学习模式样式"""
+        dark = isDarkTheme()
+        bg = "#2b2b2b" if dark else "#f5f5f5"
+        border = "#3d3d3d" if dark else "#ddd"
+        fg = "#e0e0e0" if dark else "#333"
+        label_color = "#a0a0a0" if dark else "#666"
+        note_color = "#808080" if dark else "#888"
+
+        self.study_category_label.setStyleSheet(f"color: {label_color};")
+        self.study_content.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: 8px;
+                padding: 16px;
+                color: {fg};
+            }}
+        """)
+        self.study_note.setStyleSheet(f"color: {note_color};")
+
+    def keyPressEvent(self, event):
+        """处理键盘事件，学习模式下支持左右箭头切换"""
+        if self.stack.currentIndex() == 1:  # 学习模式
+            if event.key() == Qt.Key_Left:
+                self._study_prev()
+            elif event.key() == Qt.Key_Right:
+                self._study_next()
+            elif event.key() == Qt.Key_Escape:
+                self._exit_study_mode()
+            else:
+                super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
+
+    def _enter_study_mode(self):
+        """进入学习模式"""
+        if not self._displayed_cards:
+            InfoBar.warning(
+                title="提示", content="没有可学习的卡片",
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=2000, parent=self,
+            )
+            return
+
+        self._study_cards = self._displayed_cards.copy()
+        self._study_index = 0
+        self._update_study_card()
+        self.stack.setCurrentIndex(1)
+        self.study_page.setFocus()
+
+    def _exit_study_mode(self):
+        """退出学习模式"""
+        self.stack.setCurrentIndex(0)
+
+    def _update_study_card(self):
+        """更新学习模式的卡片显示"""
+        if not self._study_cards or self._study_index < 0 or self._study_index >= len(self._study_cards):
+            return
+
+        card = self._study_cards[self._study_index]
+        total = len(self._study_cards)
+
+        self.study_counter.setText(f"{self._study_index + 1} / {total}")
+        self.study_category_label.setText(card.get("category_name", "") or "未分类")
+
+        # 应用隐藏逻辑
+        title_text = card.get("title", "") if self._show_title else "******"
+        content_text = card.get("content", "") if self._show_content else "******"
+        note_text = card.get("note", "")
+
+        self.study_title.setText(title_text)
+        self.study_content.setPlainText(content_text)
+        self.study_note.setText(f"备注: {note_text}" if note_text else "")
+
+        # 更新按钮状态
+        self.study_prev_btn.setEnabled(self._study_index > 0)
+        self.study_next_btn.setEnabled(self._study_index < total - 1)
+
+        # 同步隐藏按钮状态
+        self.study_hide_title_btn.setChecked(not self._show_title)
+        self.study_hide_content_btn.setChecked(not self._show_content)
+
+    def _study_prev(self):
+        """上一张卡片"""
+        if self._study_index > 0:
+            self._study_index -= 1
+            self._update_study_card()
+
+    def _study_next(self):
+        """下一张卡片"""
+        if self._study_index < len(self._study_cards) - 1:
+            self._study_index += 1
+            self._update_study_card()
+
+    def _toggle_study_title(self, checked=None):
+        """学习模式切换标题显示"""
+        self._show_title = not self.study_hide_title_btn.isChecked()
+        self._update_study_card()
+
+    def _toggle_study_content(self, checked=None):
+        """学习模式切换内容显示"""
+        self._show_content = not self.study_hide_content_btn.isChecked()
+        self._update_study_card()
 
     # ============ 数据加载 ============
 
@@ -376,12 +585,12 @@ class LearningCardWidget(QWidget):
 
     # ============ 列显隐 ============
 
-    def _toggle_title(self):
-        self._show_title = not self.hide_title_btn.isChecked()
+    def _toggle_title(self, checked=None):
+        self._show_title = not self._show_title
         self._display_cards()
 
-    def _toggle_content(self):
-        self._show_content = not self.hide_content_btn.isChecked()
+    def _toggle_content(self, checked=None):
+        self._show_content = not self._show_content
         self._display_cards()
 
     # ============ 分类筛选 ============
@@ -535,6 +744,52 @@ class LearningCardWidget(QWidget):
             self.table.blockSignals(False)
 
     # ============ 右键菜单 ============
+
+    def _show_more_menu(self):
+        """显示更多操作菜单"""
+        menu = RoundMenu("更多操作", parent=self)
+
+        add_cat_action = Action(FIF.ADD, "添加分类", self)
+        add_cat_action.triggered.connect(self._add_category)
+        menu.addAction(add_cat_action)
+
+        edit_cat_action = Action(FIF.EDIT, "编辑分类", self)
+        edit_cat_action.triggered.connect(self._edit_category)
+        menu.addAction(edit_cat_action)
+
+        del_cat_action = Action(FIF.DELETE, "删除分类", self)
+        del_cat_action.triggered.connect(self._delete_category)
+        menu.addAction(del_cat_action)
+
+        del_action = Action(FIF.CUT, "删除选中", self)
+        del_action.triggered.connect(self._delete_card)
+        menu.addAction(del_action)
+
+        import_action = Action(FIF.DOWNLOAD, "导入", self)
+        import_action.triggered.connect(self._import_cards)
+        menu.addAction(import_action)
+
+        export_action = Action(FIF.SHARE, "导出", self)
+        export_action.triggered.connect(self._export_cards)
+        menu.addAction(export_action)
+
+        menu.addSeparator()
+
+        hide_title_action = Action("隐藏标题", self)
+        hide_title_action.setCheckable(True)
+        hide_title_action.setChecked(not self._show_title)
+        hide_title_action.triggered.connect(self._toggle_title)
+        menu.addAction(hide_title_action)
+
+        hide_content_action = Action("隐藏内容", self)
+        hide_content_action.setCheckable(True)
+        hide_content_action.setChecked(not self._show_content)
+        hide_content_action.triggered.connect(self._toggle_content)
+        menu.addAction(hide_content_action)
+
+        menu.exec(self.more_btn.mapToGlobal(
+            self.more_btn.rect().bottomLeft()
+        ))
 
     def _show_context_menu(self, position):
         menu = RoundMenu(parent=self)

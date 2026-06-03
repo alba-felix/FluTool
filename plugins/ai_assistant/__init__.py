@@ -19,6 +19,9 @@ from qfluentwidgets import (
     LineEdit,
     PushButton,
     RoundMenu,
+    Action,
+    InfoBar,
+    InfoBarPosition,
 )
 
 from core import PluginInterface
@@ -486,19 +489,18 @@ class AIAssistantWidget(QWidget):
         """)
 
     def _show_history_context_menu(self, pos) -> None:
-        from PyQt5.QtWidgets import QAction
         item = self._sidebar.history_list.itemAt(pos)
         if not item:
             return
         menu = RoundMenu(parent=self)
         
-        rename_action = QAction("重命名", self)
+        rename_action = Action("重命名", self)
         rename_action.triggered.connect(lambda: self._rename_conversation(item))
         menu.addAction(rename_action)
         
         menu.addSeparator()
         
-        delete_action = QAction("删除此会话", self)
+        delete_action = Action("删除此会话", self)
         delete_action.triggered.connect(lambda: self._delete_conversation(item))
         menu.addAction(delete_action)
         menu.exec_(self._sidebar.history_list.mapToGlobal(pos))
@@ -998,8 +1000,16 @@ class AIAssistantWidget(QWidget):
         self._current_ai_bubble = None
         self._text_queue = None
 
-        # 显示错误提示
-        QMessageBox.critical(self, "错误", f"AI请求失败:\n{error_msg}")
+        # 使用非阻塞提示
+        InfoBar.error(
+            title="请求失败",
+            content=error_msg,
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=5000,
+            parent=self,
+        )
 
     def _on_stop_generation(self):
         """停止生成"""

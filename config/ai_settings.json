@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "default_provider": "deepseek",
+  "default_provider": "doubao",
   "default_model": "deepseek-chat",
   "providers": {
     "siliconflow": {
