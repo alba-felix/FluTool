@@ -565,13 +565,13 @@ class FolderTreeWidget(QWidget):
         # 可折叠文件夹树视图
         self._tree_view = FolderTreeView()
         self._content_layout.addWidget(self._tree_view, 1)
+        self._tree_view.hide()
 
         # 纯文本预览（简单版）
         self._preview_text = QTextEdit()
         self._preview_text.setReadOnly(True)
         self._preview_text.setPlaceholderText("请选择文件夹并生成树形结构...")
         self._content_layout.addWidget(self._preview_text, 1)
-        self._preview_text.hide()
 
         # 状态栏
         status_bar = self.create_status_bar()
@@ -633,7 +633,7 @@ class FolderTreeWidget(QWidget):
 
         # 视图切换按钮
         self._view_toggle_btn = ToolButton()
-        self._view_toggle_btn.setIcon(FIF.FOLDER)
+        self._view_toggle_btn.setIcon(FIF.DOCUMENT)
         self._view_toggle_btn.setToolTip("切换结果视图")
         self._view_toggle_btn.setFixedSize(32, 32)
         self._view_toggle_btn.clicked.connect(self._toggle_view)
@@ -686,6 +686,10 @@ class FolderTreeWidget(QWidget):
 
         self._status_label = BodyLabel("就绪")
         status_layout.addWidget(self._status_label)
+
+        self._view_mode_label = BodyLabel("简单版")
+        self._view_mode_label.setStyleSheet("color: #888888;")
+        status_layout.addWidget(self._view_mode_label)
 
         # 进度条（等待条）
         self._progress_bar = IndeterminateProgressBar()
@@ -1320,10 +1324,12 @@ class FolderTreeWidget(QWidget):
             self._tree_view.hide()
             self._preview_text.show()
             self._view_toggle_btn.setIcon(FIF.DOCUMENT)
+            self._view_mode_label.setText("简单版")
         else:
             self._tree_view.show()
             self._preview_text.hide()
             self._view_toggle_btn.setIcon(FIF.FOLDER)
+            self._view_mode_label.setText("可折叠版")
 
     def _on_worker_error(self, error_msg: str):
         """处理扫描错误"""

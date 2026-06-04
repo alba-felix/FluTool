@@ -340,7 +340,16 @@ class TodoReminderManager(QObject):
             self._reminded_todos.add(key)
 
     def _show_notification(self, todo: Dict, remaining_minutes: float) -> None:
-        """显示提醒通知（独立置顶弹窗，手动关闭）"""
+        """显示提醒通知
+        仅在窗口非最小化时显示弹窗，避免最小化时反复打扰。
+        """
+        # 如果窗口已最小化或不可见，跳过通知
+        parent = self.parent()
+        if parent:
+            window = parent.window()
+            if window.isMinimized() or not window.isVisible():
+                return
+
         title = todo.get("title", "未命名")
         description = todo.get("description", "")
         logger = getattr(self.core, 'logger', None)
