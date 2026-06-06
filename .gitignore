@@ -226,6 +226,7 @@ config.ini
 settings.ini
 secrets.json
 config/local_api_key.json
+config/ai_settings.json
 
 # 资源文件缓存
 resources/cache/
