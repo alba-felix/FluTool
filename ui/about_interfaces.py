@@ -80,9 +80,10 @@ class AboutInterface(ScrollArea):
         if logo_path.exists():
             logo_label = QLabel()
             logo_pixmap = QPixmap(str(logo_path))
-            logo_label.setPixmap(logo_pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            logo_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(logo_label, alignment=Qt.AlignCenter)
+            if not logo_pixmap.isNull():
+                logo_label.setPixmap(logo_pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                logo_label.setAlignment(Qt.AlignCenter)
+                layout.addWidget(logo_label, alignment=Qt.AlignCenter)
         
         title = StrongBodyLabel("FluTool")
         title.setAlignment(Qt.AlignCenter)

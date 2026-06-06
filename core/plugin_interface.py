@@ -25,6 +25,7 @@ class PluginInterface(QObject, metaclass=PluginMeta):
     PLUGIN_NAME = ""
     PLUGIN_ICON = None
     PLUGIN_PRIORITY = 999
+    PLUGIN_HIDDEN = False
 
     def __init__(self):
         QObject.__init__(self)

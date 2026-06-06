@@ -565,6 +565,7 @@ class Plugin(PluginInterface):
     PLUGIN_ID = "toolkit"
     PLUGIN_NAME = "工具集"
     PLUGIN_ICON = FIF.APPLICATION
+    PLUGIN_HIDDEN = True
 
     def initialize(self, core) -> None:
         self.core = core

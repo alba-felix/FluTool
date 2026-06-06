@@ -4,8 +4,8 @@ import traceback
 from pathlib import Path
 from PyQt5.QtCore import Qt, QObject
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
-from PyQt5.QtWidgets import QApplication, QSplashScreen, QMessageBox, QSystemTrayIcon
-from PyQt5.QtGui import QIcon, QColor
+from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+from PyQt5.QtGui import QIcon
 from qfluentwidgets import setThemeColor, setTheme, Theme, qconfig, FluentIcon as FIF
 from core.utils import get_resource_path, set_auto_start
 
@@ -108,22 +108,6 @@ class SingleInstance(QObject):
                 print(f"[SingleInstance] Error stopping server: {e}")
 
 
-def create_splash():
-    """创建启动画面"""
-    splash = QSplashScreen()
-    splash.setStyleSheet("""
-        QSplashScreen {
-            background-color: #1e1e1e;
-        }
-    """)
-    splash.showMessage(
-        "正在启动 FluTool...",
-        Qt.AlignCenter | Qt.AlignBottom,
-        QColor("#ffffff")
-    )
-    return splash
-
-
 def show_error_and_exit(title: str, message: str, exit_code: int = 1) -> int:
     """显示错误消息并退出"""
     try:
@@ -152,57 +136,6 @@ def _setup_tooltip_style():
     """)
 
 
-def _handle_auth(auth, splash) -> bool:
-    """处理认证流程
-
-    Returns:
-        True 继续启动，False 退出程序
-    """
-    if not auth.is_registered():
-        from ui.login_dialog import RegisterDialog
-        dialog = RegisterDialog()
-        if dialog.exec_() != RegisterDialog.Accepted:
-            return False
-        dialog.deleteLater()
-        return True
-
-    ok, msg = auth.verify_machine()
-    if ok:
-        return True
-
-    if "未授权的设备" not in msg:
-        return show_error_and_exit("授权失败", msg) == 0
-
-    from ui.common.dialogs import InputDialog
-    dialog = InputDialog(
-        title="硬件变更",
-        label="检测到硬件变更，请输入注册时设置的密码以重新绑定本机",
-        is_password=True,
-        yes_text="恢复",
-        placeholder="请输入密码",
-        min_width=380,
-    )
-    if dialog.exec_() != InputDialog.Accepted:
-        return False
-
-    password = dialog.get_text()
-    ok, msg = auth.recover_machine(password)
-    if not ok:
-        return show_error_and_exit("恢复失败", msg) == 0
-
-    from qfluentwidgets import InfoBar, InfoBarPosition
-    InfoBar.success(
-        title="恢复成功",
-        content="机器绑定已更新，请重新启动程序",
-        orient=Qt.Horizontal,
-        isClosable=True,
-        position=InfoBarPosition.TOP,
-        duration=3000,
-        parent=splash,
-    )
-    return False
-
-
 def main():
     global _start_time
     _start_time = time.time()
@@ -225,7 +158,7 @@ def main():
     except Exception as e:
         print(f"[main] Single instance check failed: {e}")
         # 继续运行，不因单例检测失败而退出
-    
+
     # 初始化应用
     try:
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
@@ -234,15 +167,11 @@ def main():
         )
     except Exception as e:
         print(f"[main] High DPI setup failed: {e}")
-    
+
     try:
         app = QApplication(sys.argv)
     except Exception as e:
         return show_error_and_exit("启动失败", f"无法创建应用程序: {e}")
-    
-    splash = create_splash()
-    splash.show()
-    app.processEvents()
 
     try:
         setThemeColor("#0078d4")
@@ -251,52 +180,30 @@ def main():
     except Exception as e:
         print(f"[main] Theme setup failed: {e}")
 
-    # 认证验证
-    try:
-        splash.showMessage("验证授权...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
-        app.processEvents()
-
-        from core.auth_service import AuthService
-        if not _handle_auth(AuthService(), splash):
-            splash.hide()
-            return 0
-    except Exception as e:
-        splash.hide()
-        traceback.print_exc()
-        return show_error_and_exit("认证失败", f"认证服务异常:\n{e}")
-
     # 初始化核心
     core = None
     try:
-        splash.showMessage("初始化核心...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
-        app.processEvents()
-        
         from core.app_core import AppCore
         core = AppCore()
         core.initialize()
     except Exception as e:
-        splash.hide()
         traceback.print_exc()
         return show_error_and_exit("初始化失败", f"核心服务初始化失败:\n{e}")
-    
+
     # 创建主窗口
     window = None
     try:
-        splash.showMessage("加载界面...", Qt.AlignCenter | Qt.AlignBottom, QColor("#ffffff"))
-        app.processEvents()
-        
         from ui.main_window import MainWindow
         window = MainWindow(core)
         core.main_window = window
-        
+
         logo_path = get_resource_path("logo.ico")
         if logo_path.exists():
             window.setWindowIcon(QIcon(str(logo_path)))
     except Exception as e:
-        splash.hide()
         traceback.print_exc()
         return show_error_and_exit("界面加载失败", f"无法创建主窗口:\n{e}")
-    
+
     # 设置单实例激活回调
     def on_socket_connection():
         if not single_instance._server:
@@ -307,7 +214,7 @@ def main():
                 socket.readyRead.connect(lambda: _on_socket_read(socket))
         except Exception as e:
             print(f"[main] Socket connection error: {e}")
-    
+
     def _on_socket_read(socket):
         try:
             data = socket.readAll().data()
@@ -320,10 +227,10 @@ def main():
         finally:
             if socket:
                 socket.deleteLater()
-    
+
     if not single_instance.start_server(on_socket_connection):
         print("[main] Warning: Single instance server not started")
-    
+
     # 加载插件
     loaded_count = 0
     failed_count = 0
@@ -334,37 +241,34 @@ def main():
         else:
             plugin_path = project_root / "plugins"
             discovered = core.plugin_manager.scan_plugins(str(plugin_path))
-        
+
         for plugin_id in discovered:
             try:
                 plugin = core.plugin_manager.load_plugin(plugin_id)
                 if plugin:
                     icon = plugin.get_icon() or FIF.DOCUMENT
                     name = plugin.get_name() or plugin_id
-                    window.register_plugin(plugin_id, icon, name)
+                    hidden = getattr(plugin, "PLUGIN_HIDDEN", False)
+                    window.register_plugin(plugin_id, icon, name, hidden)
                     loaded_count += 1
                 else:
                     failed_count += 1
             except Exception as e:
                 failed_count += 1
                 core.logger.error(f"Failed to register plugin {plugin_id}: {e}")
-        
+
         if failed_count > 0:
             core.logger.warning(f"{failed_count} plugin(s) failed to load")
     except Exception as e:
         core.logger.error(f"Plugin loading failed: {e}")
-    
+
     # 显示窗口
     try:
         window.show()
-        splash.finish(window)
     except Exception as e:
-        splash.hide()
         core.logger.error(f"Failed to show window: {e}")
         return show_error_and_exit("启动失败", f"无法显示主窗口: {e}")
-    finally:
-        splash.deleteLater()
-    
+
     # 最小化启动：检测 --minimized 参数（开机自启时由 set_auto_start 注入）
     try:
         if _start_minimized:
@@ -378,19 +282,19 @@ def main():
             core.logger.info("Started minimized to system tray")
     except Exception as e:
         core.logger.error(f"Failed to minimize to tray on startup: {e}")
-    
+
     # 同步开机自启配置到注册表
     try:
         if core.config.auto_start.value:
             set_auto_start(True)
     except Exception as e:
         core.logger.error(f"Failed to sync auto-start: {e}")
-    
+
     # 记录启动时间
     if _start_time:
         elapsed = (time.time() - _start_time) * 1000
         core.logger.info(f"Application started in {elapsed:.0f}ms, {loaded_count} plugins loaded")
-    
+
     # 运行事件循环
     try:
         result = app.exec_()
@@ -401,7 +305,7 @@ def main():
         single_instance.stop_server()
         if core:
             core.shutdown()
-    
+
     return result
 
 

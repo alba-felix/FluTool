@@ -581,6 +581,14 @@ class PushFluentWindow(FramelessMainWindow):
 		self._search_btn.clicked.connect(self._on_global_search)
 		self.titleBar.hBoxLayout.insertWidget(3, self._search_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
 		self.titleBar.hBoxLayout.insertSpacing(4, 8)
+
+		self._notes_btn = TransparentToolButton(FIF.BOOK_SHELF, self.titleBar)
+		self._notes_btn.setFixedSize(32, 32)
+		self._notes_btn.setIconSize(QSize(14, 14))
+		self._notes_btn.setToolTip("<p>笔记管理</p>")
+		self._notes_btn.clicked.connect(self._on_notes_btn_clicked)
+		self.titleBar.hBoxLayout.insertWidget(4, self._notes_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+		self.titleBar.hBoxLayout.insertSpacing(5, 8)
 		
 		self._hide_btn = TransparentToolButton(FIF.MINIMIZE, self.titleBar)
 		self._hide_btn.setFixedSize(46, 32)
@@ -607,6 +615,18 @@ class PushFluentWindow(FramelessMainWindow):
 			)
 		else:
 			self.show_and_activate()
+	
+	def _on_notes_btn_clicked(self) -> None:
+		plugin = self.core.plugin_manager.get_plugin("notes")
+		if not plugin:
+			return
+		try:
+			if hasattr(plugin, 'toggle_window'):
+				plugin.toggle_window()
+			else:
+				plugin.show_window()
+		except Exception as e:
+			self.core.logger.error(f"Failed to toggle notes window: {e}")
 	
 	def _setup_tray(self) -> None:
 		logo_path = get_resource_path("logo.ico")
@@ -967,8 +987,9 @@ class MainWindow(PushFluentWindow):
 		if logo_path.exists():
 			logo_label = QLabel()
 			logo_pixmap = QPixmap(str(logo_path))
-			logo_label.setPixmap(logo_pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-			title_layout.addWidget(logo_label)
+			if not logo_pixmap.isNull():
+				logo_label.setPixmap(logo_pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+				title_layout.addWidget(logo_label)
 		
 		title = StrongBodyLabel("FluTool")
 		title_layout.addWidget(title)
@@ -1192,9 +1213,15 @@ class MainWindow(PushFluentWindow):
 		else:
 			self.navigationInterface.collapse(useAni=False)
 	
-	def register_plugin(self, plugin_id: str, icon, name: str) -> None:
-		container = self._plugin_host.create_container(plugin_id)
-		self.addSubInterface(container, icon, name)
+	def register_plugin(self, plugin_id: str, icon, name: str, hidden: bool = False) -> None:
+		if hidden:
+			# 隐藏式插件：只注册容器不添加到导航栏
+			container = self._plugin_host.create_container(plugin_id)
+			self._plugin_containers[plugin_id] = container
+		else:
+			container = self._plugin_host.create_container(plugin_id)
+			self._plugin_containers[plugin_id] = container
+			self.addSubInterface(container, icon, name)
 	
 	def load_first_plugin(self) -> None:
 		if not self._plugin_containers:

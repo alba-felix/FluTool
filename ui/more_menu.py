@@ -1,8 +1,17 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QGraphicsDropShadowEffect
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen
 from qfluentwidgets import FluentIcon as FIF, isDarkTheme
 from qfluentwidgets.common.icon import drawIcon
+
+# ── 常量 ──────────────────────────────────────────────────────────────
+_ITEM_HEIGHT = 40
+_ITEM_WIDTH = 140
+_MARGIN = 6
+_SPACING = 4
+_MAX_MENU_HEIGHT = 400
+_MENU_WIDTH = 172
+_EDGE_PADDING = 10
 
 
 class MoreMenuItem(QWidget):
@@ -16,8 +25,8 @@ class MoreMenuItem(QWidget):
         self._icon = icon
         self._text = text
         self._isHover = False
-        self.setFixedHeight(40)
-        self.setFixedWidth(140)
+        self.setFixedHeight(_ITEM_HEIGHT)
+        self.setFixedWidth(_ITEM_WIDTH)
         self.setCursor(Qt.PointingHandCursor)
 
     def paintEvent(self, e):
@@ -53,29 +62,22 @@ class MoreMenuItem(QWidget):
 
 
 class MoreMenu(QWidget):
-    """更多菜单 - 弹出式下拉菜单"""
+    """更多菜单 - 弹出式下拉菜单，带屏幕溢出保护"""
 
     itemClicked = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._items = []
+        self._items: list[MoreMenuItem] = []
         self._setup_ui()
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_StyledBackground)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_SPACING)
         layout.setAlignment(Qt.AlignTop)
-
-        self._shadow = QGraphicsDropShadowEffect(self)
-        self._shadow.setBlurRadius(15)
-        self._shadow.setColor(QColor(0, 0, 0, 80))
-        self._shadow.setOffset(0, 3)
-        self.setGraphicsEffect(self._shadow)
 
     def clearItems(self):
         for item in self._items:
@@ -94,12 +96,22 @@ class MoreMenu(QWidget):
         self.clearItems()
         for item_data in items:
             self.addItem(item_data['routeKey'], item_data['icon'], item_data['text'])
-        
-        # 根据项目数量调整菜单大小
-        if items:
-            height = len(items) * 40 + 12
-            self.setFixedHeight(min(height, 400))
-            self.setFixedWidth(172)
+        self._recalc_size()
+
+    def _recalc_size(self):
+        """根据条目数量重新计算并锁定窗口尺寸"""
+        if not self._items:
+            self.setFixedSize(_MENU_WIDTH, _ITEM_HEIGHT + _MARGIN * 2)
+            return
+
+        count = len(self._items)
+        total_height = (
+            _MARGIN * 2
+            + count * _ITEM_HEIGHT
+            + (count - 1) * _SPACING
+        )
+        final_height = min(total_height, _MAX_MENU_HEIGHT)
+        self.setFixedSize(_MENU_WIDTH, final_height)
 
     def _on_item_clicked(self, routeKey: str):
         self.itemClicked.emit(routeKey)
@@ -110,15 +122,46 @@ class MoreMenu(QWidget):
         painter.setRenderHints(QPainter.Antialiasing)
 
         c = 255 if isDarkTheme() else 0
-        painter.fillRect(self.rect(), QColor(255, 255, 255, 250) if not isDarkTheme() else QColor(32, 32, 32, 250))
 
+        # 完全不透明背景，避免触发 Windows 分层窗口（Layered Window）
+        if isDarkTheme():
+            painter.setBrush(QColor(32, 32, 32))
+        else:
+            painter.setBrush(QColor(252, 252, 252))
         painter.setPen(QPen(QColor(c, c, c, 20), 1))
         painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 8, 8)
 
-    def showEvent(self, e):
-        super().showEvent(e)
-
     def exec_(self, pos: QPoint):
+        """在指定位置弹出菜单，自动防屏幕溢出"""
+        self._ensure_valid_size()
+        self._clamp_to_screen(pos)
         self.move(pos)
         self.show()
         self.activateWindow()
+
+    def _ensure_valid_size(self):
+        """确保菜单在显示前具有有效尺寸"""
+        if self.width() <= 0 or self.height() <= 0:
+            self._recalc_size()
+
+    def _clamp_to_screen(self, pos: QPoint):
+        """将 pos 限制在屏幕可用区域内，防止溢出"""
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+
+        geo = screen.availableGeometry()
+        w, h = self.width(), self.height()
+        px, py = pos.x(), pos.y()
+
+        if px + w > geo.right():
+            px = geo.right() - w - _EDGE_PADDING
+        if py + h > geo.bottom():
+            py = geo.bottom() - h - _EDGE_PADDING
+        if px < geo.left():
+            px = geo.left() + _EDGE_PADDING
+        if py < geo.top():
+            py = geo.top() + _EDGE_PADDING
+
+        pos.setX(px)
+        pos.setY(py)
