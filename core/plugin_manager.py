@@ -572,46 +572,18 @@ class PluginManager:
 
     def load_all_plugins(self, plugin_path: str) -> None:
         """
-        加载所有插件
+        加载所有插件（兼容入口，委托 scan + load 标准路径）
         
         Args:
             plugin_path: 插件目录路径
         """
-        plugin_dir = Path(plugin_path)
-        if not plugin_dir.exists():
-            self._core.logger.warning(f"Plugin directory not found: {plugin_path}")
-            return
-        for item in plugin_dir.iterdir():
-            if item.is_dir() and not item.name.startswith('_'):
-                self._load_plugin(item)
+        plugin_ids = self.scan_plugins(plugin_path)
+        for plugin_id in plugin_ids:
+            self.load_plugin(plugin_id)
 
     def _load_plugin(self, plugin_dir: Path) -> Optional[PluginInterface]:
-        """
-        加载单个插件
-        
-        Args:
-            plugin_dir: 插件目录
-            
-        Returns:
-            加载的插件对象或None
-        """
-        try:
-            module_name = f"plugins.{plugin_dir.name}"
-            module = importlib.import_module(module_name)
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, PluginInterface) and 
-                    obj is not PluginInterface and
-                    obj.__module__ == module.__name__):
-                    plugin = obj()
-                    plugin.initialize(self._core)
-                    self._plugins[plugin.get_id()] = plugin
-                    self._loaded_plugins.add(plugin.get_id())
-                    if self._core.search_manager and plugin.supports_search():
-                        self._core.search_manager.register_plugin(plugin)
-                    self._core.logger.info(f"Loaded plugin: {plugin.get_name()}")
-                    return plugin
-        except Exception as e:
-            self._core.logger.error(f"Failed to load plugin from {plugin_dir}: {e}")
+        """已弃用：请使用 scan_plugins() + load_plugin() 代替"""
+        self._core.logger.warning("_load_plugin() is deprecated, use scan_plugins() + load_plugin()")
         return None
 
     def unload_plugin(self, plugin_id: str) -> bool:

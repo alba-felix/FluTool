@@ -101,8 +101,13 @@ class DatabaseManager:
         """创建索引"""
         SchemaManager().create_indexes(conn)
     
-    # ============ 向后兼容的接口 ============
-    # 为了不破坏现有代码，保留原有的方法签名，但委托给对应的 Repository
+    # ============ 向后兼容的接口（已弃用） ============
+    # 以下方法仅用于保持向后兼容，新代码请直接通过 self.<repository_name> 访问对应的 Repository。
+    # 例如：
+    #   db.categories.add_or_get(...)   代替 db.add_category(...)
+    #   db.bookmarks.get_by_plugin(...) 代替 db.get_bookmarks(...)
+    #   db.passwords.add(...)           代替 db.add_password(...)
+    # 详见 storage/repository_registry.py 中的完整仓储列表。
     
     # Category 方法
     def add_category(self, plugin_id: str, name: str, sort_order: int = 0) -> int:
