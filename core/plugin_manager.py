@@ -652,13 +652,29 @@ class PluginManager:
         从已导入的 plugins 子模块中发现插件（按优先级排序）
         """
         plugin_info: List[Tuple[float, str]] = []
-        
+
         try:
             import plugins as plugins_pkg
         except ImportError as e:
             self._core.logger.error(f"Failed to import plugins package: {e}")
             return []
-        
+
+        # 获取插件包路径作为缓存 base
+        try:
+            plugins_path = Path(plugins_pkg.__file__).parent
+        except (AttributeError, TypeError):
+            plugins_path = None
+
+        # 尝试从缓存恢复
+        if plugins_path and plugins_path.exists():
+            cached = restore_scan_cache(scan_base=plugins_path)
+            if cached:
+                cached_ids, cached_dirs, cached_modules = cached
+                self._plugin_dirs.update(cached_dirs)
+                self._plugin_modules.update(cached_modules)
+                self._core.logger.info(f"Loaded {len(cached_ids)} builtin plugins from cache")
+                return cached_ids
+
         try:
             for name in self._iter_builtin_plugin_names(plugins_pkg):
                 module_name = f"plugins.{name}"
@@ -679,9 +695,15 @@ class PluginManager:
                 self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
         except Exception as e:
             self._core.logger.error(f"Failed to scan builtin plugins: {e}")
-        
+
         plugin_info.sort(key=lambda x: x[0])
-        return [plugin_id for _, plugin_id in plugin_info]
+        plugin_ids = [plugin_id for _, plugin_id in plugin_info]
+
+        # 保存缓存供下次启动使用
+        if plugins_path and plugin_ids:
+            save_scan_cache(plugin_ids, self._plugin_dirs, self._plugin_modules, plugins_path)
+
+        return plugin_ids
 
     def _discover_builtin_plugin_by_import(self, name: str) -> Tuple[Optional[str], float]:
         """内置插件扫描的兼容回退：仅在无法读取源码元信息时导入模块"""

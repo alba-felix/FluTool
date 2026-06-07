@@ -20,21 +20,28 @@ class CustomFluentIcon(FluentIconBase, Enum):
     DELETE = "delete"
     EXPORT = "export"
     
-    def path(self, theme=Theme.AUTO) -> str:
+    def _resolve_icon_path(self, name: str) -> str:
+        """按优先级搜索图标文件"""
+        # 1. 标准路径（开发/打包均可用）
         base_dir = Path(__file__).parent.parent / "resources" / "icons"
+        icon_path = base_dir / name
+        if icon_path.exists():
+            return str(icon_path)
+        # 2. 兜底：通过 get_icon_path 搜索
+        from .path_util import PathUtil
+        fallback = Path(PathUtil.get_icon_path(name))
+        if fallback.exists():
+            return str(fallback)
+        return ""
+
+    def path(self, theme=Theme.AUTO) -> str:
         if theme == Theme.AUTO:
             theme = Theme.DARK if isDarkTheme() else Theme.LIGHT
         icon_name = f"{self.value}_{theme.value.lower()}.svg"
-        icon_path = base_dir / icon_name
-        if icon_path.exists():
-            return str(icon_path)
-        dark_path = base_dir / f"{self.value}_dark.svg"
-        if dark_path.exists():
-            return str(dark_path)
-        light_path = base_dir / f"{self.value}_light.svg"
-        if light_path.exists():
-            return str(light_path)
-        return ""
+        result = self._resolve_icon_path(icon_name)
+        if result:
+            return result
+        return self._resolve_icon_path(f"{self.value}_dark.svg")
     
     def icon(self, theme=Theme.AUTO, color=None) -> QIcon:
         path = self.path(theme)
