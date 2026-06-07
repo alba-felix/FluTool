@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "password",
+    "name": "密码管理",
+    "priority": 3,
+}

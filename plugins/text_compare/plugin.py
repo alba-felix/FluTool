@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "text_compare",
+    "name": "文本对比",
+    "priority": 17,
+}

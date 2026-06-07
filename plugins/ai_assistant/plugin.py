@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "ai_assistant",
+    "name": "AI 助手",
+    "priority": 8,
+}

@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "notebook",
+    "name": "随手记",
+    "priority": 6,
+}

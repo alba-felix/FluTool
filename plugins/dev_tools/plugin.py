@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "dev_tools",
+    "name": "开发工具",
+    "priority": 8.3,
+}

@@ -111,8 +111,9 @@ def test_scan_plugins_sorts_by_manifest_priority(tmp_path):
     assert plugins == ["fast", "slow"]
 
 
-def test_builtin_plugins_have_json_manifests():
-    """所有内置插件都提供 plugin.json，避免扫描阶段解析大模块"""
+def test_builtin_plugins_have_manifests():
+    """所有内置插件都提供 plugin.py 或 plugin.json，避免扫描阶段导入主体"""
+    MANIFEST_NAMES = ("plugin.py", "plugin.json")
     plugin_root = Path("plugins")
     missing = [
         item.name
@@ -120,10 +121,10 @@ def test_builtin_plugins_have_json_manifests():
         if item.is_dir()
         and not item.name.startswith("_")
         and item.name != "__pycache__"
-        and not (item / "plugin.json").exists()
+        and not any((item / m).exists() for m in MANIFEST_NAMES)
     ]
 
-    assert missing == []
+    assert missing == [], f"Missing manifest: {missing}"
 
 
 def test_scan_builtin_plugins_uses_manifest_without_import(tmp_path):

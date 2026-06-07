@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "image_assistant",
+    "name": "图片助手",
+    "priority": 15,
+}

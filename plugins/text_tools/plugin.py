@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "text_tools",
+    "name": "文本工具",
+    "priority": 8.2,
+}

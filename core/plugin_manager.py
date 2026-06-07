@@ -9,6 +9,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from .plugin_interface import PluginInterface
+from .plugin_cache import restore_scan_cache, save_scan_cache
 
 
 class PluginManager:
@@ -56,6 +57,15 @@ class PluginManager:
             self._core.logger.warning(f"Plugin path is not a directory: {plugin_path}")
             return []
         
+        # 尝试从缓存恢复
+        cached = restore_scan_cache(scan_base=plugin_dir)
+        if cached:
+            cached_ids, cached_dirs, cached_modules = cached
+            self._plugin_dirs.update(cached_dirs)
+            self._plugin_modules.update(cached_modules)
+            self._core.logger.info(f"Loaded {len(cached_ids)} plugins from cache")
+            return cached_ids
+
         plugin_info: List[Tuple[float, str]] = []
 
         try:
@@ -72,31 +82,81 @@ class PluginManager:
             self._core.logger.error(f"OS error scanning plugins: {e}")
 
         plugin_info.sort(key=lambda x: x[0])
-        return [plugin_id for _, plugin_id in plugin_info]
+        plugin_ids = [plugin_id for _, plugin_id in plugin_info]
+
+        save_scan_cache(plugin_ids, self._plugin_dirs, self._plugin_modules, plugin_dir)
+
+        return plugin_ids
+
+    MANIFEST_FILENAMES = ("plugin.py", "plugin.json")
 
     def _read_plugin_manifest(self, plugin_dir: Path) -> Tuple[Optional[str], float, Optional[str]]:
-        """读取插件元信息，不导入插件主体模块"""
-        plugin_id, priority, module_name = self._read_plugin_json_manifest(plugin_dir)
-        if plugin_id:
-            return plugin_id, priority, module_name
+        """读取插件元信息，不导入插件主体模块
+        
+        优先读取 plugin.py（ast.literal_eval），
+        回退到 plugin.json（json.loads），
+        再回退到 __init__.py AST 解析。
+        """
+        for filename in self.MANIFEST_FILENAMES:
+            result = self._read_manifest_file(plugin_dir, filename)
+            if result[0]:
+                return result
 
         plugin_id, priority = self._read_plugin_python_manifest(plugin_dir)
         return plugin_id, priority, None
 
-    def _read_plugin_json_manifest(self, plugin_dir: Path) -> Tuple[Optional[str], float, Optional[str]]:
-        """读取 plugin.json 元信息"""
-        manifest_file = plugin_dir / "plugin.json"
+    def _read_manifest_file(self, plugin_dir: Path, filename: str) -> Tuple[Optional[str], float, Optional[str]]:
+        """读取 manifest 文件内容并解析"""
+        manifest_file = plugin_dir / filename
         if not manifest_file.exists():
             return None, 999.0, None
 
         try:
-            return self._read_plugin_json_manifest_payload(
-                manifest_file.read_text(encoding="utf-8"),
-                str(manifest_file),
-            )
+            content = manifest_file.read_text(encoding="utf-8")
         except Exception as e:
-            self._core.logger.error(f"Failed to read plugin.json {manifest_file}: {e}")
+            self._core.logger.error(f"Failed to read {filename} {manifest_file}: {e}")
             return None, 999.0, None
+
+        if filename.endswith(".py"):
+            return self._read_plugin_py_manifest_payload(content, str(manifest_file))
+        else:
+            return self._read_plugin_json_manifest_payload(content, str(manifest_file))
+
+    def _read_plugin_py_manifest_payload(
+        self,
+        manifest_payload: str,
+        manifest_source: str,
+    ) -> Tuple[Optional[str], float, Optional[str]]:
+        """解析 plugin.py 中的 PLUGIN_MANIFEST 字典"""
+        try:
+            tree = ast.parse(manifest_payload, filename=manifest_source)
+        except SyntaxError as e:
+            self._core.logger.error(f"Failed to parse {manifest_source}: {e}")
+            return None, 999.0, None
+
+        manifest = None
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id == "PLUGIN_MANIFEST":
+                        try:
+                            manifest = ast.literal_eval(node.value)
+                        except (ValueError, SyntaxError) as e:
+                            self._core.logger.error(
+                                f"Failed to evaluate PLUGIN_MANIFEST in {manifest_source}: {e}"
+                            )
+                            return None, 999.0, None
+                        break
+                if manifest is not None:
+                    break
+
+        if not isinstance(manifest, dict):
+            self._core.logger.warning(
+                f"PLUGIN_MANIFEST must be a dict in {manifest_source}"
+            )
+            return None, 999.0, None
+
+        return self._normalize_manifest_from_dict(manifest, manifest_source)
 
     def _read_plugin_json_manifest_payload(
         self,
@@ -107,13 +167,21 @@ class PluginManager:
         try:
             manifest = json.loads(manifest_payload)
         except Exception as e:
-            self._core.logger.error(f"Failed to parse plugin.json {manifest_source}: {e}")
+            self._core.logger.error(f"Failed to parse {manifest_source}: {e}")
             return None, 999.0, None
 
         if not isinstance(manifest, dict):
             self._core.logger.warning(f"Plugin manifest must be an object: {manifest_source}")
             return None, 999.0, None
 
+        return self._normalize_manifest_from_dict(manifest, manifest_source)
+
+    def _normalize_manifest_from_dict(
+        self,
+        manifest: dict,
+        manifest_source: str,
+    ) -> Tuple[Optional[str], float, Optional[str]]:
+        """从 dict 中提取并规范化 manifest 字段"""
         plugin_id = self._normalize_manifest_string(manifest.get("id"))
         if not plugin_id:
             self._core.logger.warning(f"Plugin manifest missing id: {manifest_source}")
@@ -125,29 +193,38 @@ class PluginManager:
 
     def _read_builtin_plugin_manifest(self, plugin_name: str) -> Tuple[Optional[str], float, Optional[str]]:
         """从包资源读取内置插件元信息，不导入插件主体模块"""
+        for filename in self.MANIFEST_FILENAMES:
+            result = self._read_builtin_plugin_manifest_from_resources(plugin_name, filename)
+            if result[0]:
+                return result
+        return self._read_builtin_plugin_manifest_from_path(plugin_name)
+
+    def _read_builtin_plugin_manifest_from_resources(
+        self, plugin_name: str, filename: str
+    ) -> Tuple[Optional[str], float, Optional[str]]:
+        """从包资源读取指定 manifest 文件"""
         try:
-            manifest_file = importlib.resources.files("plugins").joinpath(plugin_name, "plugin.json")
+            manifest_file = importlib.resources.files("plugins").joinpath(plugin_name, filename)
             if not manifest_file.is_file():
-                return self._read_builtin_plugin_manifest_from_path(plugin_name)
-            return self._read_plugin_json_manifest_payload(
-                manifest_file.read_text(encoding="utf-8"),
-                f"plugins/{plugin_name}/plugin.json",
-            )
+                return None, 999.0, None
+            label = f"plugins/{plugin_name}/{filename}"
+            return self._read_manifest_file(manifest_file.parent, filename)
         except (FileNotFoundError, ModuleNotFoundError):
-            return self._read_builtin_plugin_manifest_from_path(plugin_name)
+            return None, 999.0, None
         except Exception as e:
-            self._core.logger.debug(f"Failed to read builtin plugin manifest from resources {plugin_name}: {e}")
-            return self._read_builtin_plugin_manifest_from_path(plugin_name)
+            self._core.logger.debug(f"Failed to read builtin {filename} for {plugin_name}: {e}")
+            return None, 999.0, None
 
     def _read_builtin_plugin_manifest_from_path(self, plugin_name: str) -> Tuple[Optional[str], float, Optional[str]]:
         """从已加载 plugins 包路径读取内置插件元信息"""
         plugins_pkg = sys.modules.get("plugins")
         package_paths = getattr(plugins_pkg, "__path__", []) if plugins_pkg is not None else []
         for package_path in package_paths:
-            manifest_file = Path(package_path) / plugin_name / "plugin.json"
-            if not manifest_file.exists():
-                continue
-            return self._read_plugin_json_manifest(manifest_file.parent)
+            for filename in self.MANIFEST_FILENAMES:
+                manifest_file = Path(package_path) / plugin_name / filename
+                if not manifest_file.exists():
+                    continue
+                return self._read_manifest_file(manifest_file.parent, filename)
         return None, 999.0, None
 
     def _read_builtin_plugin_manifest_from_index(
@@ -233,6 +310,13 @@ class PluginManager:
         """从显式索引读取插件包名，避免打包后无法枚举包资源"""
         return self._get_builtin_plugin_index().keys()
 
+    def _has_manifest(self, plugin_dir: Path) -> bool:
+        """检查插件目录是否包含任一 manifest 文件"""
+        for filename in self.MANIFEST_FILENAMES:
+            if (plugin_dir / filename).exists():
+                return True
+        return False
+
     def _iter_builtin_plugin_names_from_resources(self) -> Iterable[str]:
         """从包资源目录读取插件包名"""
         try:
@@ -240,7 +324,7 @@ class PluginManager:
             return [
                 item.name
                 for item in plugins_root.iterdir()
-                if item.is_dir() and item.joinpath("plugin.json").is_file()
+                if item.is_dir() and self._has_manifest(item)
             ]
         except Exception as e:
             self._core.logger.debug(f"Failed to list builtin plugins from resources: {e}")
@@ -258,7 +342,7 @@ class PluginManager:
                 names.extend(
                     item.name
                     for item in package_dir.iterdir()
-                    if item.is_dir() and (item / "plugin.json").exists()
+                    if item.is_dir() and self._has_manifest(item)
                 )
             except Exception as e:
                 self._core.logger.debug(f"Failed to list builtin plugins from path {package_path}: {e}")

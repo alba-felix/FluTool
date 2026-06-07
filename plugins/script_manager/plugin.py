@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "script_manager",
+    "name": "脚本管理",
+    "priority": 14,
+}

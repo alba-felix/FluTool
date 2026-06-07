@@ -8,12 +8,12 @@
 plugins/
 └── my_plugin/
     ├── __init__.py    # 插件入口文件，定义 Plugin 和 Widget
-    ├── plugin.json    # 插件扫描元信息
+    ├── plugin.py      # 插件扫描元信息（PLUGIN_MANIFEST 字典）
     └── service.py     # 业务逻辑层，复杂插件必须拆出
 ```
 
 新增插件后必须同步：
-- `plugins/my_plugin/plugin.json`
+- `plugins/my_plugin/plugin.py`
 - `plugins/plugin_index.py`
 - 如新增动态依赖，补 `build.bat` hidden import 或 `hooks/hook-plugins.py`
 
@@ -85,22 +85,22 @@ class Plugin(PluginInterface):
     PLUGIN_PRIORITY = 50         # 侧边栏排序，数字越小越靠前
 ```
 
-### 2.2 plugin.json
+### 2.2 plugin.py
 
-`plugin.json` 是扫描阶段的主要元信息来源。扫描插件时不能导入插件主体模块。
+`plugin.py` 是扫描阶段的主要元信息来源。使用 `ast.literal_eval` 安全加载，不导入插件主体模块。
 
-```json
-{
-  "id": "my_plugin",
-  "name": "我的插件",
-  "priority": 50,
-  "module": "plugins.my_plugin"
+```python
+PLUGIN_MANIFEST = {
+    "id": "my_plugin",
+    "name": "我的插件",
+    "priority": 50,
+    "module": "plugins.my_plugin",
 }
 ```
 
 ### 2.3 plugins/plugin_index.py
 
-打包环境不依赖外置 `plugin.json` 或源码目录。新增内置插件时必须把轻量元信息加入 `BUILTIN_PLUGIN_MANIFESTS`：
+打包环境不依赖外置 `plugin.py` 或源码目录。新增内置插件时必须把轻量元信息加入 `BUILTIN_PLUGIN_MANIFESTS`：
 
 ```python
 {"package": "my_plugin", "id": "my_plugin", "priority": 50, "module": "plugins.my_plugin"}
@@ -362,7 +362,7 @@ else:
 ## 10. 注意事项
 
 1. **插件ID唯一**：`PLUGIN_ID` 必须全局唯一
-2. **元信息同步**：新增插件必须同步 `plugin.json` 和 `plugins/plugin_index.py`
+2. **元信息同步**：新增插件必须同步 `plugin.py` 和 `plugins/plugin_index.py`
 3. **禁止包级导入插件**：不要在 `plugins/__init__.py` 中导入插件
 4. **资源释放**：`shutdown()` 中释放所有资源
 5. **懒加载**：实现 `_create_widget()`，不要在 `initialize()` 创建 UI

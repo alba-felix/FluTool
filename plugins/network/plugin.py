@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "network",
+    "name": "网络信息",
+    "priority": 19,
+}

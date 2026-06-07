@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "todo",
+    "name": "代办事项",
+    "priority": 11,
+}

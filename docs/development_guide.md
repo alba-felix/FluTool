@@ -70,7 +70,7 @@ FluTool/
 │   ├── plugin_index.py
 │   └── <plugin>/
 │       ├── __init__.py
-│       ├── plugin.json
+│       ├── plugin.py
 │       └── service.py
 ├── tests/
 └── .trae/skills/
@@ -80,14 +80,14 @@ FluTool/
 
 插件加载分为四段：
 
-1. 扫描阶段：读取 `plugin.json` 或 `plugins/plugin_index.py`，不导入插件主体。
+1. 扫描阶段：读取 `plugin.py`（`ast.literal_eval`）或 `plugins/plugin_index.py`，不导入插件主体。
 2. 加载阶段：`PluginManager.load_plugin()` 按需导入插件模块并调用 `initialize()`。
 3. 界面阶段：首次切换页面时由 `PluginHost` 调用 `get_widget()` 创建界面。
 4. 数据阶段：界面显示后由 `PluginHost` 调用 `load_data()`。
 
 新增插件必须同步：
 
-- `plugins/<plugin_id>/plugin.json`
+- `plugins/<plugin_id>/plugin.py`
 - `plugins/plugin_index.py`
 - 如新增动态导入或资源，检查 `hooks/hook-plugins.py` 和 `build.bat`
 

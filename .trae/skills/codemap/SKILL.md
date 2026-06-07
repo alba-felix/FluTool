@@ -62,7 +62,7 @@ class AppCore:
 # core/plugin_manager.py
 class PluginManager:
     def scan_plugins(self, plugin_path: str) -> List[str]:
-        """开发环境扫描插件目录，优先读取 plugin.json，不导入插件主体"""
+        """开发环境扫描插件目录，优先读取 plugin.py（ast.literal_eval），不导入插件主体"""
 
     def scan_builtin_plugins(self) -> List[str]:
         """打包环境扫描内置插件，优先使用 plugins/plugin_index.py"""
@@ -84,7 +84,7 @@ class PluginManager:
 ```
 
 扫描阶段必须保持轻量：
-- 优先读取 `plugin.json`
+- 优先读取 `plugin.py`（`ast.literal_eval`）
 - 打包后优先读取 `plugins/plugin_index.py`
 - 只有兼容回退时才允许导入插件主体
 - `plugins/__init__.py` 不导入子插件
@@ -368,7 +368,7 @@ core.event_bus.disconnect("event_name", handler_id)
 1. **路径问题**：打包后使用 `get_app_data_path()` 获取可写路径
 2. **插件懒加载**：插件界面在首次切换时由 `PluginHost` 创建
 3. **扫描轻量化**：扫描阶段读 manifest/index，不导入插件主体
-4. **插件元信息**：新增插件必须维护 `plugin.json` 和 `plugins/plugin_index.py`
+4. **插件元信息**：新增插件必须维护 `plugin.py` 和 `plugins/plugin_index.py`
 5. **打包约束**：插件模块进 PYZ，不复制 `plugins` 源码目录
 6. **资源释放**：`shutdown()` 必须正确释放资源
 7. **qfluentwidgets API**：注意组件构造函数参数差异

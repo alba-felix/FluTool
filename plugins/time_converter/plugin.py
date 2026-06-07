@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "time_converter",
+    "name": "时间转换",
+    "priority": 4,
+}

@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "app_launcher",
+    "name": "应用启动",
+    "priority": 12,
+}

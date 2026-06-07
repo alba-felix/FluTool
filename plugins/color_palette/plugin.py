@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "color_palette",
+    "name": "调色板",
+    "priority": 13,
+}

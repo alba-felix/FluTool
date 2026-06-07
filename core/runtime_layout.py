@@ -9,6 +9,7 @@ from .utils import get_app_data_path
 
 
 RUNTIME_DIRS = (
+    "cache",
     "config",
     "data",
     "data/icons",

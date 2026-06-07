@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "bookmark",
+    "name": "网站书签",
+    "priority": 1,
+}

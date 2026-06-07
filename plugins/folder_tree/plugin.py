@@ -1,0 +1,5 @@
+PLUGIN_MANIFEST = {
+    "id": "folder_tree",
+    "name": "文件夹树",
+    "priority": 16,
+}
