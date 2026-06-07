@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt
 from qfluentwidgets import FluentIcon as FIF
 
 from core import PluginInterface, get_app_data_path
+from .core.runtime import NotesRuntime, set_notes_runtime, get_notes_runtime
 
 
 class NotesWindowManager:
@@ -14,17 +15,23 @@ class NotesWindowManager:
     _window = None
     _main_window = None
     _connected = False  # 是否已连接 focusChanged 信号
+    _runtime = None
 
     @classmethod
     def set_main_window(cls, window):
         cls._main_window = window
 
     @classmethod
+    def set_runtime(cls, runtime):
+        """设置 notes 运行时上下文"""
+        cls._runtime = runtime
+
+    @classmethod
     def show_window(cls):
         """显示笔记窗口（已隐藏则快速恢复）"""
         if cls._window is None:
             from .widgets.note_window import NotesWindow
-            cls._window = NotesWindow()
+            cls._window = NotesWindow(runtime=cls._runtime or get_notes_runtime())
             cls._window.setWindowFlags(cls._window.windowFlags() | Qt.Window)
             if not cls._connected:
                 QApplication.instance().focusChanged.connect(cls._on_focus_changed)
@@ -107,6 +114,10 @@ class Plugin(PluginInterface):
         get_app_data_path("data/notes").mkdir(parents=True, exist_ok=True)
         get_app_data_path("data/notes/images").mkdir(parents=True, exist_ok=True)
         get_app_data_path("data/notes/config").mkdir(parents=True, exist_ok=True)
+
+        runtime = NotesRuntime.create_default()
+        set_notes_runtime(runtime)
+        NotesWindowManager.set_runtime(runtime)
 
     def shutdown(self) -> None:
         NotesWindowManager.close_window()

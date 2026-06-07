@@ -1,44 +1,50 @@
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout,
-    QFileDialog, QStackedWidget, QListWidget, QListWidgetItem,
-    QComboBox, QSpinBox, QFontComboBox, QCheckBox
+    QVBoxLayout, QHBoxLayout, QFileDialog, QStackedWidget, QListWidget, QListWidgetItem,
+    QFontComboBox
 )
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QFont
 from qfluentwidgets import (
-    MessageBoxBase, SubtitleLabel, SwitchSettingCard, FluentIcon as FIF,
-    SettingCardGroup, PushSettingCard, InfoBar, InfoBarPosition,
-    LineEdit, SpinBox, ComboBox,
-    CaptionLabel, StrongBodyLabel, CardWidget, ConfigItem, qconfig
+    MessageBoxBase, SwitchSettingCard, FluentIcon as FIF,
+    PushSettingCard, InfoBar, InfoBarPosition,
+    ComboBox, CaptionLabel, StrongBodyLabel, CardWidget, ConfigItem,
+    isDarkTheme
 )
 
+from ..core.runtime import get_notes_runtime
 from ..core.path_util import PathUtil
-import json
+from ..services.config_service import ConfigService
+from ..services.data_service import DataService
 
 
 class SettingsDialog(MessageBoxBase):
     """设置对话框 - 左右分布布局（简化版，无 WebDAV）"""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, runtime=None):
         super().__init__(parent)
+        self._runtime = runtime or get_notes_runtime()
+        self._theme_manager = self._runtime.theme_manager
+        self._config_service = ConfigService()
         self._current_index = 0
         self._config = self._load_config()
         self._init_ui()
+        self._theme_refresh_cb = lambda _theme: self._sync_theme_ui()
+        self._theme_manager.register_callback(self._theme_refresh_cb)
 
     def _load_config(self):
         """加载配置文件"""
-        config_path = PathUtil.get_config_path('config.json')
-        if config_path.exists():
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
+        return {
+            'ui_scale': self._config_service.get('ui_scale', '100%'),
+            'editor_font': self._config_service.get('editor_font', 'Consolas'),
+            'auto_save': self._config_service.get('auto_save', True),
+            'dark_theme': self._config_service.get('dark_theme', self._theme_manager.is_dark()),
+        }
 
     def _save_config(self, key, value):
         """保存配置"""
         self._config[key] = value
-        config_path = PathUtil.get_config_path('config.json')
-        with open(config_path, 'w', encoding='utf-8') as f:
-            json.dump(self._config, f, ensure_ascii=False, indent=2)
+        self._config_service.set(key, value)
+        self._config_service.save()
 
     def _init_ui(self):
         main_layout = QHBoxLayout()
@@ -115,8 +121,6 @@ class SettingsDialog(MessageBoxBase):
 
     def _update_nav_list_style(self):
         """更新导航列表样式（支持主题切换）"""
-        from qfluentwidgets import isDarkTheme
-
         if isDarkTheme():
             self.nav_list.setStyleSheet('''
                 QListWidget {
@@ -169,6 +173,11 @@ class SettingsDialog(MessageBoxBase):
         index = self.nav_list.row(item)
         self.stacked_widget.setCurrentIndex(index)
 
+    def _sync_theme_ui(self):
+        """同步主题相关 UI 状态。"""
+        self.theme_card.setChecked(self._theme_manager.is_dark())
+        self._update_nav_list_style()
+
     def _create_general_page(self):
         """创建常规设置页面"""
         widget = CardWidget()
@@ -187,6 +196,7 @@ class SettingsDialog(MessageBoxBase):
             '\u6df1\u8272/\u6d45\u8272\u4e3b\u9898\u5207\u6362',
             theme_config
         )
+        self.theme_card.setChecked(self._theme_manager.is_dark())
         self.theme_card.checkedChanged.connect(self._on_theme_changed)
         layout.addWidget(self.theme_card)
 
@@ -317,11 +327,10 @@ class SettingsDialog(MessageBoxBase):
 
     def _on_theme_changed(self, checked):
         """主题切换"""
-        from ..core.theme_manager import ThemeManager
-        theme_manager = ThemeManager.get_instance()
-        if checked != theme_manager.is_dark():
-            theme_manager.toggle()
+        if checked != self._theme_manager.is_dark():
+            self._theme_manager.toggle()
         self._save_config('dark_theme', checked)
+        self._update_nav_list_style()
 
         theme_name = '\u6df1\u8272' if checked else '\u6d45\u8272'
         InfoBar.success(
@@ -376,109 +385,49 @@ class SettingsDialog(MessageBoxBase):
 
     def _backup_data(self):
         """备份数据"""
-        import zipfile
-        from datetime import datetime
-        from PyQt5.QtWidgets import QFileDialog
-
         default_name = "NotesBackup.zip"
         save_path, _ = QFileDialog.getSaveFileName(
-            self, '\u4fdd\u5b58\u5907\u4efd',
-            default_name,
-            '\u538b\u7f29\u6587\u4ef6 (*.zip)'
+            self, '保存备份', default_name, '压缩文件 (*.zip)'
         )
-
         if not save_path:
             return
-
-        try:
-            data_path = PathUtil.get_data_path()
-
-            with zipfile.ZipFile(save_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                db_path = PathUtil.get_db_path()
-                if db_path.exists():
-                    zipf.write(db_path, 'data/notes.db')
-
-                images_path = PathUtil.get_image_path()
-                if images_path.exists():
-                    for image_file in images_path.iterdir():
-                        if image_file.is_file():
-                            zipf.write(image_file, f'data/images/{image_file.name}')
-
+        success, message = DataService.backup_data(save_path)
+        if success:
             InfoBar.success(
-                title='\u5907\u4efd\u6210\u529f',
-                content=f'\u6570\u636e\u5df2\u5907\u4efd\u5230\uff1a{save_path}',
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2000,
-                parent=self
+                title='备份成功', content=message,
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=2000, parent=self
             )
-        except Exception as e:
+        else:
             InfoBar.error(
-                title='\u5907\u4efd\u5931\u8d25',
-                content=f'\u9519\u8bef\uff1a{str(e)}',
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self
+                title='备份失败', content=message,
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=3000, parent=self
             )
 
     def _import_data(self):
         """导入数据"""
-        import zipfile
-        from PyQt5.QtWidgets import QFileDialog
-
         file_path, _ = QFileDialog.getOpenFileName(
-            self, '\u9009\u62e9\u5907\u4efd\u6587\u4ef6',
-            '',
-            '\u538b\u7f29\u6587\u4ef6 (*.zip)'
+            self, '选择备份文件', '', '压缩文件 (*.zip)'
         )
-
         if not file_path:
             return
-
-        try:
-            data_path = PathUtil.get_data_path()
-            images_path = PathUtil.get_image_path()
-
-            with zipfile.ZipFile(file_path, 'r') as zipf:
-                for member in zipf.namelist():
-                    if member.endswith('/'):
-                        continue
-
-                    if member.startswith('data/images/'):
-                        target_path = images_path / member.replace('data/images/', '')
-                    elif member.startswith('data/'):
-                        target_path = data_path / member.replace('data/', '')
-                    else:
-                        continue
-
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    with zipf.open(member) as source, open(target_path, 'wb') as target:
-                        target.write(source.read())
-
+        success, message = DataService.import_data(file_path)
+        if success:
             InfoBar.success(
-                title='\u5bfc\u5165\u6210\u529f',
-                content='\u6570\u636e\u5df2\u5bfc\u5165\uff0c\u8bf7\u91cd\u542f\u5e94\u7528\u4ee5\u751f\u6548',
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self
+                title='导入成功', content=message,
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=3000, parent=self
             )
-        except Exception as e:
+        else:
             InfoBar.error(
-                title='\u5bfc\u5165\u5931\u8d25',
-                content=f'\u9519\u8bef\uff1a{str(e)}',
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self
+                title='导入失败', content=message,
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=3000, parent=self
             )
 
     def closeEvent(self, event):
         """关闭事件"""
+        if hasattr(self, '_theme_refresh_cb'):
+            self._theme_manager.unregister_callback(self._theme_refresh_cb)
         super().closeEvent(event)

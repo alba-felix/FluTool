@@ -67,7 +67,12 @@ class CategoryService:
         category_id = self._category_dao.add(name)
         if category_id:
             self._event_bus.emit_category_created(category_id)
+            self._event_bus.emit_category_changed()
         return category_id
+
+    def add(self, name: str) -> Optional[int]:
+        """兼容旧调用方式，新增分类。"""
+        return self.create(name)
     
     def rename(self, category_id: int, new_name: str) -> bool:
         """
@@ -88,6 +93,7 @@ class CategoryService:
         result = self._category_dao.update(category_id, new_name)
         if result:
             self._event_bus.emit_category_updated(category_id)
+            self._event_bus.emit_category_changed()
         return result
     
     def delete(self, category_id: int) -> bool:
@@ -115,6 +121,7 @@ class CategoryService:
         result = self._category_dao.delete(category_id)
         if result:
             self._event_bus.emit_category_deleted(category_id)
+            self._event_bus.emit_category_changed()
         return result
     
     def exists(self, name: str) -> bool:

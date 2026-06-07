@@ -1,17 +1,24 @@
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit, QPushButton
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from typing import Optional
+
+from PyQt5.QtWidgets import QHBoxLayout
 from qfluentwidgets import MessageBoxBase, SubtitleLabel, LineEdit, TextEdit, PrimaryPushButton, PushButton, ComboBox, CaptionLabel
 
-from ..core.category_manager import CategoryManager
+from ..core.runtime import get_notes_runtime
+from ..services.category_service import CategoryService
 
 
 class QuickNoteDialog(MessageBoxBase):
     """快速添加笔记对话框"""
     
-    def __init__(self, parent=None, current_category_id: int = None):
+    def __init__(
+        self,
+        parent=None,
+        current_category_id: int = None,
+        category_service: CategoryService = None,
+    ):
         super().__init__(parent)
-        self._category_manager = CategoryManager.get_instance()
+        runtime = get_notes_runtime()
+        self._category_service = category_service or runtime.category_service
         self._current_category_id = current_category_id
         self._init_ui()
         self._connect_signals()
@@ -54,7 +61,7 @@ class QuickNoteDialog(MessageBoxBase):
     
     def _refresh_categories(self):
         """刷新分类列表"""
-        categories = self._category_manager.get_all()
+        categories = self._category_service.get_all()
         self.category_combo.clear()
         
         # 如果没有指定分类，使用第一个分类

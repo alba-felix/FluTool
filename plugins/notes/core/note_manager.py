@@ -1,51 +1,44 @@
 """
-笔记管理器模块
-提供笔记的增删改查、收藏、归档等功能
-采用单例模式确保全局只有一个实例
+笔记管理器模块（兼容门面）
+已降级为 NoteService + CategoryService 的兼容门面，保持旧调用方不受影响。
+新代码请直接使用 services/ 下的服务类。
 """
-
 from datetime import datetime
 from typing import List, Optional, Callable
 
 from ..dao.note_dao import NoteDAO
 from ..dao.category_dao import CategoryDAO
 from ..models.note import Note
+from ..services.note_service import NoteService
+from ..services.category_service import CategoryService
 from ..services.image_service import ImageService
 from .event_bus import EventBus
 
 
 class NoteManager:
     """
-    笔记管理器类（单例模式）
+    笔记管理器（兼容门面）
     
-    负责管理笔记的增删改查、收藏、归档等操作
-    
-    属性:
-        _instance: 类属性，保存单例实例
-        _initialized: 是否已初始化
-        _note_dao: 笔记数据访问对象
-        _category_dao: 分类数据访问对象
-        _image_service: 图片服务
-        _event_bus: 事件总线
-        _on_note_changed_callbacks: 笔记变更回调函数列表（向后兼容）
+    内部委托给 NoteService/CategoryService，保留旧的回调通知机制以保证向后兼容。
+    新代码请直接使用 NoteService / CategoryService。
     """
     
     _instance: Optional['NoteManager'] = None
 
     def __new__(cls):
-        """单例模式：确保只有一个实例"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
-        """初始化笔记管理器"""
         if self._initialized:
             return
         self._initialized = True
         self._note_dao = NoteDAO()
         self._category_dao = CategoryDAO()
+        self._note_service = NoteService()
+        self._category_service = CategoryService()
         self._image_service = ImageService.create_default()
         self._event_bus = EventBus.get_instance()
         self._on_note_changed_callbacks: List[Callable] = []
@@ -79,29 +72,27 @@ class NoteManager:
 
     def get_all(self, include_archived: bool = False) -> List[Note]:
         """获取所有笔记"""
-        return self._note_dao.get_all(include_archived)
+        return self._note_service.get_all(include_archived)
 
     def get_by_id(self, note_id: int) -> Optional[Note]:
         """根据 ID 获取笔记"""
-        return self._note_dao.get_by_id(note_id)
+        return self._note_service.get_by_id(note_id)
 
     def get_by_category(self, category_id: int, include_archived: bool = False) -> List[Note]:
         """根据分类 ID 获取笔记列表"""
-        return self._note_dao.get_by_category(category_id, include_archived)
+        return self._note_service.get_by_category(category_id, include_archived)
 
     def get_favorites(self) -> List[Note]:
         """获取所有收藏的笔记"""
-        return self._note_dao.get_favorites()
+        return self._note_service.get_favorites()
 
     def get_archived(self) -> List[Note]:
         """获取所有归档的笔记"""
-        return self._note_dao.get_archived()
+        return self._note_service.get_archived()
 
     def search(self, keyword: str) -> List[Note]:
         """搜索笔记（按关键词）"""
-        if not keyword or not keyword.strip():
-            return []
-        return self._note_dao.search(keyword)
+        return self._note_service.search(keyword)
 
     def add_note(
         self,
@@ -116,189 +107,88 @@ class NoteManager:
         """
         添加新笔记
         
-        参数:
-            title: 笔记标题
-            content: 笔记内容
-            category_id: 分类 ID（可选）
-            tags: 标签列表
-            code_blocks: 代码块列表
-            remarks: 备注
-            images: 图片文件名列表
-            
-        返回:
-            新笔记的 ID，失败返回 None
+        参数同 NoteService.add_note()，额外保持旧回调通知。
         """
-        if not content or not content.strip():
-            return None
-        if not title or not title.strip():
-            title = '无标题'
-        if category_id is None:
-            default_category = self._category_dao.get_default_category()
-            category_id = default_category.id if default_category else None
+        # 注入默认分类逻辑（保持旧行为兼容）
+        resolved_category_id = category_id
+        if resolved_category_id is None:
+            default_category = self._category_service.get_default()
+            resolved_category_id = default_category.id if default_category else None
 
-        note = Note(
+        note_id = self._note_service.add_note(
             title=title,
             content=content,
-            category_id=category_id,
-            tags=tags or [],
-            code_blocks=[],
+            category_id=resolved_category_id,
+            tags=tags,
+            code_blocks=code_blocks,
             remarks=remarks,
-            images=images or [],
-            created_at=datetime.now(),
-            updated_at=datetime.now()
+            images=images,
         )
-        if code_blocks:
-            from ..models.note import CodeBlock
-            note.code_blocks = [CodeBlock.from_dict(cb) for cb in code_blocks]
-
-        note_id = self._note_dao.add(note)
         if note_id:
-            self._emit_note_event(note_id, 'created')
             self._notify_changed()
         return note_id
 
     def update_note(self, note: Note) -> bool:
-        """
-        更新笔记
-        
-        参数:
-            note: 要更新的笔记对象
-            
-        返回:
-            更新成功返回 True，失败返回 False
-        """
-        if not note.content or not note.content.strip():
-            return False
-        if not note.title or not note.title.strip():
-            note.title = '无标题'
-        note.updated_at = datetime.now()
-        result = self._note_dao.update(note)
+        """更新笔记"""
+        result = self._note_service.update_note(note)
         if result:
-            self._emit_note_event(note.id, 'updated')
             self._notify_changed()
         return result
 
     def delete_note(self, note_id: int) -> bool:
-        """
-        删除笔记（同时删除关联的图片文件）
-
-        参数:
-            note_id: 笔记 ID
-
-        返回:
-            删除成功返回 True，失败返回 False
-        """
-        if not note_id:
-            return False
-        note = self._note_dao.get_by_id(note_id)
-        if note is None:
-            return False
-        for image_filename in note.images:
-            self._delete_image_file(image_filename)
-        result = self._note_dao.delete(note_id)
+        """删除笔记（同时删除关联的图片文件）"""
+        result = self._note_service.delete_note(note_id)
         if result:
-            self._emit_note_event(note_id, 'deleted')
             self._notify_changed()
         return result
 
     def toggle_favorite(self, note_id: int) -> bool:
         """切换笔记的收藏状态"""
-        result = self._note_dao.toggle_favorite(note_id)
+        result = self._note_service.toggle_favorite(note_id)
         if result:
-            self._emit_note_event(note_id, 'favorited')
             self._notify_changed()
         return result
 
     def toggle_archive(self, note_id: int) -> bool:
         """切换笔记的归档状态"""
-        result = self._note_dao.toggle_archive(note_id)
+        result = self._note_service.toggle_archive(note_id)
         if result:
-            self._emit_note_event(note_id, 'archived')
             self._notify_changed()
         return result
 
     def set_category(self, note_id: int, category_id: Optional[int]) -> bool:
         """设置笔记的分类"""
-        result = self._note_dao.set_category(note_id, category_id)
+        result = self._note_service.set_category(note_id, category_id)
         if result:
-            self._emit_note_event(note_id, 'updated')
             self._notify_changed()
         return result
 
     def save_image(self, image_data, category_name: str = '', filename: str = None, index: int = 0) -> Optional[str]:
-        """
-        保存图片到本地
-        
-        参数:
-            image_data: 图片数据（bytes 或 QPixmap）
-            category_name: 分类名称（用于文件名前缀）
-            filename: 可选的文件名
-            index: 序号
-            
-        返回:
-            保存的文件名，失败返回 None
-        """
-        return self._image_service.save(
+        """保存图片到本地"""
+        return self._note_service.save_image(
             image_data=image_data,
-            filename=filename,
             category_name=category_name,
-            index=index
+            filename=filename,
+            index=index,
         )
 
     def get_image_path(self, filename: str):
-        """
-        获取图片的完整路径
-        
-        参数:
-            filename: 图片文件名
-            
-        返回:
-            图片的完整路径，文件不存在返回 None
-        """
-        return self._image_service.get_path(filename)
-
-    def _delete_image_file(self, filename: str):
-        """删除图片文件（内部方法）"""
-        self._image_service.delete(filename)
+        """获取图片的完整路径"""
+        return self._note_service.get_image_path(filename)
 
     def add_image_to_note(self, note_id: int, image_filename: str) -> bool:
-        """
-        为笔记添加图片
-        
-        参数:
-            note_id: 笔记 ID
-            image_filename: 图片文件名
-            
-        返回:
-            添加成功返回 True，失败返回 False
-        """
-        note = self._note_dao.get_by_id(note_id)
-        if note is None:
-            return False
-        if image_filename not in note.images:
-            note.images.append(image_filename)
-            return self.update_note(note)
-        return True
+        """为笔记添加图片"""
+        result = self._note_service.add_image(note_id, image_filename)
+        if result:
+            self._notify_changed()
+        return result
 
     def remove_image_from_note(self, note_id: int, image_filename: str) -> bool:
-        """
-        从笔记中移除图片（同时删除图片文件）
-        
-        参数:
-            note_id: 笔记 ID
-            image_filename: 图片文件名
-            
-        返回:
-            移除成功返回 True，失败返回 False
-        """
-        note = self._note_dao.get_by_id(note_id)
-        if note is None:
-            return False
-        if image_filename in note.images:
-            note.images.remove(image_filename)
-            self._delete_image_file(image_filename)
-            return self.update_note(note)
-        return True
+        """从笔记中移除图片（同时删除图片文件）"""
+        result = self._note_service.remove_image(note_id, image_filename)
+        if result:
+            self._notify_changed()
+        return result
 
     @classmethod
     def get_instance(cls) -> 'NoteManager':

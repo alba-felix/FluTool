@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QLineEdit, QMessageBox, QWidget
+    QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem,
+    QPushButton, QLineEdit, QWidget
 )
 from PyQt5.QtCore import Qt
 from qfluentwidgets import (
@@ -8,14 +8,16 @@ from qfluentwidgets import (
     ListWidget, InfoBar, InfoBarPosition
 )
 
-from ..core.category_manager import CategoryManager
+from ..core.runtime import get_notes_runtime
 from ..models.note import Category
+from ..services.category_service import CategoryService
 
 
 class CategoryManagerDialog(MessageBoxBase):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, category_service: CategoryService = None):
         super().__init__(parent)
-        self._category_manager = CategoryManager.get_instance()
+        runtime = get_notes_runtime()
+        self._category_service = category_service or runtime.category_service
         self._init_ui()
         self._connect_signals()
         self._load_categories()
@@ -51,7 +53,7 @@ class CategoryManagerDialog(MessageBoxBase):
 
     def _load_categories(self):
         self.category_list.clear()
-        categories = self._category_manager.get_user_categories()
+        categories = self._category_service.get_user_categories()
         for category in categories:
             self._add_category_item(category)
 
@@ -67,7 +69,7 @@ class CategoryManagerDialog(MessageBoxBase):
         name_label = QLabel(category.name)
         layout.addWidget(name_label, 1)
 
-        note_count = self._category_manager.get_note_count(category.id)
+        note_count = self._category_service.get_note_count(category.id)
         count_label = QLabel(f'{note_count} \u6761\u7b14\u8bb0')
         count_label.setStyleSheet('color: #888;')
         layout.addWidget(count_label)
@@ -99,7 +101,7 @@ class CategoryManagerDialog(MessageBoxBase):
             )
             return
 
-        if self._category_manager.get_by_name(name):
+        if self._category_service.get_by_name(name):
             InfoBar.warning(
                 title='\u63d0\u793a',
                 content='\u5206\u7c7b\u5df2\u5b58\u5728',
@@ -111,9 +113,9 @@ class CategoryManagerDialog(MessageBoxBase):
             )
             return
 
-        category_id = self._category_manager.add(name)
+        category_id = self._category_service.add(name)
         if category_id:
-            category = self._category_manager.get_by_id(category_id)
+            category = self._category_service.get_by_id(category_id)
             self._add_category_item(category)
             self.category_input.clear()
         else:
@@ -128,7 +130,7 @@ class CategoryManagerDialog(MessageBoxBase):
             )
 
     def _rename_category(self, category_id: int):
-        category = self._category_manager.get_by_id(category_id)
+        category = self._category_service.get_by_id(category_id)
         if not category:
             return
 
@@ -145,7 +147,7 @@ class CategoryManagerDialog(MessageBoxBase):
         if dialog.exec():
             new_name = input_edit.text().strip()
             if new_name and new_name != category.name:
-                if self._category_manager.rename(category_id, new_name):
+                if self._category_service.rename(category_id, new_name):
                     self._load_categories()
                 else:
                     InfoBar.error(
@@ -159,11 +161,11 @@ class CategoryManagerDialog(MessageBoxBase):
                     )
 
     def _delete_category(self, category_id: int):
-        category = self._category_manager.get_by_id(category_id)
+        category = self._category_service.get_by_id(category_id)
         if not category:
             return
 
-        note_count = self._category_manager.get_note_count(category_id)
+        note_count = self._category_service.get_note_count(category_id)
         message = f'\u786e\u5b9a\u5220\u9664\u5206\u7c7b "{category.name}" \u5417\uff1f'
         if note_count > 0:
             message += f'\n\u8be5\u5206\u7c7b\u4e0b\u7684 {note_count} \u6761\u7b14\u8bb0\u5c06\u79fb\u52a8\u5230"\u9ed8\u8ba4"\u5206\u7c7b\u3002'
@@ -174,7 +176,7 @@ class CategoryManagerDialog(MessageBoxBase):
         dialog.cancelButton.setText('\u53d6\u6d88')
 
         if dialog.exec():
-            if self._category_manager.delete(category_id):
+            if self._category_service.delete(category_id):
                 self._load_categories()
             else:
                 InfoBar.error(

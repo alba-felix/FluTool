@@ -111,7 +111,7 @@ class AppCore:
             self._logger.warning(f"Backup manager initialization failed: {e}")
         
         try:
-            self._search_manager = GlobalSearchManager()
+            self._search_manager = GlobalSearchManager(logger=self._logger)
         except Exception as e:
             self._logger.warning(f"Search manager initialization failed: {e}")
         

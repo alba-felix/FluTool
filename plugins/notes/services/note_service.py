@@ -3,12 +3,13 @@
 提供笔记的核心业务逻辑
 """
 from datetime import datetime
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 from ..dao.note_dao import NoteDAO
-from ..models.note import Note
+from ..models.note import Note, CodeBlock
 from ..services.image_service import ImageService
-from ..core.event_bus import EventBus, EventType
+from ..core.event_bus import EventBus
 
 
 class NoteService:
@@ -84,6 +85,40 @@ class NoteService:
         if note_id:
             self._event_bus.emit_note_created(note_id)
         return note_id
+
+    def add_note(
+        self,
+        title: str,
+        content: str,
+        category_id: Optional[int] = None,
+        tags: Optional[List[str]] = None,
+        code_blocks: Optional[List[dict]] = None,
+        remarks: str = '',
+        images: Optional[List[str]] = None,
+    ) -> Optional[int]:
+        """兼容旧调用方式，创建完整笔记。"""
+        if not content or not content.strip():
+            return None
+
+        normalized_title = title.strip() if title and title.strip() else '无标题'
+        note = Note(
+            title=normalized_title,
+            content=content,
+            category_id=category_id,
+            tags=tags or [],
+            code_blocks=[],
+            remarks=remarks,
+            images=images or [],
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        if code_blocks:
+            note.code_blocks = [CodeBlock.from_dict(item) for item in code_blocks]
+
+        note_id = self._note_dao.add(note)
+        if note_id:
+            self._event_bus.emit_note_created(note_id)
+        return note_id
     
     def update(self, note: Note) -> bool:
         """
@@ -105,6 +140,10 @@ class NoteService:
         if result:
             self._event_bus.emit_note_updated(note.id)
         return result
+
+    def update_note(self, note: Note) -> bool:
+        """兼容旧调用方式，更新笔记。"""
+        return self.update(note)
     
     def delete(self, note_id: int) -> bool:
         """
@@ -125,6 +164,10 @@ class NoteService:
         if result:
             self._event_bus.emit_note_deleted(note_id)
         return result
+
+    def delete_note(self, note_id: int) -> bool:
+        """兼容旧调用方式，删除笔记。"""
+        return self.delete(note_id)
     
     def toggle_favorite(self, note_id: int) -> bool:
         """切换收藏状态"""
@@ -167,6 +210,25 @@ class NoteService:
             self._image_service.delete(image_filename)
             return self.update(note)
         return True
+
+    def save_image(
+        self,
+        image_data: Union[bytes, 'QPixmap'],
+        category_name: str = '',
+        filename: str = None,
+        index: int = 0,
+    ) -> Optional[str]:
+        """保存图片资源。"""
+        return self._image_service.save(
+            image_data=image_data,
+            filename=filename,
+            category_name=category_name,
+            index=index,
+        )
+
+    def get_image_path(self, filename: str) -> Optional[Path]:
+        """获取图片文件路径。"""
+        return self._image_service.get_path(filename)
     
     def count(self) -> int:
         """获取笔记总数"""

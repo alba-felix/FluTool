@@ -207,7 +207,14 @@ class NoteCard(QFrame):
 		self.content_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 		self.content_text.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 		self.content_text.setFrameStyle(QFrame.NoFrame)
-		self.content_text.setStyleSheet("border: none;")
+		self.content_text.setStyleSheet(
+		    "QTextEdit { border: none; }"
+		    " QTextEdit QScrollBar:vertical { background: transparent; width: 6px; border-radius: 3px; }"
+		    " QTextEdit QScrollBar::handle:vertical { background: rgba(128, 128, 128, 0.4); border-radius: 3px; min-height: 30px; }"
+		    " QTextEdit QScrollBar::handle:vertical:hover { background: rgba(128, 128, 128, 0.6); }"
+		    " QTextEdit QScrollBar::add-line:vertical, QTextEdit QScrollBar::sub-line:vertical { height: 0px; }"
+		    " QTextEdit QScrollBar::add-page:vertical, QTextEdit QScrollBar::sub-page:vertical { background: transparent; }"
+		)
 		self.content_text.setVisible(False)
 		self.content_text.setMouseTracking(True)
 		self.content_text.viewport().installEventFilter(self)

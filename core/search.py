@@ -60,9 +60,10 @@ class GlobalSearchManager:
     # 返回结果上限
     MAX_RESULTS = 50
 
-    def __init__(self):
+    def __init__(self, logger=None):
         self._plugins: Dict[str, Any] = {}
         self._cache = LRUCache(self.CACHE_SIZE)
+        self._logger = logger
         # 线程数不宜过多，避免频繁切换开销；设为 4 兼顾响应和开销
         self._executor = ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="globalsearch"
@@ -130,9 +131,9 @@ class GlobalSearchManager:
                 if plugin_results:
                     results.extend(plugin_results)
             except TimeoutError:
-                print(f"[GlobalSearch] 插件 {plugin_id} 搜索超时（{self.PLUGIN_TIMEOUT}s）")
+                self._log_warning(f"插件 {plugin_id} 搜索超时（{self.PLUGIN_TIMEOUT}s）")
             except Exception as e:
-                print(f"[GlobalSearch] 插件 {plugin_id} 搜索异常: {e}")
+                self._log_warning(f"插件 {plugin_id} 搜索异常: {e}")
 
         results.sort(key=lambda x: x.relevance, reverse=True)
         return results[:self.MAX_RESULTS]
@@ -142,8 +143,22 @@ class GlobalSearchManager:
         try:
             return plugin.search(query) or []
         except Exception as e:
-            print(f"[GlobalSearch] 插件 {plugin.get_id()} search() 异常: {e}")
+            self._log_error(f"插件 {plugin.get_id()} search() 异常: {e}")
             return []
+
+    def _log_warning(self, message: str) -> None:
+        """记录警告日志，优先使用统一日志记录器"""
+        if self._logger is not None:
+            self._logger.warning(f"[GlobalSearch] {message}")
+        else:
+            print(f"[GlobalSearch] {message}")
+
+    def _log_error(self, message: str) -> None:
+        """记录错误日志，优先使用统一日志记录器"""
+        if self._logger is not None:
+            self._logger.error(f"[GlobalSearch] {message}")
+        else:
+            print(f"[GlobalSearch] {message}")
 
     def clear_cache(self) -> None:
         """清空搜索缓存"""

@@ -1,4 +1,11 @@
 import sys
+import os
+
+# OpenBLAS 默认使用全部 CPU 线程，在内存不足时容易分配失败
+# 限制单线程避免内存碎片化，不影响 scipy 的计算正确性
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 import time
 import traceback
 from pathlib import Path

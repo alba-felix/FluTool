@@ -18,10 +18,10 @@ from qfluentwidgets import (
 from qfluentwidgets.common.font import setFont
 from qfluentwidgets.common.icon import toQIcon
 
-from ..core.note_manager import NoteManager
-from ..core.category_manager import CategoryManager
-from ..core.theme_manager import ThemeManager
+from ..core.runtime import get_notes_runtime
 from ..models.note import Note
+from ..services.category_service import CategoryService
+from ..services.note_service import NoteService
 from .note_card import NoteCard
 
 
@@ -113,7 +113,29 @@ class ScrollableNavigationPanel(QWidget):
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self._scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self._scroll_area.setStyleSheet("""
+            QScrollArea, SmoothScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 0;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(128, 128, 128, 0.4);
+                border-radius: 3px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(128, 128, 128, 0.6);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
         self._scroll_widget = QWidget()
         self._scroll_layout = QVBoxLayout(self._scroll_widget)
@@ -222,7 +244,28 @@ class NoteListWidget(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.NoFrame)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.scroll_area.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(128, 128, 128, 0.4);
+                border-radius: 3px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(128, 128, 128, 0.6);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
         self.scroll_content = QWidget()
         self.scroll_content.setStyleSheet("background: transparent;")
@@ -335,17 +378,19 @@ class NotesWindow(QDialog):
     NAV_FAVORITES = "favorites"
     NAV_ARCHIVED = "archived"
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, runtime=None):
         super().__init__(parent)
+        self._runtime = runtime or get_notes_runtime()
         self.setWindowTitle("笔记管理")
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.resize(1100, 700)
         self.setMinimumSize(700, 500)
         self.setAttribute(Qt.WA_StyledBackground)
 
-        self._note_manager = NoteManager.get_instance()
-        self._category_manager = CategoryManager.get_instance()
-        self._theme_manager = ThemeManager.get_instance()
+        self._note_service: NoteService = self._runtime.note_service
+        self._category_service: CategoryService = self._runtime.category_service
+        self._theme_manager = self._runtime.theme_manager
+        self._event_bus = self._runtime.event_bus
         self._current_nav_key: str = self.NAV_ALL
         self._current_category_id: Optional[int] = None
         self._search_keyword: str = ""
@@ -435,7 +480,7 @@ class NotesWindow(QDialog):
         content_layout.addWidget(self.navigation)
 
         self.note_list = NoteListWidget()
-        self.note_list.set_note_manager(self._note_manager)
+        self.note_list.set_note_manager(self._note_service)
         self.note_list.note_edit_clicked.connect(self._edit_note)
         self.note_list.note_delete_clicked.connect(self._delete_note)
         self.note_list.note_favorite_clicked.connect(self._toggle_favorite)
@@ -447,7 +492,7 @@ class NotesWindow(QDialog):
 
         # 初始化导航项
         self._setup_navigation_items()
-        self.navigation.setCurrentItem("home_view")
+        self.navigation.setCurrentItem(self.NAV_ALL)
 
     def _setup_navigation_items(self):
         self.navigation.addItem(
@@ -471,7 +516,7 @@ class NotesWindow(QDialog):
         self._refresh_category_navigation()
 
     def _refresh_category_navigation(self):
-        categories = self._category_manager.get_all()
+        categories = self._category_service.get_all()
         for category in categories:
             route_key = f"category_{category.id}"
             try:
@@ -486,14 +531,18 @@ class NotesWindow(QDialog):
             )
 
     def _connect_signals(self):
-        self._note_manager.register_callback(self._on_note_changed)
-        self._category_manager.register_callback(self._on_category_changed)
-        # 保存回调引用以便关闭时取消注册
-        self._theme_refresh_cb = lambda _: self.note_list.refresh_styles()
+        self._event_bus.note_created.connect(self._on_note_changed)
+        self._event_bus.note_updated.connect(self._on_note_changed)
+        self._event_bus.note_deleted.connect(self._on_note_changed)
+        self._event_bus.note_favorited.connect(self._on_note_changed)
+        self._event_bus.note_archived.connect(self._on_note_changed)
+        self._event_bus.category_created.connect(self._on_category_changed)
+        self._event_bus.category_updated.connect(self._on_category_changed)
+        self._event_bus.category_deleted.connect(self._on_category_changed)
+        self._event_bus.category_changed.connect(self._on_category_changed)
+        self._theme_refresh_cb = lambda _: self._on_theme_changed()
         self._theme_manager.register_callback(self._theme_refresh_cb)
-        # 同步主程序主题变化，刷新窗口背景和工具栏
-        from qfluentwidgets.common.config import qconfig
-        qconfig.themeChanged.connect(self._on_global_theme_changed)
+        self._theme_manager.notify_current_theme()
 
     def _on_nav_changed(self, nav_key: str):
         self._current_nav_key = nav_key
@@ -513,7 +562,7 @@ class NotesWindow(QDialog):
         self._current_nav_key = f"category_{category_id}"
         self._current_category_id = category_id
         self._search_keyword = ""
-        category = self._category_manager.get_by_id(category_id)
+        category = self._category_service.get_by_id(category_id)
         self.title_label.setText(category.name if category else "笔记")
         self._load_notes()
 
@@ -528,19 +577,19 @@ class NotesWindow(QDialog):
     def _load_notes(self):
         notes = []
         if self._search_keyword:
-            notes = self._note_manager.search(self._search_keyword)
+            notes = self._note_service.search(self._search_keyword)
         elif self._current_nav_key == self.NAV_ALL:
-            notes = self._note_manager.get_all()
+            notes = self._note_service.get_all()
         elif self._current_nav_key == self.NAV_FAVORITES:
-            notes = self._note_manager.get_favorites()
+            notes = self._note_service.get_favorites()
         elif self._current_nav_key == self.NAV_ARCHIVED:
-            notes = self._note_manager.get_archived()
+            notes = self._note_service.get_archived()
         elif self._current_category_id:
-            notes = self._note_manager.get_by_category(self._current_category_id)
+            notes = self._note_service.get_by_category(self._current_category_id)
         self.note_list.set_notes(notes)
         self.note_count_label.setText(f"共 {len(notes)} 条笔记")
 
-    def _on_note_changed(self):
+    def _on_note_changed(self, *_args):
         self._load_notes()
 
     def _on_note_content_updated(self, note_id: int, new_content: str):
@@ -554,18 +603,28 @@ class NotesWindow(QDialog):
             parent=self,
         )
 
-    def _on_category_changed(self):
+    def _on_category_changed(self, *_args):
         self._refresh_category_navigation()
+        if self._current_category_id and not self._category_service.get_by_id(self._current_category_id):
+            self._current_category_id = None
+            self._current_nav_key = self.NAV_ALL
+            self.navigation.setCurrentItem(self.NAV_ALL)
+            self.title_label.setText("全部笔记")
+        self._load_notes()
 
     def _show_quick_add(self):
         from .quick_note_dialog import QuickNoteDialog
-        dialog = QuickNoteDialog(self, current_category_id=self._current_category_id)
+        dialog = QuickNoteDialog(
+            self,
+            current_category_id=self._current_category_id,
+            category_service=self._category_service,
+        )
         if dialog.exec():
             title = dialog.get_title()
             content = dialog.get_content()
             category_id = dialog.get_category_id()
             if content:
-                self._note_manager.add_note(
+                self._note_service.add_note(
                     title=title, content=content, category_id=category_id
                 )
                 InfoBar.success(
@@ -580,11 +639,16 @@ class NotesWindow(QDialog):
 
     def _show_full_add(self):
         from .note_editor_dialog import NoteEditorDialog
-        dialog = NoteEditorDialog(parent=self, current_category_id=self._current_category_id)
+        dialog = NoteEditorDialog(
+            parent=self,
+            current_category_id=self._current_category_id,
+            note_service=self._note_service,
+            category_service=self._category_service,
+        )
         if dialog.exec():
             data = dialog.get_note_data()
             if data["content"]:
-                self._note_manager.add_note(
+                self._note_service.add_note(
                     title=data["title"],
                     content=data["content"],
                     category_id=data["category_id"],
@@ -605,11 +669,16 @@ class NotesWindow(QDialog):
 
     def _edit_note(self, note_id: int):
         from .note_editor_dialog import NoteEditorDialog
-        note = self._note_manager.get_by_id(note_id)
+        note = self._note_service.get_by_id(note_id)
         if not note:
             return
         from qfluentwidgets import MessageBox
-        dialog = NoteEditorDialog(note, self)
+        dialog = NoteEditorDialog(
+            note,
+            self,
+            note_service=self._note_service,
+            category_service=self._category_service,
+        )
         if dialog.exec():
             data = dialog.get_note_data()
             if data["content"]:
@@ -621,7 +690,7 @@ class NotesWindow(QDialog):
                 note.code_blocks = [CodeBlock.from_dict(cb) for cb in data["code_blocks"]]
                 note.remarks = data["remarks"]
                 note.images = data["images"]
-                self._note_manager.update_note(note)
+                self._note_service.update_note(note)
                 InfoBar.success(
                     title="成功",
                     content="笔记已更新",
@@ -638,7 +707,7 @@ class NotesWindow(QDialog):
         msg.yesButton.setText("删除")
         msg.cancelButton.setText("取消")
         if msg.exec():
-            self._note_manager.delete_note(note_id)
+            self._note_service.delete_note(note_id)
             InfoBar.success(
                 title="成功",
                 content="笔记已删除",
@@ -650,12 +719,13 @@ class NotesWindow(QDialog):
             )
 
     def _toggle_favorite(self, note_id: int):
-        self._note_manager.toggle_favorite(note_id)
+        self._note_service.toggle_favorite(note_id)
 
-    def _on_global_theme_changed(self):
-        """全局主题切换时刷新窗口背景和工具栏样式"""
+    def _on_theme_changed(self):
+        """主题切换时刷新窗口和列表样式"""
         self._update_window_background()
         self._apply_theme_styles()
+        self.note_list.refresh_styles()
 
     def _apply_theme_styles(self):
         """根据当前主题更新窗口级样式"""
@@ -672,28 +742,29 @@ class NotesWindow(QDialog):
     def _toggle_theme(self):
         """切换主题并刷新卡片样式"""
         self._theme_manager.toggle()
-        # 延迟刷新卡片样式让 QFluentWidgets 先完成主题重绘
-        QTimer.singleShot(50, self.note_list.refresh_styles)
-        # 同时重新设置工具栏分割线和导航面板样式
-        self._apply_theme_styles()
 
     def _toggle_archive(self, note_id: int):
-        self._note_manager.toggle_archive(note_id)
+        self._note_service.toggle_archive(note_id)
 
     def _show_category_manager(self):
         from .category_manager_dialog import CategoryManagerDialog
-        dialog = CategoryManagerDialog(self)
+        dialog = CategoryManagerDialog(self, category_service=self._category_service)
         dialog.exec()
 
     def closeEvent(self, event):
         """关闭窗口时清理信号连接，避免内存泄漏"""
         try:
-            from qfluentwidgets.common.config import qconfig
-            qconfig.themeChanged.disconnect(self._on_global_theme_changed)
+            self._event_bus.note_created.disconnect(self._on_note_changed)
+            self._event_bus.note_updated.disconnect(self._on_note_changed)
+            self._event_bus.note_deleted.disconnect(self._on_note_changed)
+            self._event_bus.note_favorited.disconnect(self._on_note_changed)
+            self._event_bus.note_archived.disconnect(self._on_note_changed)
+            self._event_bus.category_created.disconnect(self._on_category_changed)
+            self._event_bus.category_updated.disconnect(self._on_category_changed)
+            self._event_bus.category_deleted.disconnect(self._on_category_changed)
+            self._event_bus.category_changed.disconnect(self._on_category_changed)
         except (TypeError, RuntimeError):
             pass
-        self._note_manager.unregister_callback(self._on_note_changed)
-        self._category_manager.unregister_callback(self._on_category_changed)
         if hasattr(self, '_theme_refresh_cb'):
             self._theme_manager.unregister_callback(self._theme_refresh_cb)
         event.accept()

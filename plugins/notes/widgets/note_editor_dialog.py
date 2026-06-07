@@ -11,8 +11,10 @@ from qfluentwidgets import (
     ExpandLayout, SettingCardGroup, ExpandGroupSettingCard, InfoBar, InfoBarPosition,
 )
 
-from ..core.category_manager import CategoryManager
+from ..core.runtime import get_notes_runtime
 from ..models.note import Note, CodeBlock
+from ..services.category_service import CategoryService
+from ..services.note_service import NoteService
 
 
 class InputMethodFixMixin:
@@ -163,11 +165,20 @@ class CodeBlockWidget(CardWidget):
 
 
 class NoteEditorDialog(MessageBoxBase):
-    def __init__(self, note: Note = None, parent=None, current_category_id: int = None):
+    def __init__(
+        self,
+        note: Note = None,
+        parent=None,
+        current_category_id: int = None,
+        note_service: NoteService = None,
+        category_service: CategoryService = None,
+    ):
         super().__init__(parent)
+        runtime = get_notes_runtime()
         self._note = note
         self._current_category_id = current_category_id
-        self._category_manager = CategoryManager.get_instance()
+        self._note_service = note_service or runtime.note_service
+        self._category_service = category_service or runtime.category_service
         self._tags: List[str] = []
         self._code_block_widgets: List[CodeBlockWidget] = []
         self._images: List[str] = []
@@ -184,7 +195,28 @@ class NoteEditorDialog(MessageBoxBase):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(128, 128, 128, 0.4);
+                border-radius: 3px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(128, 128, 128, 0.6);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
         scroll_content = QWidget()
         scroll_content.setStyleSheet("background: transparent;")
@@ -295,7 +327,7 @@ class NoteEditorDialog(MessageBoxBase):
         self.manage_category_btn.clicked.connect(self._on_manage_category)
 
     def _refresh_categories(self):
-        categories = self._category_manager.get_all() or []
+        categories = self._category_service.get_all() or []
         self.category_combo.clear()
         
         # 如果没有分类，什么都不选
@@ -319,7 +351,7 @@ class NoteEditorDialog(MessageBoxBase):
 
     def _on_manage_category(self):
         from .category_manager_dialog import CategoryManagerDialog
-        dialog = CategoryManagerDialog(self)
+        dialog = CategoryManagerDialog(self, category_service=self._category_service)
         dialog.exec()
         self._refresh_categories()
 
@@ -369,9 +401,6 @@ class NoteEditorDialog(MessageBoxBase):
         if not file_path:
             return
         try:
-            from ..core.note_manager import NoteManager
-            from pathlib import Path
-            note_manager = NoteManager.get_instance()
             with open(file_path, 'rb') as f:
                 image_data = f.read()
             
@@ -388,7 +417,7 @@ class NoteEditorDialog(MessageBoxBase):
             prefix = ''.join(c for c in prefix if c.isalnum() or c in '_-')[:20]
             filename_base = f"{prefix}_{timestamp}"
             
-            filename = note_manager.save_image(image_data, category_name, filename_base, image_index)
+            filename = self._note_service.save_image(image_data, category_name, filename_base, image_index)
             if filename:
                 self._images.append(filename)
                 self._add_image_thumbnail(filename)
@@ -414,10 +443,7 @@ class NoteEditorDialog(MessageBoxBase):
             return
         
         try:
-            from ..core.note_manager import NoteManager
             from datetime import datetime
-            
-            note_manager = NoteManager.get_instance()
             
             # 获取当前图片数量作为序号
             image_index = len(self._images)
@@ -435,7 +461,7 @@ class NoteEditorDialog(MessageBoxBase):
             print(f'[DEBUG] Pixmap \u5c3a\u5bf8\uff1a{pixmap.width()}x{pixmap.height()}')
             
             # 保存图片（传递序号）
-            saved_filename = note_manager.save_image(pixmap, category_name, filename_base, image_index)
+            saved_filename = self._note_service.save_image(pixmap, category_name, filename_base, image_index)
             
             if saved_filename:
                 print(f'[DEBUG] \u56fe\u7247\u4fdd\u5b58\u6210\u529f\uff1a{saved_filename}')
@@ -478,8 +504,7 @@ class NoteEditorDialog(MessageBoxBase):
     def _add_image_thumbnail(self, filename: str):
         if not filename:
             return
-        from ..core.path_util import PathUtil
-        image_path = PathUtil.get_image_path(filename)
+        image_path = self._note_service.get_image_path(filename)
         if image_path is None or not image_path.exists():
             return
 

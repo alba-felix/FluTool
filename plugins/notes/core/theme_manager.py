@@ -1,31 +1,11 @@
 from typing import Optional, Callable, List
 
-from PyQt5.QtWidgets import QApplication
-from qfluentwidgets import qconfig, Theme, setTheme, isDarkTheme
-
-
-TOOLTIP_STYLE_DARK = """
-QToolTip {
-    background-color: #2d2d2d;
-    color: #ffffff;
-    border: 1px solid #3d3d3d;
-    border-radius: 4px;
-    padding: 4px 8px;
-}
-"""
-
-TOOLTIP_STYLE_LIGHT = """
-QToolTip {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    padding: 4px 8px;
-}
-"""
+from qfluentwidgets import qconfig, Theme, setTheme
 
 
 class ThemeManager:
+    """主题桥接器，统一跟随主程序的全局主题状态。"""
+
     _instance: Optional['ThemeManager'] = None
 
     def __new__(cls):
@@ -42,8 +22,7 @@ class ThemeManager:
         qconfig.themeChanged.connect(self._on_theme_changed)
 
     def _on_theme_changed(self, theme: Theme):
-        self._update_tooltip_style()
-        for callback in self._on_theme_changed_callbacks:
+        for callback in list(self._on_theme_changed_callbacks):
             callback(theme)
 
     def register_callback(self, callback: Callable):
@@ -71,11 +50,9 @@ class ThemeManager:
     def get_current_theme(self) -> Theme:
         return qconfig.theme
 
-    def _update_tooltip_style(self):
-        app = QApplication.instance()
-        if app:
-            style = TOOLTIP_STYLE_DARK if isDarkTheme() else TOOLTIP_STYLE_LIGHT
-            app.setStyleSheet(style)
+    def notify_current_theme(self) -> None:
+        """主动同步一次当前主题，便于新窗口初始化。"""
+        self._on_theme_changed(self.get_current_theme())
 
     @classmethod
     def get_instance(cls) -> 'ThemeManager':
