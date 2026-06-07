@@ -140,7 +140,7 @@ class AISettingsManager:
             "provider_type": "deepseek",
             "base_url": "https://api.deepseek.com",
             "api_key": "",
-            "default_model": "deepseek-chat",
+            "default_model": "deepseek-v4-flash",
             "enabled": True,
             "is_default": True,
             "timeout_sec": 60,
@@ -199,10 +199,10 @@ class AISettingsManager:
     DEFAULT_MODELS = [
         {
             "provider": "deepseek",
-            "model_id": "deepseek-chat",
-            "display_name": "DeepSeek Chat",
+            "model_id": "deepseek-v4-flash",
+            "display_name": "DeepSeek V4 Flash",
             "enabled": True,
-            "capabilities": ["chat"],
+            "capabilities": ["chat", "reasoning"],
         },
         {
             "provider": "doubao",
@@ -394,7 +394,7 @@ class AISettingsManager:
             return value
         default_provider = self.get_default_provider()
         provider_config = self.get_provider_config(default_provider)
-        return str(provider_config.get("default_model", "deepseek-chat"))
+        return str(provider_config.get("default_model", "deepseek-v4-flash"))
 
     def set_default_model(self, model_id: str) -> None:
         self._file_manager.set("default_model", model_id)

@@ -81,12 +81,12 @@ DEFAULT_AI_PROVIDERS = {
             "provider_type": "deepseek",
             "base_url": "https://api.deepseek.com",
             "api_key": "",
-            "default_model": "deepseek-chat",
+            "default_model": "deepseek-v4-flash",
             "enabled": True,
             "is_default": True,
             "timeout_sec": 120,
             "custom_headers": {},
-            "models": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro"],
+            "models": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
             "features": {
                 "prefix_cache": True,
                 "enable_disk_cache": True,
@@ -97,17 +97,21 @@ DEFAULT_AI_PROVIDERS = {
                 },
             },
             "model_info": {
-                "deepseek-chat": {
-                    "context": 64000,
-                    "description": "通用对话模型，支持 64K 上下文",
-                },
-                "deepseek-reasoner": {
-                    "context": 64000,
-                    "description": "推理增强模型，支持深度思考",
+                "deepseek-v4-flash": {
+                    "context": 1000000,
+                    "description": "轻量模型，1M 上下文，支持思考模式",
                 },
                 "deepseek-v4-pro": {
                     "context": 1000000,
-                    "description": "1M 上下文模型，支持超长对话",
+                    "description": "旗舰模型，1M 上下文，适合复杂任务",
+                },
+                "deepseek-chat": {
+                    "context": 1000000,
+                    "description": "通用模型（即将弃用，映射至 v4-flash）",
+                },
+                "deepseek-reasoner": {
+                    "context": 1000000,
+                    "description": "推理模型（即将弃用，映射至 v4-flash thinking）",
                 },
             },
         },
@@ -192,7 +196,7 @@ DEFAULT_AI_PROVIDERS = {
 DEFAULT_AI_SETTINGS = {
     "version": "1.0",
     "default_provider": "deepseek",
-    "default_model": "deepseek-chat",
+    "default_model": "deepseek-v4-flash",
     "providers": {
         "siliconflow": {
             "base_url": "https://api.siliconflow.cn/v1",
@@ -203,7 +207,7 @@ DEFAULT_AI_SETTINGS = {
         },
         "deepseek": {
             "base_url": "https://api.deepseek.com",
-            "default_model": "deepseek-chat",
+            "default_model": "deepseek-v4-flash",
             "enabled": True,
             "timeout_sec": 120,
             "extra_headers": {},
@@ -268,15 +272,8 @@ DEFAULT_AI_SETTINGS = {
         },
         {
             "provider": "deepseek",
-            "model_id": "deepseek-chat",
-            "display_name": "DeepSeek Chat",
-            "enabled": True,
-            "capabilities": ["chat"],
-        },
-        {
-            "provider": "deepseek",
-            "model_id": "deepseek-reasoner",
-            "display_name": "DeepSeek Reasoner",
+            "model_id": "deepseek-v4-flash",
+            "display_name": "DeepSeek V4 Flash (1M上下文)",
             "enabled": True,
             "capabilities": ["chat", "reasoning"],
         },
@@ -284,6 +281,20 @@ DEFAULT_AI_SETTINGS = {
             "provider": "deepseek",
             "model_id": "deepseek-v4-pro",
             "display_name": "DeepSeek V4 Pro (1M上下文)",
+            "enabled": True,
+            "capabilities": ["chat", "reasoning"],
+        },
+        {
+            "provider": "deepseek",
+            "model_id": "deepseek-chat",
+            "display_name": "DeepSeek Chat (将弃用)",
+            "enabled": True,
+            "capabilities": ["chat"],
+        },
+        {
+            "provider": "deepseek",
+            "model_id": "deepseek-reasoner",
+            "display_name": "DeepSeek Reasoner (将弃用)",
             "enabled": True,
             "capabilities": ["chat"],
         },

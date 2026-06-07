@@ -7,15 +7,6 @@ from core.ai.types import AIChatRequest, AIChatResponse, AIMessage
 from core.ai.search_bridge import AISearchBridge
 
 
-WEB_SEARCH_MODELS = {
-    "deepseek": ["deepseek-reasoner"],
-    "doubao": [],
-    "qwen": [],
-    "custom": [],
-    "ollama": [],
-}
-
-
 class AIChatService:
     """AI 聊天服务骨架"""
 
@@ -32,9 +23,8 @@ class AIChatService:
             self._registry.register(OpenAICompatibleAdapter(provider_name))
 
     def supports_web_search(self, provider: str, model_id: str) -> bool:
-        """判断模型是否支持 web_search"""
-        provider_models = WEB_SEARCH_MODELS.get(provider, [])
-        return model_id in provider_models
+        """由用户 toggle 决定是否联网，上游 API 不支持的参数会自行忽略。"""
+        return True
 
     def get_enabled_models(self):
         models = self._settings_bridge.get_models()
@@ -110,9 +100,7 @@ class AIChatService:
                     )
                 )
 
-        actual_web_search = False
-        if enable_web_search and self.supports_web_search(selected_provider, selected_model):
-            actual_web_search = True
+        if enable_web_search:
             provider_config = dict(provider_config)
             provider_config["web_search"] = True
 

@@ -42,15 +42,16 @@
       "provider_type": "deepseek",
       "base_url": "https://api.deepseek.com",
       "api_key": "",
-      "default_model": "deepseek-chat",
+      "default_model": "deepseek-v4-flash",
       "enabled": true,
       "is_default": false,
       "timeout_sec": 120,
       "custom_headers": {},
       "models": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
         "deepseek-chat",
-        "deepseek-reasoner",
-        "deepseek-v4-pro"
+        "deepseek-reasoner"
       ],
       "features": {
         "prefix_cache": true,
@@ -62,17 +63,21 @@
         }
       },
       "model_info": {
-        "deepseek-chat": {
-          "context": 64000,
-          "description": "通用对话模型，支持 64K 上下文"
-        },
-        "deepseek-reasoner": {
-          "context": 64000,
-          "description": "推理增强模型，支持深度思考"
+        "deepseek-v4-flash": {
+          "context": 1000000,
+          "description": "轻量模型，1M 上下文，支持思考模式"
         },
         "deepseek-v4-pro": {
           "context": 1000000,
-          "description": "1M 上下文模型，支持超长对话"
+          "description": "旗舰模型，1M 上下文，适合复杂任务"
+        },
+        "deepseek-chat": {
+          "context": 1000000,
+          "description": "通用模型（即将弃用，映射至 v4-flash）"
+        },
+        "deepseek-reasoner": {
+          "context": 1000000,
+          "description": "推理模型（即将弃用，映射至 v4-flash thinking）"
         }
       }
     },

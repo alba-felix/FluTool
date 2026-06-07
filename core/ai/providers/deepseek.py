@@ -156,19 +156,8 @@ class DeepSeekAdapter(AIProviderAdapter):
     
     provider_name = "deepseek"
     
-    SUPPORTED_MODELS = {
-        "deepseek-chat": {"context": 64000, "description": "通用对话模型"},
-        "deepseek-reasoner": {"context": 64000, "description": "推理增强模型"},
-        "deepseek-v4-pro": {"context": 1000000, "description": "1M 上下文模型"},
-    }
-    
     def __init__(self):
         self._cache_manager = DeepSeekCacheManager()
-    
-    def get_max_context(self, model_id: str) -> int:
-        """获取模型最大上下文长度"""
-        model_info = self.SUPPORTED_MODELS.get(model_id, {})
-        return model_info.get("context", 64000)
     
     def chat_stream(
         self, request: AIChatRequest, callback: Callable[[str], None]
@@ -211,9 +200,6 @@ class DeepSeekAdapter(AIProviderAdapter):
             "max_tokens": request.max_tokens,
             "stream": True,
         }
-        
-        if request.model_id == "deepseek-v4-pro":
-            payload["max_tokens"] = min(request.max_tokens or 4096, 4096)
         
         thinking_config = provider_config.get("thinking", {})
         if thinking_config.get("enabled"):
@@ -372,9 +358,6 @@ class DeepSeekAdapter(AIProviderAdapter):
             "stream": False,
         }
         
-        if request.model_id == "deepseek-v4-pro":
-            payload["max_tokens"] = min(request.max_tokens or 4096, 4096)
-        
         thinking_config = provider_config.get("thinking", {})
         if thinking_config.get("enabled"):
             payload["thinking"] = {"type": "enabled"}
@@ -477,14 +460,10 @@ class DeepSeekAdapter(AIProviderAdapter):
             )
     
     def _build_messages(self, request: AIChatRequest) -> List[Dict[str, str]]:
-        """构建消息列表，支持 1M 上下文"""
         messages = []
-        max_context = self.get_max_context(request.model_id)
-        
         for message in request.messages:
             role = message.role if message.role in {"system", "user", "assistant"} else "user"
             messages.append({"role": role, "content": message.content})
-        
         return messages
     
     def get_cache_stats(self) -> Dict[str, Any]:

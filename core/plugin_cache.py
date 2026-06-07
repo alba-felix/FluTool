@@ -20,11 +20,14 @@ MANIFEST_FILENAMES = ("plugin.py", "plugin.json")
 
 
 def _hash_manifest(plugin_dir: Path) -> str:
+    hasher = hashlib.sha256()
+    found = False
     for filename in MANIFEST_FILENAMES:
         manifest = plugin_dir / filename
         if manifest.exists():
-            return hashlib.sha256(manifest.read_bytes()).hexdigest()
-    return ""
+            hasher.update(manifest.read_bytes())
+            found = True
+    return hasher.hexdigest() if found else ""
 
 
 def restore_scan_cache(scan_base: Optional[Path] = None) -> Optional[Tuple[List[str], Dict[str, Path], Dict[str, str]]]:

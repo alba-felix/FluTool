@@ -296,15 +296,8 @@ class ChatInputWidget(QWidget):
         self._is_sending = False
         self._setup_ui()
         self._apply_style()
-        self._connect_theme_signal()
-
-    def _connect_theme_signal(self):
-        """连接主题切换信号"""
-        from qfluentwidgets import qconfig
-        qconfig.themeChanged.connect(self._on_theme_changed)
 
     def _on_theme_changed(self):
-        """主题切换时更新样式"""
         self._apply_style()
 
     def set_sending_state(self, is_sending: bool):

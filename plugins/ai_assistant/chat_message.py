@@ -41,7 +41,6 @@ class MessageBubble(QWidget):
         self._current_chunk_index = 0
         self._chunk_size = 1000
         self._setup_ui()
-        self._connect_theme_signal()
 
     def _setup_ui(self):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
@@ -353,13 +352,8 @@ class MessageBubble(QWidget):
                 break
             parent = parent.parent()
 
-    def _connect_theme_signal(self):
-        from qfluentwidgets import qconfig
-        qconfig.themeChanged.connect(self._on_theme_changed)
-
     def _on_theme_changed(self):
         self._apply_style()
-        # 如果当前在Markdown模式，重新渲染以应用新主题
         if self._is_markdown_mode:
             self._current_chunk_index = 0
             self._render_next_chunk()
@@ -418,11 +412,7 @@ class MessageBubble(QWidget):
         """)
 
     def disconnect(self):
-        from qfluentwidgets import qconfig
-        try:
-            qconfig.themeChanged.disconnect(self._on_theme_changed)
-        except Exception:
-            pass
+        pass
 
 
 class ChatMessageContainer(QWidget):
@@ -452,7 +442,10 @@ class ChatMessageContainer(QWidget):
         while self._layout.count() > 1:
             item = self._layout.takeAt(0)
             if item.widget():
-                item.widget().deleteLater()
+                widget = item.widget()
+                if isinstance(widget, MessageBubble):
+                    widget.disconnect()
+                widget.deleteLater()
 
 
 class ChatMessageList(QWidget):
@@ -462,7 +455,6 @@ class ChatMessageList(QWidget):
         super().__init__(parent)
         self._setup_ui()
         self._apply_style()
-        self._connect_theme_signal()
 
     def _setup_ui(self):
         self.setObjectName("chatMessageList")
@@ -485,17 +477,13 @@ class ChatMessageList(QWidget):
 
         main_layout.addWidget(self._scroll_area)
 
-    def _connect_theme_signal(self):
-        from qfluentwidgets import qconfig
-        qconfig.themeChanged.connect(self._on_theme_changed)
-
     def _on_theme_changed(self):
         self._apply_style()
         self._container.setStyleSheet("")
         for i in range(self._container._layout.count()):
             item = self._container._layout.itemAt(i)
             if item and item.widget() and isinstance(item.widget(), MessageBubble):
-                item.widget()._apply_style()
+                item.widget()._on_theme_changed()
 
     def _apply_style(self):
         dark = isDarkTheme()
