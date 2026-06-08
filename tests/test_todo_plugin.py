@@ -33,7 +33,7 @@ def test_database_manager_add_todo_accepts_status(tmp_path):
     db = DatabaseManager()
     db.initialize(str(tmp_path / "todo_status.db"))
 
-    todo_id = db.add_todo(title="测试待办", status="未完成")
+    todo_id = db.todos.add(title="测试待办", status="未完成")
     todo = db.todos.get_by_id(todo_id)
 
     assert todo["status"] == "未完成"

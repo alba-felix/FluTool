@@ -14,7 +14,7 @@ class AppLauncherService:
 
     def list_categories(self) -> List[Dict[str, Any]]:
         """获取分类列表。"""
-        return self.db.get_categories(self.plugin_id)
+        return self.db.categories.get_by_plugin(self.plugin_id)
 
     def get_category(self, category_id: int) -> Optional[Dict[str, Any]]:
         """根据 ID 获取分类。"""
@@ -29,63 +29,67 @@ class AppLauncherService:
 
     def add_category(self, name: str, **kwargs) -> int:
         """添加分类。"""
-        category_id = self.db.add_category(self.plugin_id, name)
+        category_id = self.db.categories.add_or_get(self.plugin_id, name)
         if kwargs:
             self.update_category(category_id, **kwargs)
         return category_id
 
     def update_category(self, category_id: int, name: str = None, **kwargs) -> bool:
         """更新分类。"""
-        return self.db.update_category(self.plugin_id, category_id, name=name, **kwargs)
+        update_kwargs = dict(kwargs)
+        if name is not None:
+            update_kwargs['name'] = name
+        return self.db.categories.update(category_id, **update_kwargs)
 
     def update_category_sort_orders(self, category_ids: List[int]) -> bool:
         """更新分类排序。"""
-        return self.db.update_category_sort_orders(self.plugin_id, category_ids)
+        return self.db.categories.update_sort_orders(self.plugin_id, category_ids)
 
     def delete_category(self, category_id: int) -> bool:
         """删除分类。"""
-        return self.db.delete_category(self.plugin_id, category_id)
+        return self.db.categories.delete(category_id)
 
     def list_apps(self, category_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取应用列表。"""
-        return self.db.get_apps(self.plugin_id, category_id)
+        return self.db.apps.get_by_plugin(self.plugin_id, category_id)
 
     def add_app(self, name: str, target_path: str, category_id: Optional[int] = None,
                 icon_path: str = "", arguments: str = "", notes: str = "") -> int:
         """添加应用。"""
-        return self.db.add_app(
+        return self.db.apps.add(
             plugin_id=self.plugin_id,
+            category_id=category_id,
             name=name,
             target_path=target_path,
-            category_id=category_id,
             icon_path=icon_path,
             arguments=arguments,
             notes=notes,
+            sort_order=0,
         )
 
     def update_app(self, app_id: int, **kwargs) -> bool:
         """更新应用。"""
-        return self.db.update_app(self.plugin_id, app_id, **kwargs)
+        return self.db.apps.update(app_id, **kwargs)
 
     def delete_app(self, app_id: int) -> bool:
         """删除应用。"""
-        return self.db.delete_app(self.plugin_id, app_id)
+        return self.db.apps.delete(app_id)
 
     def search_apps(self, keyword: str) -> List[Dict[str, Any]]:
         """搜索应用。"""
-        return self.db.search_apps(self.plugin_id, keyword)
+        return self.db.apps.search(self.plugin_id, keyword)
 
     def batch_update_apps(self, app_ids: List[int], **kwargs) -> int:
         """批量更新应用。"""
-        return self.db.batch_update_apps(self.plugin_id, app_ids, **kwargs)
+        return self.db.apps.batch_update(self.plugin_id, app_ids, **kwargs)
 
     def batch_delete_apps(self, app_ids: List[int]) -> int:
         """批量删除应用。"""
-        return self.db.batch_delete_apps(self.plugin_id, app_ids)
+        return self.db.apps.batch_delete(self.plugin_id, app_ids)
 
     def app_exists(self, name: str, target_path: str) -> bool:
         """检查应用是否存在。"""
-        return self.db.app_exists(self.plugin_id, name, target_path)
+        return self.db.apps.exists(self.plugin_id, name, target_path)
 
     def list_recent_apps(self, limit: int = 10) -> List[Dict[str, Any]]:
         """获取最近启动的应用。"""

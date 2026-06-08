@@ -12,9 +12,18 @@ class ColorPaletteService:
         self.plugin_id = plugin_id
         self.db = db or DatabaseManager()
 
+    def _resolve_category_id(self, category_name: Optional[str]) -> Optional[int]:
+        """根据分类名称解析分类ID"""
+        if not category_name:
+            return None
+        for cat in self.db.categories.get_by_plugin(self.plugin_id):
+            if cat["name"] == category_name:
+                return cat["id"]
+        return None
+
     def color_exists(self, color_hex: str) -> bool:
         """检查颜色是否已收藏。"""
-        return self.db.color_exists(self.plugin_id, color_hex)
+        return self.db.colors.exists(self.plugin_id, color_hex)
 
     def add_color(
         self,
@@ -25,26 +34,28 @@ class ColorPaletteService:
         notes: str = "",
     ) -> int:
         """添加收藏颜色。"""
-        return self.db.add_color(
+        category_id = self._resolve_category_id(category_name)
+        return self.db.colors.add(
             plugin_id=self.plugin_id,
+            category_id=category_id,
             name=name,
             color_hex=color_hex,
             color_rgb=color_rgb,
-            category_name=category_name,
             notes=notes,
+            sort_order=0,
         )
 
     def list_colors(self) -> List[Dict[str, Any]]:
         """获取收藏颜色。"""
-        return self.db.get_colors(self.plugin_id)
+        return self.db.colors.get_by_plugin(self.plugin_id)
 
     def search_colors(self, keyword: str) -> List[Dict[str, Any]]:
         """搜索收藏颜色。"""
-        return self.db.search_colors(self.plugin_id, keyword)
+        return self.db.colors.search(self.plugin_id, keyword)
 
     def delete_color(self, color_id: int) -> bool:
         """删除收藏颜色。"""
-        return self.db.delete_color(self.plugin_id, color_id)
+        return self.db.colors.delete(color_id)
 
     def delete_colors_by_hex(self, color_hex_values: List[str]) -> int:
         """按 HEX 值批量删除收藏颜色，返回删除数量。"""

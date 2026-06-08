@@ -110,7 +110,7 @@ class PasswordManager(DatabaseManager):
         count = 0
         for cat_order, category in enumerate(data.get('categories', [])):
             cat_name = category.get('name', '未命名分类')
-            self.add_category(plugin_id, cat_name, cat_order)
+            self.categories.add_or_get(plugin_id, cat_name, cat_order)
             for pwd_order, password in enumerate(category.get('passwords', [])):
                 username = password.get('username', '')
                 pwd = password.get('password', '')

@@ -14,7 +14,7 @@ class PasswordService:
 
     def list_categories(self) -> List[Dict[str, Any]]:
         """获取密码分类。"""
-        return self.db.get_categories(self.plugin_id)
+        return self.db.categories.get_by_plugin(self.plugin_id)
 
     def list_category_choices(self) -> List[Tuple[str, int]]:
         """获取分类名称和 ID 选项。"""
@@ -22,11 +22,11 @@ class PasswordService:
 
     def add_category(self, name: str) -> int:
         """添加密码分类。"""
-        return self.db.add_category(self.plugin_id, name)
+        return self.db.categories.add_or_get(self.plugin_id, name)
 
     def delete_category(self, category_id: int) -> bool:
         """删除密码分类。"""
-        return self.db.delete_category(self.plugin_id, category_id)
+        return self.db.categories.delete(category_id)
 
     def ensure_default_category(self) -> int:
         """获取首个分类，不存在时创建默认分类。"""
@@ -37,7 +37,7 @@ class PasswordService:
 
     def list_passwords(self, category_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """获取密码列表。"""
-        return self.db.get_passwords(self.plugin_id, category_id)
+        return self.db.passwords.get_by_plugin(self.plugin_id, category_id)
 
     def add_password(
         self,
@@ -49,24 +49,25 @@ class PasswordService:
         notes: str = "",
     ) -> int:
         """添加密码。"""
-        return self.db.add_password(
+        return self.db.passwords.add(
             plugin_id=self.plugin_id,
+            category_id=category_id,
+            platform=platform,
             username=username,
             password=password,
-            platform=platform,
-            category_id=category_id,
             email=email,
             notes=notes,
+            sort_order=0,
         )
 
     def update_password(self, password_id: int, **kwargs) -> bool:
         """更新密码。"""
-        return self.db.update_password(self.plugin_id, password_id, **kwargs)
+        return self.db.passwords.update(password_id, **kwargs)
 
     def delete_password(self, password_id: int) -> bool:
         """删除密码。"""
-        return self.db.delete_password(self.plugin_id, password_id)
+        return self.db.passwords.delete(password_id)
 
     def search_passwords(self, keyword: str) -> List[Dict[str, Any]]:
         """搜索密码。"""
-        return self.db.search_passwords(self.plugin_id, keyword)
+        return self.db.passwords.search(self.plugin_id, keyword)

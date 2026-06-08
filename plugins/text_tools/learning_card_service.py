@@ -18,10 +18,10 @@ class LearningCardService:
         return self.db.categories.add_or_get(PLUGIN_ID, name)
 
     def list_categories(self) -> List[Dict[str, Any]]:
-        return self.db.get_categories(PLUGIN_ID)
+        return self.db.categories.get_by_plugin(PLUGIN_ID)
 
     def update_category(self, category_id: int, name: str) -> bool:
-        return self.db.update_category(PLUGIN_ID, category_id, name=name)
+        return self.db.categories.update(category_id, name=name)
 
     def delete_category(self, category_id: int) -> bool:
         return self.db.categories.delete(category_id)
