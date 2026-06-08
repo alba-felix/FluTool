@@ -2,7 +2,6 @@ import importlib
 import importlib.resources
 import ast
 import inspect
-import json
 import pkgutil
 import sys
 import traceback
@@ -10,6 +9,13 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from .plugin_interface import PluginInterface
 from .plugin_cache import restore_scan_cache, save_scan_cache
+from .plugin_manifest import (
+    MANIFEST_FILENAMES,
+    ManifestReaderFactory,
+    PluginManifest,
+    normalize_string,
+    normalize_priority,
+)
 
 
 class PluginManager:
@@ -33,6 +39,7 @@ class PluginManager:
         self._plugin_modules: Dict[str, str] = {}
         self._loaded_plugins: Set[str] = set()
         self._failed_plugins: Set[str] = set()
+        self._manifest_reader_factory = ManifestReaderFactory()
 
     def scan_plugins(self, plugin_path: str) -> List[str]:
         """
@@ -71,11 +78,11 @@ class PluginManager:
         try:
             for item in plugin_dir.iterdir():
                 if item.is_dir() and not item.name.startswith('_'):
-                    plugin_id, priority, module_name = self._read_plugin_manifest(item)
-                    if plugin_id:
-                        self._plugin_dirs[plugin_id] = item
-                        self._plugin_modules[plugin_id] = module_name or f"plugins.{item.name}"
-                        plugin_info.append((priority, plugin_id))
+                    manifest = self._read_plugin_manifest(item)
+                    if manifest and manifest.is_valid:
+                        self._plugin_dirs[manifest.plugin_id] = item
+                        self._plugin_modules[manifest.plugin_id] = manifest.module_name or f"plugins.{item.name}"
+                        plugin_info.append((manifest.priority, manifest.plugin_id))
         except PermissionError as e:
             self._core.logger.error(f"Permission denied accessing plugin directory: {e}")
         except OSError as e:
@@ -88,162 +95,71 @@ class PluginManager:
 
         return plugin_ids
 
-    MANIFEST_FILENAMES = ("plugin.py", "plugin.json")
-
-    def _read_plugin_manifest(self, plugin_dir: Path) -> Tuple[Optional[str], float, Optional[str]]:
+    def _read_plugin_manifest(self, plugin_dir: Path) -> Optional[PluginManifest]:
         """读取插件元信息，不导入插件主体模块
-        
-        优先读取 plugin.py（ast.literal_eval），
-        回退到 plugin.json（json.loads），
-        再回退到 __init__.py AST 解析。
+
+        优先使用读取器工厂尝试 plugin.py / plugin.json，
+        回退到 __init__.py AST 解析（兼容旧版插件）。
         """
-        for filename in self.MANIFEST_FILENAMES:
-            result = self._read_manifest_file(plugin_dir, filename)
-            if result[0]:
-                return result
+        manifest = self._manifest_reader_factory.read_manifest(plugin_dir, self._core.logger)
+        if manifest:
+            return manifest
+        return self._read_plugin_python_manifest(plugin_dir)
 
-        plugin_id, priority = self._read_plugin_python_manifest(plugin_dir)
-        return plugin_id, priority, None
-
-    def _read_manifest_file(self, plugin_dir: Path, filename: str) -> Tuple[Optional[str], float, Optional[str]]:
-        """读取 manifest 文件内容并解析"""
-        manifest_file = plugin_dir / filename
-        if not manifest_file.exists():
-            return None, 999.0, None
-
-        try:
-            content = manifest_file.read_text(encoding="utf-8")
-        except Exception as e:
-            self._core.logger.error(f"Failed to read {filename} {manifest_file}: {e}")
-            return None, 999.0, None
-
-        if filename.endswith(".py"):
-            return self._read_plugin_py_manifest_payload(content, str(manifest_file))
-        else:
-            return self._read_plugin_json_manifest_payload(content, str(manifest_file))
-
-    def _read_plugin_py_manifest_payload(
-        self,
-        manifest_payload: str,
-        manifest_source: str,
-    ) -> Tuple[Optional[str], float, Optional[str]]:
-        """解析 plugin.py 中的 PLUGIN_MANIFEST 字典"""
-        try:
-            tree = ast.parse(manifest_payload, filename=manifest_source)
-        except SyntaxError as e:
-            self._core.logger.error(f"Failed to parse {manifest_source}: {e}")
-            return None, 999.0, None
-
-        manifest = None
-        for node in tree.body:
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "PLUGIN_MANIFEST":
-                        try:
-                            manifest = ast.literal_eval(node.value)
-                        except (ValueError, SyntaxError) as e:
-                            self._core.logger.error(
-                                f"Failed to evaluate PLUGIN_MANIFEST in {manifest_source}: {e}"
-                            )
-                            return None, 999.0, None
-                        break
-                if manifest is not None:
-                    break
-
-        if not isinstance(manifest, dict):
-            self._core.logger.warning(
-                f"PLUGIN_MANIFEST must be a dict in {manifest_source}"
-            )
-            return None, 999.0, None
-
-        return self._normalize_manifest_from_dict(manifest, manifest_source)
-
-    def _read_plugin_json_manifest_payload(
-        self,
-        manifest_payload: str,
-        manifest_source: str,
-    ) -> Tuple[Optional[str], float, Optional[str]]:
-        """解析 plugin.json 内容"""
-        try:
-            manifest = json.loads(manifest_payload)
-        except Exception as e:
-            self._core.logger.error(f"Failed to parse {manifest_source}: {e}")
-            return None, 999.0, None
-
-        if not isinstance(manifest, dict):
-            self._core.logger.warning(f"Plugin manifest must be an object: {manifest_source}")
-            return None, 999.0, None
-
-        return self._normalize_manifest_from_dict(manifest, manifest_source)
-
-    def _normalize_manifest_from_dict(
-        self,
-        manifest: dict,
-        manifest_source: str,
-    ) -> Tuple[Optional[str], float, Optional[str]]:
-        """从 dict 中提取并规范化 manifest 字段"""
-        plugin_id = self._normalize_manifest_string(manifest.get("id"))
-        if not plugin_id:
-            self._core.logger.warning(f"Plugin manifest missing id: {manifest_source}")
-            return None, 999.0, None
-
-        priority = self._normalize_manifest_priority(manifest.get("priority", 999))
-        module_name = self._normalize_manifest_string(manifest.get("module"))
-        return plugin_id, priority, module_name
-
-    def _read_builtin_plugin_manifest(self, plugin_name: str) -> Tuple[Optional[str], float, Optional[str]]:
+    def _read_builtin_plugin_manifest(self, plugin_name: str) -> Optional[PluginManifest]:
         """从包资源读取内置插件元信息，不导入插件主体模块"""
-        for filename in self.MANIFEST_FILENAMES:
-            result = self._read_builtin_plugin_manifest_from_resources(plugin_name, filename)
-            if result[0]:
-                return result
-        return self._read_builtin_plugin_manifest_from_path(plugin_name)
+        manifest = self._read_builtin_manifest_from_resources(plugin_name)
+        if manifest:
+            return manifest
+        return self._read_builtin_manifest_from_path(plugin_name)
 
-    def _read_builtin_plugin_manifest_from_resources(
-        self, plugin_name: str, filename: str
-    ) -> Tuple[Optional[str], float, Optional[str]]:
-        """从包资源读取指定 manifest 文件"""
+    def _read_builtin_manifest_from_resources(self, plugin_name: str) -> Optional[PluginManifest]:
+        """从包资源目录读取内置插件 manifest"""
         try:
-            manifest_file = importlib.resources.files("plugins").joinpath(plugin_name, filename)
-            if not manifest_file.is_file():
-                return None, 999.0, None
-            label = f"plugins/{plugin_name}/{filename}"
-            return self._read_manifest_file(manifest_file.parent, filename)
+            plugin_dir = importlib.resources.files("plugins").joinpath(plugin_name)
+            if not plugin_dir.is_dir():
+                return None
+            return self._manifest_reader_factory.read_manifest(plugin_dir, self._core.logger)
         except (FileNotFoundError, ModuleNotFoundError):
-            return None, 999.0, None
+            return None
         except Exception as e:
-            self._core.logger.debug(f"Failed to read builtin {filename} for {plugin_name}: {e}")
-            return None, 999.0, None
+            self._core.logger.debug(f"Failed to read builtin manifest for {plugin_name}: {e}")
+            return None
 
-    def _read_builtin_plugin_manifest_from_path(self, plugin_name: str) -> Tuple[Optional[str], float, Optional[str]]:
-        """从已加载 plugins 包路径读取内置插件元信息"""
+    def _read_builtin_manifest_from_path(self, plugin_name: str) -> Optional[PluginManifest]:
+        """从已加载 plugins 包路径读取内置插件 manifest"""
         plugins_pkg = sys.modules.get("plugins")
         package_paths = getattr(plugins_pkg, "__path__", []) if plugins_pkg is not None else []
         for package_path in package_paths:
-            for filename in self.MANIFEST_FILENAMES:
-                manifest_file = Path(package_path) / plugin_name / filename
-                if not manifest_file.exists():
-                    continue
-                return self._read_manifest_file(manifest_file.parent, filename)
-        return None, 999.0, None
+            plugin_dir = Path(package_path) / plugin_name
+            if plugin_dir.is_dir():
+                manifest = self._manifest_reader_factory.read_manifest(plugin_dir, self._core.logger)
+                if manifest:
+                    return manifest
+        return None
 
     def _read_builtin_plugin_manifest_from_index(
         self,
         plugin_name: str,
-    ) -> Tuple[Optional[str], float, Optional[str]]:
+    ) -> Optional[PluginManifest]:
         """从显式索引读取内置插件元信息"""
         manifest = self._get_builtin_plugin_index().get(plugin_name)
         if not manifest:
-            return None, 999.0, None
+            return None
 
-        plugin_id = self._normalize_manifest_string(manifest.get("id"))
+        plugin_id = normalize_string(manifest.get("id"))
         if not plugin_id:
             self._core.logger.warning(f"Plugin index missing id: {plugin_name}")
-            return None, 999.0, None
+            return None
 
-        priority = self._normalize_manifest_priority(manifest.get("priority", 999))
-        module_name = self._normalize_manifest_string(manifest.get("module"))
-        return plugin_id, priority, module_name
+        priority = normalize_priority(manifest.get("priority", 999))
+        module_name = normalize_string(manifest.get("module"))
+        return PluginManifest(
+            plugin_id=plugin_id,
+            priority=priority,
+            module_name=module_name,
+            source=f"plugin_index:{plugin_name}",
+        )
 
     def _get_builtin_plugin_index(self) -> Dict[str, Dict[str, Any]]:
         """获取显式内置插件索引"""
@@ -261,7 +177,7 @@ class PluginManager:
             for item in indexed_manifests:
                 if not isinstance(item, dict):
                     continue
-                package_name = self._normalize_manifest_string(item.get("package"))
+                package_name = normalize_string(item.get("package"))
                 if not package_name:
                     continue
                 manifests[package_name] = dict(item)
@@ -272,7 +188,7 @@ class PluginManager:
             return {}
 
         for package_name in indexed_packages:
-            normalized = self._normalize_manifest_string(package_name)
+            normalized = normalize_string(package_name)
             if not normalized:
                 continue
             manifests[normalized] = {
@@ -289,7 +205,7 @@ class PluginManager:
         seen: Set[str] = set()
 
         def add_name(name: Any) -> None:
-            normalized = self._normalize_manifest_string(name)
+            normalized = normalize_string(name)
             if not normalized or normalized.startswith("_") or normalized in seen:
                 return
             seen.add(normalized)
@@ -312,7 +228,7 @@ class PluginManager:
 
     def _has_manifest(self, plugin_dir: Path) -> bool:
         """检查插件目录是否包含任一 manifest 文件"""
-        for filename in self.MANIFEST_FILENAMES:
+        for filename in MANIFEST_FILENAMES:
             if (plugin_dir / filename).exists():
                 return True
         return False
@@ -357,17 +273,17 @@ class PluginManager:
             self._core.logger.debug(f"Failed to list builtin plugins with pkgutil: {e}")
             return []
 
-    def _read_plugin_python_manifest(self, plugin_dir: Path) -> Tuple[Optional[str], float]:
+    def _read_plugin_python_manifest(self, plugin_dir: Path) -> Optional[PluginManifest]:
         """从 __init__.py AST 中读取兼容元信息"""
         init_file = plugin_dir / "__init__.py"
         if not init_file.exists():
-            return None, 999.0
+            return None
 
         try:
             tree = ast.parse(init_file.read_text(encoding="utf-8"))
         except Exception as e:
             self._core.logger.error(f"Failed to parse plugin manifest {plugin_dir}: {e}")
-            return None, 999.0
+            return None
 
         for node in tree.body:
             if not isinstance(node, ast.ClassDef):
@@ -390,29 +306,15 @@ class PluginManager:
             if not plugin_id:
                 continue
 
-            priority = values.get("PLUGIN_PRIORITY", 999)
-            try:
-                priority = float(priority)
-            except (TypeError, ValueError):
-                priority = 999.0
-            return str(plugin_id), priority
+            priority = normalize_priority(values.get("PLUGIN_PRIORITY", 999))
+            return PluginManifest(
+                plugin_id=str(plugin_id),
+                priority=priority,
+                source=str(init_file),
+            )
 
         self._core.logger.warning(f"Plugin metadata not found in {plugin_dir}")
-        return None, 999.0
-
-    def _normalize_manifest_string(self, value: Any) -> Optional[str]:
-        """规范化插件元信息里的字符串字段"""
-        if value is None:
-            return None
-        normalized = str(value).strip()
-        return normalized or None
-
-    def _normalize_manifest_priority(self, value: Any) -> float:
-        """规范化插件优先级"""
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return 999.0
+        return None
 
     def _is_plugin_class_node(self, node: ast.ClassDef) -> bool:
         """判断 AST 类节点是否继承 PluginInterface"""
@@ -452,11 +354,7 @@ class PluginManager:
                     plugin_id = self._resolve_plugin_id(obj)
                     if not plugin_id:
                         continue
-                    priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                    try:
-                        priority = float(priority)
-                    except (TypeError, ValueError):
-                        priority = 999.0
+                    priority = normalize_priority(getattr(obj, "PLUGIN_PRIORITY", 999))
                     return plugin_id, priority
         except ImportError as e:
             self._core.logger.error(f"Failed to import plugin module {module_name}: {e}")
@@ -640,14 +538,17 @@ class PluginManager:
         try:
             for name in self._iter_builtin_plugin_names(plugins_pkg):
                 module_name = f"plugins.{name}"
-                plugin_id, priority, manifest_module = self._read_builtin_plugin_manifest(name)
-                if not plugin_id:
-                    plugin_id, priority, manifest_module = self._read_builtin_plugin_manifest_from_index(name)
-                if manifest_module:
-                    module_name = manifest_module
-
-                if not plugin_id:
+                manifest = self._read_builtin_plugin_manifest(name)
+                if not manifest:
+                    manifest = self._read_builtin_plugin_manifest_from_index(name)
+                if manifest:
+                    if manifest.module_name:
+                        module_name = manifest.module_name
+                    plugin_id = manifest.plugin_id
+                    priority = manifest.priority
+                else:
                     plugin_id, priority = self._discover_by_module(module_name)
+
                 if not plugin_id:
                     continue
 
