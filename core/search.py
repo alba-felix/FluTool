@@ -1,5 +1,6 @@
 """全局搜索功能"""
 
+import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
@@ -64,7 +65,7 @@ class GlobalSearchManager:
         self._plugins: Dict[str, Any] = {}
         self._cache = LRUCache(self.CACHE_SIZE)
         self._logger = logger
-        # 线程数不宜过多，避免频繁切换开销；设为 4 兼顾响应和开销
+        self._cancel_event = threading.Event()
         self._executor = ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="globalsearch"
         )
@@ -85,6 +86,38 @@ class GlobalSearchManager:
             plugin_id: 插件ID
         """
         self._plugins.pop(plugin_id, None)
+
+    def cancel(self) -> None:
+        """取消正在进行的搜索"""
+        self._cancel_event.set()
+
+    def search_async(self, query: str, callback: Callable[[List[SearchResult]], None]) -> None:
+        """异步搜索：在后台线程执行，完成后通过回调返回结果
+
+        Args:
+            query: 搜索关键词
+            callback: 接收 List[SearchResult] 的回调函数
+        """
+        if not query or not query.strip():
+            callback([])
+            return
+
+        query_lower = query.lower().strip()
+
+        cached = self._cache.get(query_lower)
+        if cached is not None:
+            callback(cached)
+            return
+
+        self._cancel_event.clear()
+
+        def _run():
+            results = self._search_all_plugins(query_lower)
+            if not self._cancel_event.is_set():
+                self._cache.put(query_lower, results)
+                callback(results)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def search(self, query: str) -> List[SearchResult]:
         """执行全局搜索
@@ -115,8 +148,11 @@ class GlobalSearchManager:
         return results
 
     def _search_all_plugins(self, query_lower: str) -> List[SearchResult]:
-        """并发搜索所有已注册插件，带超时控制"""
+        """并发搜索所有已注册插件，带超时和取消控制"""
         if not self._plugins:
+            return []
+
+        if self._cancel_event.is_set():
             return []
 
         futures = {}
@@ -126,6 +162,9 @@ class GlobalSearchManager:
 
         results: List[SearchResult] = []
         for future, plugin_id in futures.items():
+            if self._cancel_event.is_set():
+                future.cancel()
+                continue
             try:
                 plugin_results = future.result(timeout=self.PLUGIN_TIMEOUT)
                 if plugin_results:
@@ -166,4 +205,5 @@ class GlobalSearchManager:
 
     def shutdown(self) -> None:
         """释放搜索线程池资源"""
+        self._cancel_event.set()
         self._executor.shutdown(wait=False)

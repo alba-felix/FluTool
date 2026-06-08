@@ -13,6 +13,7 @@ import requests
 
 from core.ai.provider_base import AIProviderAdapter
 from core.ai.types import AIChatRequest, AIChatResponse
+from core.utils import get_app_data_path
 
 
 class DeepSeekCacheManager:
@@ -23,10 +24,11 @@ class DeepSeekCacheManager:
     2. DeepSeek API 服务端已支持 prefix_cache
     """
     
-    DEFAULT_CACHE_DIR = "data/ai_cache/deepseek"
-    
     def __init__(self, cache_dir: Optional[str] = None):
-        self.cache_dir = Path(cache_dir or self.DEFAULT_CACHE_DIR)
+        if cache_dir:
+            self.cache_dir = Path(cache_dir)
+        else:
+            self.cache_dir = get_app_data_path("data/ai_cache/deepseek")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._index_file = self.cache_dir / "cache_index.json"
         self._load_index()

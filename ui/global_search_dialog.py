@@ -2,7 +2,7 @@
 
 from typing import List
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem, QStackedWidget
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon
 from qfluentwidgets import (
     LineEdit, ListWidget, PushButton, ToolButton,
@@ -15,10 +15,15 @@ class GlobalSearchDialog(MessageBoxBase):
     """全局搜索对话框"""
 
     result_selected = pyqtSignal(object)
+    search_completed = pyqtSignal(list)
 
     def __init__(self, search_manager, parent=None):
         self.search_manager = search_manager
         super().__init__(parent)
+        self._debounce_timer = QTimer()
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.timeout.connect(self._do_search)
+        self.search_completed.connect(self._display_results)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -75,20 +80,37 @@ class GlobalSearchDialog(MessageBoxBase):
         self.search_input.setFocus()
 
     def _on_search(self, text: str):
-        """搜索"""
-        self.result_list.clear()
+        """搜索（带防抖）"""
+        self.search_manager.cancel()
+        self._debounce_timer.stop()
 
         if not text or not text.strip():
+            self.result_list.clear()
             self.progress_ring.setVisible(False)
             return
 
-        # 显示进度圆圈
+        self._debounce_timer.start(200)
+
+    def _do_search(self):
+        """执行异步搜索"""
+        text = self.search_input.text().strip()
+        if not text:
+            self.progress_ring.setVisible(False)
+            return
+
+        self.result_list.clear()
         self.progress_ring.setVisible(True)
 
-        results = self.search_manager.search(text)
+        def _on_results(results):
+            self.search_completed.emit(results)
 
-        # 隐藏进度圆圈
+        self.search_manager.search_async(text, _on_results)
+
+    def _display_results(self, results: List[SearchResult]):
+        """显示搜索结果"""
         self.progress_ring.setVisible(False)
+        if not results:
+            return
 
         # 按插件分组
         grouped_results = {}
@@ -97,22 +119,20 @@ class GlobalSearchDialog(MessageBoxBase):
                 grouped_results[result.plugin_id] = []
             grouped_results[result.plugin_id].append(result)
 
-        # 显示结果
         for plugin_id, plugin_results in grouped_results.items():
-            # 插件标题
-            if plugin_results:
-                plugin_name = plugin_results[0].plugin_name
-                header_item = QListWidgetItem(f"📁 {plugin_name}")
-                header_item.setFlags(Qt.ItemIsEnabled)
-                header_item.setForeground(Qt.gray)
-                self.result_list.addItem(header_item)
+            if not plugin_results:
+                continue
+            plugin_name = plugin_results[0].plugin_name
+            header_item = QListWidgetItem(f"📁 {plugin_name}")
+            header_item.setFlags(Qt.ItemIsEnabled)
+            header_item.setForeground(Qt.gray)
+            self.result_list.addItem(header_item)
 
-                # 结果项
-                for result in plugin_results:
-                    item = QListWidgetItem(f"  {result.title}")
-                    item.setData(Qt.UserRole, result)
-                    item.setToolTip(result.description)
-                    self.result_list.addItem(item)
+            for result in plugin_results:
+                item = QListWidgetItem(f"  {result.title}")
+                item.setData(Qt.UserRole, result)
+                item.setToolTip(result.description)
+                self.result_list.addItem(item)
 
     def _on_result_clicked(self, item: QListWidgetItem):
         """结果项点击"""

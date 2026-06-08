@@ -423,38 +423,6 @@ class PluginManager:
                 return True
         return False
     
-    def _get_plugin_priority(self, plugin_id: str) -> float:
-        """
-        获取插件优先级
-        
-        Args:
-            plugin_id: 插件ID
-            
-        Returns:
-            优先级数值（默认999.0）
-        """
-        if not plugin_id:
-            return 999.0
-        
-        plugin_dir = self._plugin_dirs.get(plugin_id)
-        if not plugin_dir:
-            return 999.0
-        
-        try:
-            module_name = self._plugin_modules.get(plugin_id, f"plugins.{plugin_dir.name}")
-            module = importlib.import_module(module_name)
-            
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, PluginInterface) and 
-                    obj is not PluginInterface and
-                    obj.__module__ == module.__name__):
-                    priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                    return float(priority) if priority is not None else 999.0
-        except Exception as e:
-            self._core.logger.warning(f"Failed to get priority for {plugin_id}: {e}")
-        
-        return 999.0
-
     def _resolve_plugin_id(self, plugin_class) -> str:
         if plugin_class is None:
             return ""
@@ -473,29 +441,28 @@ class PluginManager:
             self._core.logger.debug(f"Failed to instantiate plugin class for ID resolution: {e}")
             return ""
 
-    def _discover_plugin(self, plugin_dir: Path) -> Optional[str]:
-        """
-        发现插件但不加载
-        
-        Args:
-            plugin_dir: 插件目录
-            
-        Returns:
-            插件ID或None
-        """
+    def _discover_by_module(self, module_name: str) -> Tuple[Optional[str], float]:
+        """发现插件但不加载（共享实现，打包/开发两用）"""
         try:
-            module_name = f"plugins.{plugin_dir.name}"
             module = importlib.import_module(module_name)
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, PluginInterface) and 
+                if (issubclass(obj, PluginInterface) and
                     obj is not PluginInterface and
                     obj.__module__ == module.__name__):
                     plugin_id = self._resolve_plugin_id(obj)
-                    if plugin_id:
-                        return plugin_id
+                    if not plugin_id:
+                        continue
+                    priority = getattr(obj, "PLUGIN_PRIORITY", 999)
+                    try:
+                        priority = float(priority)
+                    except (TypeError, ValueError):
+                        priority = 999.0
+                    return plugin_id, priority
+        except ImportError as e:
+            self._core.logger.error(f"Failed to import plugin module {module_name}: {e}")
         except Exception as e:
-            self._core.logger.error(f"Failed to discover plugin from {plugin_dir}: {e}")
-        return None
+            self._core.logger.error(f"Failed to discover plugin from {module_name}: {e}")
+        return None, 999.0
 
     def load_plugin(self, plugin_id: str) -> Optional[PluginInterface]:
         """
@@ -580,11 +547,6 @@ class PluginManager:
         plugin_ids = self.scan_plugins(plugin_path)
         for plugin_id in plugin_ids:
             self.load_plugin(plugin_id)
-
-    def _load_plugin(self, plugin_dir: Path) -> Optional[PluginInterface]:
-        """已弃用：请使用 scan_plugins() + load_plugin() 代替"""
-        self._core.logger.warning("_load_plugin() is deprecated, use scan_plugins() + load_plugin()")
-        return None
 
     def unload_plugin(self, plugin_id: str) -> bool:
         """
@@ -685,7 +647,7 @@ class PluginManager:
                     module_name = manifest_module
 
                 if not plugin_id:
-                    plugin_id, priority = self._discover_builtin_plugin_by_import(name)
+                    plugin_id, priority = self._discover_by_module(module_name)
                 if not plugin_id:
                     continue
 
@@ -705,26 +667,4 @@ class PluginManager:
 
         return plugin_ids
 
-    def _discover_builtin_plugin_by_import(self, name: str) -> Tuple[Optional[str], float]:
-        """内置插件扫描的兼容回退：仅在无法读取源码元信息时导入模块"""
-        module_name = f"plugins.{name}"
-        try:
-            module = importlib.import_module(module_name)
-            for attr_name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, PluginInterface) and
-                    obj is not PluginInterface and
-                    obj.__module__ == module.__name__):
-                    plugin_id = self._resolve_plugin_id(obj)
-                    if not plugin_id:
-                        continue
-                    priority = getattr(obj, "PLUGIN_PRIORITY", 999)
-                    try:
-                        priority = float(priority)
-                    except (TypeError, ValueError):
-                        priority = 999.0
-                    return plugin_id, priority
-        except ImportError as e:
-            self._core.logger.error(f"Failed to import builtin plugin {name}: {e}")
-        except Exception as e:
-            self._core.logger.error(f"Failed to scan builtin plugin {name}: {e}")
-        return None, 999.0
+
