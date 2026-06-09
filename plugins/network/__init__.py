@@ -371,7 +371,7 @@ class NetworkWidget(QWidget):
         
         self.domain_card = DomainIpCard(scroll_content)
         scroll_layout.addWidget(self.domain_card)
-        
+
         scroll_area.setWidget(scroll_content)
         scroll_area.enableTransparentBackground()
         scroll_area.viewport().setAutoFillBackground(False)

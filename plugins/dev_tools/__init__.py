@@ -18,6 +18,7 @@ from plugins.text_tools.page_interface import TabPageInterface
 from .cron_tool import CronToolPage
 from .deepseek_tool import DeepSeekToolPage
 from .svg_viewer_tool import SvgViewerTool
+from .port_scan_tool import PortScanToolPage
 
 
 class OverflowPopup(QWidget):
@@ -387,6 +388,7 @@ class Plugin(PluginInterface):
         self._tab_manager.register(CronToolPage)
         self._tab_manager.register(DeepSeekToolPage)
         self._tab_manager.register(SvgViewerTool)
+        self._tab_manager.register(PortScanToolPage)
 
         self._widget = None
 
