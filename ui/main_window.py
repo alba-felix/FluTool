@@ -1227,33 +1227,24 @@ class MainWindow(PushFluentWindow):
 		if not self._plugin_containers:
 			return
 		plugin_id = list(self._plugin_containers.keys())[0]
-		self._init_plugin_widget(plugin_id)
-	
-	def _init_plugin_widget(self, plugin_id: str) -> bool:
-		return self._plugin_host.init_plugin_widget(plugin_id)
-	
+		self._plugin_host.build_plugin_widget(plugin_id)
+
 	def _on_page_changed(self, index: int) -> None:
 		if index < 0:
 			return
-		
+
 		widget = self.stackedWidget.widget(index)
 		if widget is None:
 			return
-		
+
 		object_name = widget.objectName()
 		if not object_name:
 			return
-		
+
 		if object_name.startswith("container_"):
 			plugin_id = object_name.replace("container_", "")
-			
 			if not self._plugin_initialized.get(plugin_id, False):
-				self._init_plugin_widget(plugin_id)
-			
-			QTimer.singleShot(50, lambda pid=plugin_id: self._load_plugin_data(pid))
-
-	def _load_plugin_data(self, plugin_id: str) -> None:
-		self._plugin_host.load_plugin_data(plugin_id)
+				self._plugin_host.build_plugin_widget(plugin_id)
 
 	def suspend_plugin_io(self) -> None:
 		"""暂停已加载插件交互，避免恢复期间继续写入。"""

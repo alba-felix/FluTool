@@ -2,6 +2,7 @@
 
 from typing import Dict
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QVBoxLayout, QWidget
 from qfluentwidgets import setCustomStyleSheet
 
@@ -32,8 +33,8 @@ class PluginHost:
 		self.plugin_initialized[plugin_id] = False
 		return container
 
-	def init_plugin_widget(self, plugin_id: str) -> bool:
-		"""按需创建插件界面。"""
+	def build_plugin_widget(self, plugin_id: str) -> bool:
+		"""创建插件界面并立即加载数据（合并操作，消除 timer 延迟）。"""
 		if not plugin_id:
 			return False
 
@@ -63,20 +64,31 @@ class PluginHost:
 			self.plugin_initialized[plugin_id] = True
 
 			self.core.logger.info(f"Plugin widget created: {plugin.get_name()}")
-			return True
 		except Exception as e:
 			self.core.logger.error(f"Failed to create plugin widget {plugin_id}: {e}")
 			return False
 
+		# 延迟到下一事件循环加载数据，确保 widget 布局完成
+		QTimer.singleShot(0, lambda: self._load_plugin_data_now(plugin_id))
+		return True
+
+	# ─── 向后兼容别名 ────────────────────────────────────────
+
+	def init_plugin_widget(self, plugin_id: str) -> bool:
+		"""已弃用，请使用 build_plugin_widget。"""
+		return self.build_plugin_widget(plugin_id)
+
 	def load_plugin_data(self, plugin_id: str) -> None:
-		"""触发插件数据加载。"""
+		"""已弃用，build_plugin_widget 已内置数据加载。"""
+		self._load_plugin_data_now(plugin_id)
+
+	def _load_plugin_data_now(self, plugin_id: str) -> None:
+		"""立即加载插件数据。"""
 		if not plugin_id or self._suspended:
 			return
-
 		plugin = self.core.plugin_manager.get_plugin(plugin_id)
 		if plugin is None:
 			return
-
 		try:
 			plugin.load_data()
 		except Exception as e:

@@ -127,95 +127,14 @@ def test_builtin_plugins_have_manifests():
     assert missing == [], f"Missing manifest: {missing}"
 
 
-def test_scan_builtin_plugins_uses_manifest_without_import(tmp_path):
-    """打包扫描优先读取 plugin.json，不导入插件主体模块"""
-    package_dir = tmp_path / "plugins"
-    package_dir.mkdir()
-    (package_dir / "__init__.py").write_text("", encoding="utf-8")
-    plugin_dir = package_dir / "packed_plugin"
-    plugin_dir.mkdir()
-    (plugin_dir / "__init__.py").write_text("raise RuntimeError('should not import')", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(
-        '{"id": "packed_plugin", "priority": 3, "module": "plugins.packed_plugin"}',
-        encoding="utf-8",
-    )
-
-    original_plugins = sys.modules.pop("plugins", None)
-    package_module = types.ModuleType("plugins")
-    package_module.__path__ = [str(package_dir)]
-    sys.modules["plugins"] = package_module
-
-    try:
-        manager = PluginManager(DummyCore())
-        plugins = manager.scan_builtin_plugins()
-
-        assert plugins == ["packed_plugin"]
-        assert "plugins.packed_plugin" not in sys.modules
-    finally:
-        sys.modules.pop("plugins", None)
-        if original_plugins is not None:
-            sys.modules["plugins"] = original_plugins
-
-
-def test_scan_builtin_plugins_reads_manifest_from_package_resources(tmp_path, monkeypatch):
-    """内置插件扫描可通过包资源读取 plugin.json，避免依赖 finder.path"""
-    package_dir = tmp_path / "plugins"
-    package_dir.mkdir()
-    (package_dir / "__init__.py").write_text("", encoding="utf-8")
-    plugin_dir = package_dir / "resource_plugin"
-    plugin_dir.mkdir()
-    (plugin_dir / "__init__.py").write_text("raise RuntimeError('should not import')", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(
-        '{"id": "resource_plugin", "priority": 4}',
-        encoding="utf-8",
-    )
-
-    class FinderWithoutPath:
-        pass
-
-    original_plugins = sys.modules.pop("plugins", None)
-    original_plugin_module = sys.modules.pop("plugins.resource_plugin", None)
-    package_module = types.ModuleType("plugins")
-    package_module.__path__ = [str(package_dir)]
-    plugin_module = types.ModuleType("plugins.resource_plugin")
-    plugin_module.__file__ = str(plugin_dir / "__init__.py")
-    plugin_module.__path__ = [str(plugin_dir)]
-    plugin_module.__spec__ = None
-    sys.modules["plugins"] = package_module
-    sys.modules["plugins.resource_plugin"] = plugin_module
-
-    def fake_iter_modules(paths):
-        return [(FinderWithoutPath(), "resource_plugin", True)]
-
-    monkeypatch.setattr("core.plugin_manager.pkgutil.iter_modules", fake_iter_modules)
-
-    try:
-        manager = PluginManager(DummyCore())
-        plugins = manager.scan_builtin_plugins()
-
-        assert plugins == ["resource_plugin"]
-        assert manager._plugin_modules["resource_plugin"] == "plugins.resource_plugin"
-    finally:
-        sys.modules.pop("plugins", None)
-        sys.modules.pop("plugins.resource_plugin", None)
-        if original_plugins is not None:
-            sys.modules["plugins"] = original_plugins
-        if original_plugin_module is not None:
-            sys.modules["plugins.resource_plugin"] = original_plugin_module
-
-
-def test_scan_builtin_plugins_uses_index_when_pkgutil_is_empty(tmp_path, monkeypatch):
-    """打包后 pkgutil 无法枚举子包时，使用显式索引发现内置插件"""
+def test_scan_builtin_plugins_uses_index_as_single_source(tmp_path):
+    """内置插件扫描以 plugin_index 为单一来源，不扫描文件系统"""
     package_dir = tmp_path / "plugins"
     package_dir.mkdir()
     (package_dir / "__init__.py").write_text("", encoding="utf-8")
     plugin_dir = package_dir / "indexed_plugin"
     plugin_dir.mkdir()
     (plugin_dir / "__init__.py").write_text("raise RuntimeError('should not import')", encoding="utf-8")
-    (plugin_dir / "plugin.json").write_text(
-        '{"id": "indexed_plugin", "priority": 5}',
-        encoding="utf-8",
-    )
 
     original_plugins = sys.modules.pop("plugins", None)
     original_index = sys.modules.pop("plugins.plugin_index", None)
@@ -234,14 +153,48 @@ def test_scan_builtin_plugins_uses_index_when_pkgutil_is_empty(tmp_path, monkeyp
     sys.modules["plugins"] = package_module
     sys.modules["plugins.plugin_index"] = index_module
 
-    monkeypatch.setattr("core.plugin_manager.pkgutil.iter_modules", lambda paths: [])
-
     try:
         manager = PluginManager(DummyCore())
         plugins = manager.scan_builtin_plugins()
 
         assert plugins == ["indexed_plugin"]
         assert "plugins.indexed_plugin" not in sys.modules
+    finally:
+        sys.modules.pop("plugins", None)
+        sys.modules.pop("plugins.plugin_index", None)
+        if original_plugins is not None:
+            sys.modules["plugins"] = original_plugins
+        if original_index is not None:
+            sys.modules["plugins.plugin_index"] = original_index
+
+
+def test_scan_builtin_plugins_respects_index_ordering(tmp_path):
+    """索引中定义的优先级影响返回顺序"""
+    package_dir = tmp_path / "plugins"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    for p in ("z_last", "a_first"):
+        (package_dir / p).mkdir()
+        (package_dir / p / "__init__.py").write_text("", encoding="utf-8")
+
+    original_plugins = sys.modules.pop("plugins", None)
+    original_index = sys.modules.pop("plugins.plugin_index", None)
+    package_module = types.ModuleType("plugins")
+    package_module.__path__ = [str(package_dir)]
+    index_module = types.ModuleType("plugins.plugin_index")
+    index_module.BUILTIN_PLUGIN_MANIFESTS = [
+        {"package": "a_first", "id": "a_first", "priority": 1, "module": "plugins.a_first"},
+        {"package": "z_last",  "id": "z_last",  "priority": 9, "module": "plugins.z_last"},
+    ]
+    index_module.BUILTIN_PLUGIN_PACKAGES = ["a_first", "z_last"]
+    sys.modules["plugins"] = package_module
+    sys.modules["plugins.plugin_index"] = index_module
+
+    try:
+        manager = PluginManager(DummyCore())
+        plugins = manager.scan_builtin_plugins()
+        assert plugins == ["a_first", "z_last"]
+        assert plugins != ["z_last", "a_first"]
     finally:
         sys.modules.pop("plugins", None)
         sys.modules.pop("plugins.plugin_index", None)

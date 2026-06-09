@@ -2,15 +2,12 @@ import importlib
 import importlib.resources
 import ast
 import inspect
-import pkgutil
 import sys
 import traceback
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from .plugin_interface import PluginInterface
-from .plugin_cache import restore_scan_cache, save_scan_cache
 from .plugin_manifest import (
-    MANIFEST_FILENAMES,
     ManifestReaderFactory,
     PluginManifest,
     normalize_string,
@@ -37,6 +34,7 @@ class PluginManager:
         self._plugins: Dict[str, PluginInterface] = {}
         self._plugin_dirs: Dict[str, Path] = {}
         self._plugin_modules: Dict[str, str] = {}
+        self._plugin_classes: Dict[str, type] = {}
         self._loaded_plugins: Set[str] = set()
         self._failed_plugins: Set[str] = set()
         self._manifest_reader_factory = ManifestReaderFactory()
@@ -64,15 +62,6 @@ class PluginManager:
             self._core.logger.warning(f"Plugin path is not a directory: {plugin_path}")
             return []
         
-        # 尝试从缓存恢复
-        cached = restore_scan_cache(scan_base=plugin_dir)
-        if cached:
-            cached_ids, cached_dirs, cached_modules = cached
-            self._plugin_dirs.update(cached_dirs)
-            self._plugin_modules.update(cached_modules)
-            self._core.logger.info(f"Loaded {len(cached_ids)} plugins from cache")
-            return cached_ids
-
         plugin_info: List[Tuple[float, str]] = []
 
         try:
@@ -91,8 +80,6 @@ class PluginManager:
         plugin_info.sort(key=lambda x: x[0])
         plugin_ids = [plugin_id for _, plugin_id in plugin_info]
 
-        save_scan_cache(plugin_ids, self._plugin_dirs, self._plugin_modules, plugin_dir)
-
         return plugin_ids
 
     def _read_plugin_manifest(self, plugin_dir: Path) -> Optional[PluginManifest]:
@@ -107,36 +94,32 @@ class PluginManager:
         return self._read_plugin_python_manifest(plugin_dir)
 
     def _read_builtin_plugin_manifest(self, plugin_name: str) -> Optional[PluginManifest]:
-        """从包资源读取内置插件元信息，不导入插件主体模块"""
-        manifest = self._read_builtin_manifest_from_resources(plugin_name)
+        """读取内置插件元信息，优先使用索引缓存，回退文件系统"""
+        manifest = self._read_builtin_plugin_manifest_from_index(plugin_name)
         if manifest:
             return manifest
-        return self._read_builtin_manifest_from_path(plugin_name)
+        return self._read_builtin_manifest_from_filesystem(plugin_name)
 
-    def _read_builtin_manifest_from_resources(self, plugin_name: str) -> Optional[PluginManifest]:
-        """从包资源目录读取内置插件 manifest"""
-        try:
-            plugin_dir = importlib.resources.files("plugins").joinpath(plugin_name)
-            if not plugin_dir.is_dir():
-                return None
-            return self._manifest_reader_factory.read_manifest(plugin_dir, self._core.logger)
-        except (FileNotFoundError, ModuleNotFoundError):
-            return None
-        except Exception as e:
-            self._core.logger.debug(f"Failed to read builtin manifest for {plugin_name}: {e}")
-            return None
-
-    def _read_builtin_manifest_from_path(self, plugin_name: str) -> Optional[PluginManifest]:
-        """从已加载 plugins 包路径读取内置插件 manifest"""
-        plugins_pkg = sys.modules.get("plugins")
-        package_paths = getattr(plugins_pkg, "__path__", []) if plugins_pkg is not None else []
-        for package_path in package_paths:
-            plugin_dir = Path(package_path) / plugin_name
+    def _read_builtin_manifest_from_filesystem(self, plugin_name: str) -> Optional[PluginManifest]:
+        """从包文件系统读取内置插件 manifest"""
+        for try_dir in self._iter_builtin_package_dirs():
+            plugin_dir = try_dir / plugin_name
             if plugin_dir.is_dir():
                 manifest = self._manifest_reader_factory.read_manifest(plugin_dir, self._core.logger)
                 if manifest:
                     return manifest
         return None
+
+    def _iter_builtin_package_dirs(self):
+        """遍历内置插件包可能的文件系统路径"""
+        try:
+            yield importlib.resources.files("plugins")
+        except Exception:
+            pass
+        plugins_pkg = sys.modules.get("plugins")
+        if plugins_pkg:
+            for p in getattr(plugins_pkg, "__path__", []):
+                yield Path(p)
 
     def _read_builtin_plugin_manifest_from_index(
         self,
@@ -199,79 +182,9 @@ class PluginManager:
             }
         return manifests
 
-    def _iter_builtin_plugin_names(self, plugins_pkg) -> List[str]:
-        """列出内置插件包名，兼容 PyInstaller 下 pkgutil 枚举为空的情况"""
-        names: List[str] = []
-        seen: Set[str] = set()
-
-        def add_name(name: Any) -> None:
-            normalized = normalize_string(name)
-            if not normalized or normalized.startswith("_") or normalized in seen:
-                return
-            seen.add(normalized)
-            names.append(normalized)
-
-        for name in self._iter_builtin_plugin_names_from_index():
-            add_name(name)
-        for name in self._iter_builtin_plugin_names_from_resources():
-            add_name(name)
-        for name in self._iter_builtin_plugin_names_from_paths(plugins_pkg):
-            add_name(name)
-        for name in self._iter_builtin_plugin_names_from_pkgutil(plugins_pkg):
-            add_name(name)
-
-        return names
-
-    def _iter_builtin_plugin_names_from_index(self) -> Iterable[str]:
-        """从显式索引读取插件包名，避免打包后无法枚举包资源"""
+    def _iter_builtin_plugin_names(self) -> Iterable[str]:
+        """从索引读取插件包名（单一权威来源）"""
         return self._get_builtin_plugin_index().keys()
-
-    def _has_manifest(self, plugin_dir: Path) -> bool:
-        """检查插件目录是否包含任一 manifest 文件"""
-        for filename in MANIFEST_FILENAMES:
-            if (plugin_dir / filename).exists():
-                return True
-        return False
-
-    def _iter_builtin_plugin_names_from_resources(self) -> Iterable[str]:
-        """从包资源目录读取插件包名"""
-        try:
-            plugins_root = importlib.resources.files("plugins")
-            return [
-                item.name
-                for item in plugins_root.iterdir()
-                if item.is_dir() and self._has_manifest(item)
-            ]
-        except Exception as e:
-            self._core.logger.debug(f"Failed to list builtin plugins from resources: {e}")
-            return []
-
-    def _iter_builtin_plugin_names_from_paths(self, plugins_pkg) -> Iterable[str]:
-        """从 plugins 包路径读取插件包名"""
-        package_paths = getattr(plugins_pkg, "__path__", []) if plugins_pkg is not None else []
-        names: List[str] = []
-        for package_path in package_paths:
-            try:
-                package_dir = Path(package_path)
-                if not package_dir.exists():
-                    continue
-                names.extend(
-                    item.name
-                    for item in package_dir.iterdir()
-                    if item.is_dir() and self._has_manifest(item)
-                )
-            except Exception as e:
-                self._core.logger.debug(f"Failed to list builtin plugins from path {package_path}: {e}")
-        return names
-
-    def _iter_builtin_plugin_names_from_pkgutil(self, plugins_pkg) -> Iterable[str]:
-        """从 pkgutil 枚举插件包名"""
-        package_paths = getattr(plugins_pkg, "__path__", []) if plugins_pkg is not None else []
-        try:
-            return [name for finder, name, ispkg in pkgutil.iter_modules(package_paths) if ispkg]
-        except Exception as e:
-            self._core.logger.debug(f"Failed to list builtin plugins with pkgutil: {e}")
-            return []
 
     def _read_plugin_python_manifest(self, plugin_dir: Path) -> Optional[PluginManifest]:
         """从 __init__.py AST 中读取兼容元信息"""
@@ -344,7 +257,7 @@ class PluginManager:
             return ""
 
     def _discover_by_module(self, module_name: str) -> Tuple[Optional[str], float]:
-        """发现插件但不加载（共享实现，打包/开发两用）"""
+        """发现插件但不加载，缓存插件类避免后续反射开销"""
         try:
             module = importlib.import_module(module_name)
             for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -355,12 +268,28 @@ class PluginManager:
                     if not plugin_id:
                         continue
                     priority = normalize_priority(getattr(obj, "PLUGIN_PRIORITY", 999))
+                    self._plugin_classes[plugin_id] = obj
                     return plugin_id, priority
         except ImportError as e:
             self._core.logger.error(f"Failed to import plugin module {module_name}: {e}")
         except Exception as e:
             self._core.logger.error(f"Failed to discover plugin from {module_name}: {e}")
         return None, 999.0
+
+    def _find_plugin_class(self, module, plugin_id: str) -> Optional[type]:
+        """在模块中查找插件类，优先使用缓存"""
+        cached = self._plugin_classes.get(plugin_id)
+        if cached is not None:
+            return cached
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            if (issubclass(obj, PluginInterface) and
+                obj is not PluginInterface and
+                obj.__module__ == module.__name__):
+                actual_id = self._resolve_plugin_id(obj)
+                if actual_id == plugin_id:
+                    self._plugin_classes[plugin_id] = obj
+                    return obj
+        return None
 
     def load_plugin(self, plugin_id: str) -> Optional[PluginInterface]:
         """
@@ -392,38 +321,38 @@ class PluginManager:
             module_name = self._plugin_modules.get(plugin_id, f"plugins.{plugin_dir.name}")
             importlib.invalidate_caches()
             module = importlib.import_module(module_name)
-            
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, PluginInterface) and 
-                    obj is not PluginInterface and
-                    obj.__module__ == module.__name__):
-                    
+            plugin_class = self._find_plugin_class(module, plugin_id)
+            if plugin_class is None:
+                self._core.logger.error(f"Plugin class not found for {plugin_id}")
+                self._failed_plugins.add(plugin_id)
+                return None
+
+            try:
+                plugin = plugin_class()
+
+                plugin.initialize(self._core)
+
+                actual_id = plugin.get_id()
+                if not actual_id:
+                    self._core.logger.warning(f"Plugin has no ID, using {plugin_id}")
+                    actual_id = plugin_id
+
+                self._plugins[actual_id] = plugin
+                self._loaded_plugins.add(actual_id)
+
+                if self._core.search_manager and plugin.supports_search():
                     try:
-                        plugin = obj()
-
-                        plugin.initialize(self._core)
-
-                        actual_id = plugin.get_id()
-                        if not actual_id:
-                            self._core.logger.warning(f"Plugin has no ID, using {plugin_id}")
-                            actual_id = plugin_id
-
-                        self._plugins[actual_id] = plugin
-                        self._loaded_plugins.add(actual_id)
-
-                        if self._core.search_manager and plugin.supports_search():
-                            try:
-                                self._core.search_manager.register_plugin(plugin)
-                            except Exception as e:
-                                self._core.logger.error(f"Failed to register search for {plugin_id}: {e}")
-
-                        return plugin
-                        
+                        self._core.search_manager.register_plugin(plugin)
                     except Exception as e:
-                        self._failed_plugins.add(plugin_id)
-                        self._core.logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
-                        self._core.logger.debug(traceback.format_exc())
-                        return None
+                        self._core.logger.error(f"Failed to register search for {plugin_id}: {e}")
+
+                return plugin
+
+            except Exception as e:
+                self._failed_plugins.add(plugin_id)
+                self._core.logger.error(f"Failed to initialize plugin {plugin_id}: {e}")
+                self._core.logger.debug(traceback.format_exc())
+                return None
                         
         except ImportError as e:
             self._failed_plugins.add(plugin_id)
@@ -509,7 +438,7 @@ class PluginManager:
     def scan_builtin_plugins(self) -> List[str]:
         """
         扫描内置插件（打包后使用）
-        从已导入的 plugins 子模块中发现插件（按优先级排序）
+        从 plugin_index 索引中发现插件，零文件系统 I/O（按优先级排序）
         """
         plugin_info: List[Tuple[float, str]] = []
 
@@ -519,53 +448,30 @@ class PluginManager:
             self._core.logger.error(f"Failed to import plugins package: {e}")
             return []
 
-        # 获取插件包路径作为缓存 base
         try:
             plugins_path = Path(plugins_pkg.__file__).parent
         except (AttributeError, TypeError):
             plugins_path = None
 
-        # 尝试从缓存恢复
-        if plugins_path and plugins_path.exists():
-            cached = restore_scan_cache(scan_base=plugins_path)
-            if cached:
-                cached_ids, cached_dirs, cached_modules = cached
-                self._plugin_dirs.update(cached_dirs)
-                self._plugin_modules.update(cached_modules)
-                self._core.logger.info(f"Loaded {len(cached_ids)} builtin plugins from cache")
-                return cached_ids
-
-        try:
-            for name in self._iter_builtin_plugin_names(plugins_pkg):
-                module_name = f"plugins.{name}"
-                manifest = self._read_builtin_plugin_manifest(name)
-                if not manifest:
-                    manifest = self._read_builtin_plugin_manifest_from_index(name)
-                if manifest:
-                    if manifest.module_name:
-                        module_name = manifest.module_name
-                    plugin_id = manifest.plugin_id
-                    priority = manifest.priority
-                else:
-                    plugin_id, priority = self._discover_by_module(module_name)
-
+        index = self._get_builtin_plugin_index()
+        for name, entry in index.items():
+            manifest = self._read_builtin_plugin_manifest_from_index(name)
+            if manifest:
+                module_name = manifest.module_name or f"plugins.{name}"
+                plugin_id = manifest.plugin_id
+                priority = manifest.priority
+            else:
+                plugin_id, priority = self._discover_by_module(f"plugins.{name}")
                 if not plugin_id:
                     continue
+                module_name = f"plugins.{name}"
 
-                self._plugin_dirs[plugin_id] = Path(name)
-                self._plugin_modules[plugin_id] = module_name
-                plugin_info.append((priority, plugin_id))
-                self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
-        except Exception as e:
-            self._core.logger.error(f"Failed to scan builtin plugins: {e}")
+            self._plugin_dirs[plugin_id] = (plugins_path / name) if plugins_path else Path(name)
+            self._plugin_modules[plugin_id] = module_name
+            plugin_info.append((priority, plugin_id))
+            self._core.logger.info(f"Discovered builtin plugin: {plugin_id} (priority: {priority})")
 
         plugin_info.sort(key=lambda x: x[0])
-        plugin_ids = [plugin_id for _, plugin_id in plugin_info]
-
-        # 保存缓存供下次启动使用
-        if plugins_path and plugin_ids:
-            save_scan_cache(plugin_ids, self._plugin_dirs, self._plugin_modules, plugins_path)
-
-        return plugin_ids
+        return [plugin_id for _, plugin_id in plugin_info]
 
 
