@@ -51,20 +51,7 @@ class VocabularyRepository(BaseRepository):
             cursor = conn.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
 
-    def search(self, plugin_id: str, keyword: str, limit: int = 50) -> List[Dict[str, Any]]:
-        sql = """
-            SELECT w.*, c.name as category_name
-            FROM vocabulary_words w
-            LEFT JOIN categories c ON w.category_id = c.id
-            WHERE w.plugin_id = ?
-              AND (w.chinese LIKE ? OR w.english LIKE ? OR w.pronunciation LIKE ?)
-            ORDER BY w.sort_order, w.id
-            LIMIT ?
-        """
-        pattern = f'%{keyword}%'
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(sql, (plugin_id, pattern, pattern, pattern, limit))
-            return [dict(row) for row in cursor.fetchall()]
+    # search() 由基类通过 searchable_fields 配置驱动，效果等价于原自定义实现，无需重写
 
     def get_word_count(self, plugin_id: str, category_id: Optional[int] = None) -> int:
         with self.db.get_connection() as conn:

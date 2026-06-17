@@ -45,20 +45,7 @@ class LearningCardRepository(BaseRepository):
             cursor = conn.execute(sql, params)
             return [dict(row) for row in cursor.fetchall()]
 
-    def search(self, plugin_id: str, keyword: str, limit: int = 50) -> List[Dict[str, Any]]:
-        sql = """
-            SELECT c.*, cat.name as category_name
-            FROM learning_cards c
-            LEFT JOIN categories cat ON c.category_id = cat.id
-            WHERE c.plugin_id = ?
-              AND (c.title LIKE ? OR c.content LIKE ? OR c.note LIKE ?)
-            ORDER BY c.sort_order, c.id
-            LIMIT ?
-        """
-        pattern = f'%{keyword}%'
-        with self.db.get_connection() as conn:
-            cursor = conn.execute(sql, (plugin_id, pattern, pattern, pattern, limit))
-            return [dict(row) for row in cursor.fetchall()]
+    # search() 由基类通过 searchable_fields 配置驱动，效果等价于原自定义实现，无需重写
 
     def get_card_count(self, plugin_id: str, category_id: Optional[int] = None) -> int:
         with self.db.get_connection() as conn:

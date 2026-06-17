@@ -81,6 +81,8 @@ class FolderTreeRepository(BaseRepository):
             cursor = conn.execute(sql, (rule_name,))
             return cursor.fetchone() is not None
     
+    # 【自定义 search】需对 exclude_items 字段做 JSON 反序列化，
+    # 且该表无 plugin_id 隔离，故保留自定义实现
     def search(self, keyword: str) -> List[Dict[str, Any]]:
         """搜索文件夹树规则"""
         sql = """

@@ -152,6 +152,8 @@ class QuickCopyRepository:
             conn.commit()
             return cursor.rowcount > 0
     
+    # 【自定义 search】QuickCopyRepository 为独立类（非 BaseRepository 子类），
+    # 搜索逻辑需跨表 JOIN quick_copy_cards 和 quick_copy_items，故独立实现
     def search(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
         """搜索快速复制内容"""
         sql = """

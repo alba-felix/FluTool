@@ -411,12 +411,16 @@ class QuickCopyWidget(QWidget):
     def _calc_columns(self) -> int:
         """根据视口宽度计算每行可容纳的卡片数"""
         vp = self._scroll_area.viewport()
-        if vp is None or vp.width() <= 0:
+        if vp is None:
             return 3
+        # 宽度不足或布局未完成时，默认返回 3 列避免一行一个
+        MIN_USABLE_WIDTH = 400
         margins = self._scroll_layout.contentsMargins()
         card_width = 200
         spacing = self._scroll_layout.spacing()
         usable = vp.width() - margins.left() - margins.right()
+        if usable < MIN_USABLE_WIDTH:
+            return 3
         cols = max(1, (usable + spacing) // (card_width + spacing))
         return cols
 
@@ -454,11 +458,9 @@ class QuickCopyWidget(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if not self.cards_data:
-            return
-        new_cols = self._calc_columns()
-        if new_cols != self._current_cols:
-            self._current_cols = new_cols
+        # 每次 resize 都延迟重建，确保布局完成后列数正确
+        # (timer 为 singleShot 50ms，多次 resize 会被 debounce)
+        if self.cards_data:
             self._rebuild_timer.start(50)
 
     def _on_card_delete(self, card_id: int, dialog: EditCardDialog = None) -> None:

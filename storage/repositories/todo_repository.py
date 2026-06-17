@@ -120,6 +120,8 @@ class TodoRepository:
             conn.commit()
             return cursor.rowcount > 0
     
+    # 【自定义 search】TodoRepository 为独立类（非 BaseRepository 子类），
+    # 搜索逻辑涉及 tags 字段，且需按 pinned DESC 排序，故独立实现
     def search(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
         """搜索待办事项"""
         sql = """

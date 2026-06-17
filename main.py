@@ -177,6 +177,9 @@ def main():
 
     try:
         app = QApplication(sys.argv)
+        # 设置全局字体，避免 Qt 回退到 Fixedsys 导致 DirectWrite 警告
+        from PyQt5.QtGui import QFont
+        app.setFont(QFont("Microsoft YaHei", 9))
     except Exception as e:
         return show_error_and_exit("启动失败", f"无法创建应用程序: {e}")
 
