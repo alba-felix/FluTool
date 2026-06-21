@@ -18,6 +18,7 @@ tests/
 config/time_lock_data.json
 cert/
 .golutra/
+.codegraph/
 
 
 # 分发/打包

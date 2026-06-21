@@ -53,8 +53,12 @@ def parse_stars(text: str) -> int:
 
 def fetch_trending_repos() -> List[Dict[str, Any]]:
     """抓取 GitHub Trending 周榜原始数据"""
-    resp = requests.get(GITHUB_TRENDING_URL, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(GITHUB_TRENDING_URL, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch trending: {e}")
+        return []
     soup = BeautifulSoup(resp.text, "html.parser")
     
     articles = soup.select("article.Box-row")
