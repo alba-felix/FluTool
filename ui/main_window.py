@@ -994,7 +994,7 @@ class MainWindow(PushFluentWindow):
 		title = StrongBodyLabel("FluTool")
 		title_layout.addWidget(title)
 		
-		version = CaptionLabel("v0.1.0")
+		version = CaptionLabel("v0.2.2")
 		title_layout.addWidget(version)
 		title_layout.addStretch()
 		
@@ -1029,6 +1029,39 @@ class MainWindow(PushFluentWindow):
 		for item in menu_items:
 			card = self._create_menu_card(item["icon"], item["title"], item["desc"], item.get("action"))
 			content_layout.addWidget(card)
+
+		# 更新日志
+		changelog_title = StrongBodyLabel("v0.2.2 更新日志")
+		content_layout.addWidget(changelog_title)
+
+		changelog_items = [
+			("重构", "Repository 搜索逻辑统一，移除冗余实现"),
+			("重构", "app_launcher 模块拆分，3020 行拆为 9 个文件"),
+			("修复", "Notes EventBus 桥接内核，支持跨模块事件通信"),
+			("修复", "github_trending 网络异常未捕获导致崩溃"),
+			("修复", "PluginManager 支持子模块 Plugin 类加载"),
+			("修复", "应用启动器添加应用时去重检查"),
+		]
+
+		for tag, desc in changelog_items:
+			row = QWidget()
+			row_layout = QHBoxLayout(row)
+			row_layout.setContentsMargins(8, 4, 8, 4)
+			row_layout.setSpacing(8)
+
+			tag_colors = {"重构": "#0078d4", "修复": "#16a34a"}
+			tag_label = CaptionLabel(tag)
+			tag_label.setFixedWidth(36)
+			tag_label.setAlignment(Qt.AlignCenter)
+			color = tag_colors.get(tag, "#666666")
+			tag_label.setStyleSheet(f"color: {color}; font-weight: 600;")
+			row_layout.addWidget(tag_label)
+
+			desc_label = CaptionLabel(desc)
+			desc_label.setWordWrap(True)
+			row_layout.addWidget(desc_label, 1)
+
+			content_layout.addWidget(row)
 		
 		content_layout.addStretch()
 		

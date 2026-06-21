@@ -89,7 +89,7 @@ class AboutInterface(ScrollArea):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title, alignment=Qt.AlignCenter)
         
-        version = CaptionLabel("版本 0.1.0")
+        version = CaptionLabel("版本 0.2.2")
         version.setAlignment(Qt.AlignCenter)
         layout.addWidget(version, alignment=Qt.AlignCenter)
         
@@ -233,7 +233,7 @@ class CheckUpdateInterface(ScrollArea):
         icon.setFixedSize(48, 48)
         card_layout.addWidget(icon, alignment=Qt.AlignCenter)
         
-        current_version = StrongBodyLabel("当前版本: 0.1.0")
+        current_version = StrongBodyLabel("当前版本: 0.2.2")
         current_version.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(current_version, alignment=Qt.AlignCenter)
         

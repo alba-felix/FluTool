@@ -876,6 +876,19 @@ class AppLauncherWidget(QWidget):
 
         if file_path:
             name = os.path.splitext(os.path.basename(file_path))[0]
+
+            if self.service.app_exists(name, file_path):
+                InfoBar.warning(
+                    title="应用已存在",
+                    content=f"{name} 已在列表中",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+
             icon_path = self._extract_icon(file_path)
 
             self.service.add_app(
@@ -903,6 +916,19 @@ class AppLauncherWidget(QWidget):
             return
 
         name = os.path.splitext(os.path.basename(file_path))[0]
+
+        if self.service.app_exists(name, file_path):
+            InfoBar.warning(
+                title="应用已存在",
+                content=f"{name} 已在列表中",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return
+
         icon_path = self._extract_icon(file_path)
 
         self.service.add_app(
