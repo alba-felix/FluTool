@@ -238,6 +238,16 @@ class PluginManager:
                 return True
         return False
     
+    @staticmethod
+    def _is_plugin_of_module(obj, module_name: str) -> bool:
+        """判断类是否属于指定模块或其子模块
+        
+        支持插件类定义在子模块中（如 plugins.app_launcher.plugin.Plugin），
+        只要被父模块（plugins.app_launcher）重新导出即可。
+        """
+        obj_module = obj.__module__
+        return obj_module == module_name or obj_module.startswith(module_name + ".")
+    
     def _resolve_plugin_id(self, plugin_class) -> str:
         if plugin_class is None:
             return ""
@@ -257,13 +267,17 @@ class PluginManager:
             return ""
 
     def _discover_by_module(self, module_name: str) -> Tuple[Optional[str], float]:
-        """发现插件但不加载，缓存插件类避免后续反射开销"""
+        """发现插件但不加载，缓存插件类避免后续反射开销
+        
+        支持在子模块中定义 Plugin 类（如 plugins.app_launcher.plugin.Plugin），
+        只要该类被父模块重新导出即可。
+        """
         try:
             module = importlib.import_module(module_name)
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 if (issubclass(obj, PluginInterface) and
                     obj is not PluginInterface and
-                    obj.__module__ == module.__name__):
+                    self._is_plugin_of_module(obj, module_name)):
                     plugin_id = self._resolve_plugin_id(obj)
                     if not plugin_id:
                         continue
@@ -277,14 +291,17 @@ class PluginManager:
         return None, 999.0
 
     def _find_plugin_class(self, module, plugin_id: str) -> Optional[type]:
-        """在模块中查找插件类，优先使用缓存"""
+        """在模块中查找插件类，优先使用缓存
+        
+        支持在子模块中定义 Plugin 类，只要该类被父模块重新导出即可。
+        """
         cached = self._plugin_classes.get(plugin_id)
         if cached is not None:
             return cached
         for name, obj in inspect.getmembers(module, inspect.isclass):
             if (issubclass(obj, PluginInterface) and
                 obj is not PluginInterface and
-                obj.__module__ == module.__name__):
+                self._is_plugin_of_module(obj, module.__name__)):
                 actual_id = self._resolve_plugin_id(obj)
                 if actual_id == plugin_id:
                     self._plugin_classes[plugin_id] = obj

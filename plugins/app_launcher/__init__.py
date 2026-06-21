@@ -228,9 +228,4 @@ def get_menu_style() -> str:
         """
 
 
-def __getattr__(name):
-    """延迟导入 Plugin 类，避免循环引用"""
-    if name == "Plugin":
-        from .plugin import Plugin
-        return Plugin
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+from .plugin import Plugin  # noqa: F401 — 必须在模块级导入，确保 Plugin.__module__ == 'plugins.app_launcher'
