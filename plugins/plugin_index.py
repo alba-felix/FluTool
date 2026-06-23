@@ -11,6 +11,7 @@ BUILTIN_PLUGIN_MANIFESTS = [
     {"package": "time_converter", "id": "time_converter", "priority": 4, "module": "plugins.time_converter"},
     {"package": "system_tools", "id": "system_tools", "priority": 5, "module": "plugins.system_tools"},
     {"package": "notebook", "id": "notebook", "priority": 6, "module": "plugins.notebook"},
+    {"package": "notes", "id": "notes", "priority": 7, "module": "plugins.notes"},
     {"package": "ai_assistant", "id": "ai_assistant", "priority": 8, "module": "plugins.ai_assistant"},
     {"package": "text_tools", "id": "text_tools", "priority": 8.2, "module": "plugins.text_tools"},
     {"package": "dev_tools", "id": "dev_tools", "priority": 8.3, "module": "plugins.dev_tools"},
