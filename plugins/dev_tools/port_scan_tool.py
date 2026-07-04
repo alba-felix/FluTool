@@ -281,7 +281,7 @@ class PortScanToolPage(TabPageInterface):
     page_icon = FIF.SEARCH
 
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         widget = PortScanToolWidget(parent)
         widget._do_scan()
         return widget

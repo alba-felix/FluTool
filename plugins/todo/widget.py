@@ -8,6 +8,7 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTreeWidgetItem, QHeaderView, QDateEdit, QTimeEdit, QDialog,
+    QSystemTrayIcon,
 )
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
@@ -250,9 +251,10 @@ class TodoReminderManager(QObject):
         (2880, "2 天前"),
     ]
 
-    def __init__(self, core, parent=None):
+    def __init__(self, core, service, parent=None):
         super().__init__(parent)
         self.core = core
+        self.service = service
         self._reminded_todos: set = set()
 
     def check_and_notify(self, todos: List[Dict]) -> None:
@@ -309,14 +311,14 @@ class TodoReminderManager(QObject):
                 logger.info(f"[提醒] 触发通知: {todo.get('title')}")
             self._show_notification(todo, remaining_minutes)
             self._reminded_todos.add(key)
+            
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+            todo_id = todo.get("id")
+            if todo_id:
+                self.service.update_fields(todo_id, last_reminded=now_str)
+                todo["last_reminded"] = now_str
 
     def _show_notification(self, todo: Dict, remaining_minutes: float) -> None:
-        parent = self.parent()
-        if parent:
-            window = parent.window()
-            if window.isMinimized() or not window.isVisible():
-                return
-
         title = todo.get("title", "未命名")
         description = todo.get("description", "")
         logger = getattr(self.core, 'logger', None)
@@ -329,48 +331,104 @@ class TodoReminderManager(QObject):
 
         message = f"代办事项「{title}」将在 {time_text} 后到期"
 
+        # 强制弹窗，无论窗口状态如何
         try:
-            dialog = QDialog(None, Qt.WindowStaysOnTopHint | Qt.Dialog)
-            dialog.setWindowTitle("代办事项提醒")
-            dialog.setFixedSize(400, 220)
+            dialog = QDialog(None, Qt.WindowStaysOnTopHint | Qt.Dialog | Qt.WindowCloseButtonHint)
+            dialog.setWindowTitle("⏰ 代办事项提醒")
+            dialog.setFixedSize(450, 250)
             layout = QVBoxLayout(dialog)
-            layout.setContentsMargins(20, 20, 20, 20)
-            layout.setSpacing(12)
+            layout.setContentsMargins(25, 25, 25, 25)
+            layout.setSpacing(15)
 
-            title_label = BodyLabel("代办事项提醒", dialog)
-            title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+            # 标题 - 更醒目
+            title_label = BodyLabel("⏰ 待办事项到期提醒", dialog)
+            title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ff6b6b;")
+            title_label.setAlignment(Qt.AlignCenter)
             layout.addWidget(title_label)
 
+            # 主要内容
             msg_label = BodyLabel(message, dialog)
             msg_label.setWordWrap(True)
+            msg_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+            msg_label.setAlignment(Qt.AlignCenter)
             layout.addWidget(msg_label)
 
+            # 描述内容
             if description:
                 desc_label = BodyLabel(dialog)
-                max_len = 80
+                max_len = 100
                 display_desc = description if len(description) <= max_len else description[:max_len] + "..."
                 desc_label.setText(f"内容: {display_desc}")
                 desc_label.setWordWrap(True)
-                desc_label.setStyleSheet("color: #888888; font-size: 12px;")
+                desc_label.setStyleSheet("color: #888888; font-size: 12px; padding: 10px; background-color: rgba(0,0,0,0.05); border-radius: 5px;")
                 layout.addWidget(desc_label)
 
             layout.addStretch()
+            
+            # 按钮
             btn_layout = QHBoxLayout()
             btn_layout.addStretch()
             ok_btn = PushButton("知道了", dialog)
             ok_btn.setFixedWidth(120)
+            ok_btn.setFixedHeight(35)
+            ok_btn.setStyleSheet("""
+                PushButton {
+                    background-color: #ff6b6b;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    font-size: 14px;
+                }
+                PushButton:hover {
+                    background-color: #ff5252;
+                }
+                PushButton:pressed {
+                    background-color: #e74c3c;
+                }
+            """)
             ok_btn.clicked.connect(dialog.close)
             btn_layout.addWidget(ok_btn)
             layout.addLayout(btn_layout)
 
             self._style_notification_dialog(dialog)
-            dialog.show()
+            
+            # 强制置顶并获取焦点
+            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint)
+            dialog.activateWindow()
+            dialog.raise_()
+            
+            # 播放系统提示音
+            try:
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            except:
+                # 降级方案：使用 Qt 的 beep
+                try:
+                    QApplication.beep()
+                except:
+                    pass
 
             if logger:
-                logger.info(f"[提醒] 独立弹窗已显示: {title}")
+                logger.info(f"[提醒] 强制弹窗已显示: {title}")
+            
+            # 使用 exec() 模态显示，必须用户点击才能关闭
+            dialog.exec()
         except Exception as e:
             if logger:
-                logger.warning(f"[提醒] 独立弹窗失败: {e}")
+                logger.warning(f"[提醒] 弹窗失败: {e}")
+            
+            # 降级方案：托盘通知
+            tray = getattr(getattr(self.core, 'main_window', None), 'tray_icon', None)
+            if tray:
+                tray.showMessage(
+                    "⏰ 代办事项提醒",
+                    message,
+                    QSystemTrayIcon.Warning,
+                    10000
+                )
+                if logger:
+                    logger.info(f"[提醒] 降级为托盘通知: {title}")
 
     @staticmethod
     def _style_notification_dialog(dialog: QDialog) -> None:
@@ -405,7 +463,7 @@ class TodoWidget(QWidget):
         self.core = core
         self.service = TodoService()
         self.todos: List[Dict[str, Any]] = []
-        self._reminder_manager = TodoReminderManager(core, self)
+        self._reminder_manager = TodoReminderManager(core, self.service, self)
 
         self._setup_ui()
         self._load_todos()

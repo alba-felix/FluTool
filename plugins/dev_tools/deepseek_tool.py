@@ -221,7 +221,7 @@ class DeepSeekToolPage(TabPageInterface):
     page_name = "DeepSeek对话"
     
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return DeepSeekToolWidget(parent)
 
 

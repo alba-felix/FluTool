@@ -71,7 +71,7 @@ class SvgViewerTool(TabPageInterface):
     page_icon = None
 
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return SvgViewerWidget(parent)
 
 

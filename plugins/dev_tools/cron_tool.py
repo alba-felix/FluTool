@@ -246,7 +246,7 @@ class CronToolPage(TabPageInterface):
     page_icon = FIF.STOP_WATCH  # 有点像秒表图标
     
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return CronToolWidget(parent)
 
 
