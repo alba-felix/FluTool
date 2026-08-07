@@ -904,7 +904,8 @@ class ScriptWidget(QWidget):
             process.start(sys.executable, [self._py_script_path])
             process.waitForFinished(-1)  # 等待完成
             
-            delattr(self, '_py_script_path')
+            if hasattr(self, '_py_script_path'):
+                delattr(self, '_py_script_path')
             return
         
         self.editor.output.appendPlainText(f"\n进程结束，退出码：{exit_code}")

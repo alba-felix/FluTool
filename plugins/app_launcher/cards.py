@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any
 
 from PyQt5.QtCore import Qt, pyqtSignal, QFileInfo
-from PyQt5.QtGui import QPixmap, QPainter, QColor, QBrush, QPen, QCursor
+from PyQt5.QtGui import QPixmap, QPainter, QColor, QBrush, QPen, QCursor, QTextDocument, QPalette
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
     QFileIconProvider, QAction,
@@ -20,6 +20,55 @@ from . import (
     GRID_VIEW, LIST_VIEW, DEFAULT_ICON_SIZE,
     get_non_transparent_rect, highlight_text,
 )
+
+
+class ElidedLabel(QLabel):
+    """支持文本省略号的标签，弥补 PyQt5 QLabel 无 setTextElideMode 的不足"""
+
+    def __init__(self, text: str = "", parent=None):
+        # 兼容 QLabel(self) 与 QLabel(text, parent) 两种调用形式
+        if isinstance(text, QWidget):
+            parent = text
+            text = ""
+        super().__init__(text, parent)
+        self._elide_mode = Qt.ElideNone
+        self._plain_text = text
+
+    def setTextElideMode(self, mode) -> None:
+        """设置省略号模式，与 Qt 原生 API 对齐"""
+        self._elide_mode = mode
+        self.update()
+
+    def setText(self, text: str) -> None:
+        self._plain_text = text
+        super().setText(text)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        # 富文本较长时无法用字体度量精确截断；仅在数据为纯文本时空载路径处理
+        if self._elide_mode == Qt.ElideNone or not self.text():
+            return super().paintEvent(event)
+
+        rect = self.contentsRect()
+        if rect.width() <= 0:
+            return super().paintEvent(event)
+
+        plain = self._plain_text or self.text()
+        # 富文本（HTML 高亮）会干扰字体度量，此时退回原生绘制
+        if "<" in plain or "&" in plain:
+            return super().paintEvent(event)
+
+        fm = self.fontMetrics()
+        text_width = fm.horizontalAdvance(plain)
+        if text_width <= rect.width():
+            return super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        painter.setPen(self.palette().color(QPalette.WindowText))
+        elided = fm.elidedText(plain, self._elide_mode, rect.width())
+        painter.drawText(rect, self.alignment(), elided)
+        painter.end()
 
 
 class AppCard(CardWidget):
@@ -86,16 +135,18 @@ class AppCard(CardWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
 
-        self._name_label = QLabel(self)
+        self._name_label = ElidedLabel(self)
         self._name_label.setWordWrap(False)
         self._name_label.setTextFormat(Qt.RichText)
         self._name_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        self._name_label.setTextElideMode(Qt.ElideRight)
         text_layout.addWidget(self._name_label)
 
-        self._subtitle_label = QLabel(self)
+        self._subtitle_label = ElidedLabel(self)
         self._subtitle_label.setWordWrap(False)
         self._subtitle_label.setTextFormat(Qt.RichText)
         self._subtitle_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        self._subtitle_label.setTextElideMode(Qt.ElideRight)
         text_layout.addWidget(self._subtitle_label)
 
         self.main_layout.addWidget(text_container, 1)

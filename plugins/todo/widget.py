@@ -8,13 +8,13 @@ from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QTreeWidgetItem, QHeaderView, QDateEdit, QTimeEdit, QDialog,
-    QSystemTrayIcon,
+    QSystemTrayIcon, QFrame, QButtonGroup,
 )
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, TreeWidget, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig,
-    MessageBoxBase, CaptionLabel, ComboBox,
+    MessageBoxBase, CaptionLabel, ComboBox, PillPushButton,
     TextEdit, CheckBox, SubtitleLabel, BodyLabel, MessageBox, RoundMenu,
 )
 
@@ -479,68 +479,119 @@ class TodoWidget(QWidget):
     
     def _setup_ui(self):
         self.setObjectName("todoWidget")
-        
+        self._current_view = "全部"
+
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(12)
         main_layout.setContentsMargins(20, 20, 20, 20)
-        
+
+        # 顶部工具栏：添加 / 全部未完成 / 搜索
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
-        
+
         self.add_btn = PushButton("添加", self)
         self.add_btn.setIcon(FIF.ADD)
         self.add_btn.clicked.connect(self._add_todo)
         header_layout.addWidget(self.add_btn)
-        
+
         self.mark_uncompleted_btn = PushButton("全部未完成", self)
         self.mark_uncompleted_btn.clicked.connect(self._mark_all_uncompleted)
         header_layout.addWidget(self.mark_uncompleted_btn)
-        
+
         header_layout.addStretch()
-        
-        header_layout.addWidget(StrongBodyLabel("过滤:", self))
-        self.filter_combo = ComboBox(self)
-        self.filter_combo.addItems(["全部", "未完成", "已完成", "今日到期", "过期"])
-        self.filter_combo.currentTextChanged.connect(self._filter_todos)
-        header_layout.addWidget(self.filter_combo)
-        
+
         self.search_input = LineEdit(self)
         self.search_input.setPlaceholderText("搜索代办事项...")
         self.search_input.setClearButtonEnabled(True)
+        self.search_input.setFixedWidth(240)
         self.search_input.textChanged.connect(self._filter_todos)
-        header_layout.addWidget(self.search_input, 1)
-        
+        header_layout.addWidget(self.search_input)
+
         main_layout.addLayout(header_layout)
-        
+
+        # 主体：左侧视图导航 + 任务列表
+        body_layout = QHBoxLayout()
+        body_layout.setSpacing(12)
+
+        body_layout.addWidget(self._build_nav_panel())
+
         self.tree = TreeWidget(self)
-        self.tree.setHeaderLabels(["状态", "标题", "优先级", "内容", "创建时间", "截止日期", "标签"])
+        self.tree.setHeaderLabels(["状态", "标题", "优先级", "截止日期", "标签"])
         self.tree.header().setSectionResizeMode(0, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tree.header().setSectionResizeMode(2, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(3, QHeaderView.Fixed)
         self.tree.header().setSectionResizeMode(4, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(5, QHeaderView.Fixed)
-        self.tree.header().setSectionResizeMode(6, QHeaderView.Fixed)
-        self.tree.setColumnWidth(0, 100)
-        self.tree.setColumnWidth(1, 100)
+        self.tree.setColumnWidth(0, 110)
         self.tree.setColumnWidth(2, 80)
-        self.tree.setColumnWidth(4, 150)
-        self.tree.setColumnWidth(5, 150)
-        self.tree.setColumnWidth(6, 50)
+        self.tree.setColumnWidth(3, 160)
+        self.tree.setColumnWidth(4, 140)
         self.tree.header().setStretchLastSection(False)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
         self.tree.itemDoubleClicked.connect(self._edit_todo)
         self.tree.setSelectionMode(self.tree.ExtendedSelection)
         self.tree.setAlternatingRowColors(True)
-        
+
         self._apply_tree_style()
         qconfig.themeChangedFinished.connect(self._apply_tree_style)
-        
-        main_layout.addWidget(self.tree)
-        
+        self._apply_nav_style()
+        qconfig.themeChangedFinished.connect(self._apply_nav_style)
+
+        body_layout.addWidget(self.tree, 1)
+        main_layout.addLayout(body_layout)
+
         self.stats_label = CaptionLabel("就绪", self)
         main_layout.addWidget(self.stats_label)
+
+    def _build_nav_panel(self) -> QWidget:
+        """构建左侧视图导航栏"""
+        self._nav_frame = QFrame(self)
+        nav_frame = self._nav_frame
+        nav_frame.setObjectName("todoNav")
+        nav_frame.setFixedWidth(160)
+
+        nav_layout = QVBoxLayout(nav_frame)
+        nav_layout.setContentsMargins(8, 8, 8, 8)
+        nav_layout.setSpacing(6)
+
+        title_label = StrongBodyLabel("视图", nav_frame)
+        nav_layout.addWidget(title_label)
+
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+
+        self._nav_buttons = {}
+        views = [
+            ("全部", FIF.LIBRARY),
+            ("今天", FIF.DATE_TIME),
+            ("即将到期", FIF.HISTORY),
+            ("进行中", FIF.PLAY_SOLID),
+            ("未完成", FIF.CANCEL),
+            ("已完成", FIF.COMPLETED),
+            ("过期", FIF.CLOSE),
+        ]
+
+        for name, icon in views:
+            btn = PillPushButton(name, nav_frame)
+            btn.setIcon(icon)
+            btn.setCheckable(True)
+            btn.setFixedHeight(34)
+            btn.clicked.connect(lambda checked=False, n=name: self._switch_view(n))
+            self.nav_group.addButton(btn)
+            self._nav_buttons[name] = btn
+            nav_layout.addWidget(btn)
+
+        nav_layout.addStretch()
+        if "全部" in self._nav_buttons:
+            self._nav_buttons["全部"].setChecked(True)
+
+        return nav_frame
+
+    def _switch_view(self, name: str) -> None:
+        """切换左侧导航视图"""
+        self._current_view = name
+        self._filter_todos()
     
     def _apply_tree_style(self):
         header = self.tree.header()
@@ -601,6 +652,28 @@ class TodoWidget(QWidget):
                     border-bottom: 1px solid #e0e0e0;
                     padding: 8px;
                     font-weight: 500;
+                }
+            """)
+    
+    def _apply_nav_style(self):
+        """左侧导航栏主题样式"""
+        nav = getattr(self, '_nav_frame', None)
+        if nav is None:
+            return
+        if isDarkTheme():
+            nav.setStyleSheet("""
+                QFrame#todoNav {
+                    background-color: #1e1e1e;
+                    border: 1px solid #333333;
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            nav.setStyleSheet("""
+                QFrame#todoNav {
+                    background-color: #f7f7f7;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 8px;
                 }
             """)
     
@@ -715,8 +788,6 @@ class TodoWidget(QWidget):
             item.setText(0, status)
             item.setText(1, todo.get("title", "未命名"))
             item.setText(2, todo.get("priority", "中"))
-            item.setText(3, todo.get("description", ""))
-            item.setText(4, todo.get("created_at", ""))
             due_date = todo.get("due_date", "")
             due_time = todo.get("due_time", "")
             if due_date:
@@ -726,33 +797,35 @@ class TodoWidget(QWidget):
                     display = due_date
             else:
                 display = ""
-            item.setText(5, display)
-            item.setText(6, ", ".join(todo.get("tags", [])))
+            item.setText(3, display)
+            item.setText(4, ", ".join(todo.get("tags", [])))
             item.setData(0, Qt.UserRole, idx)
             
             if todo.get("completed", False):
-                for col in range(7):
+                for col in range(5):
                     item.setForeground(col, Qt.gray)
             else:
                 priority = todo.get("priority", "中")
                 if priority == "紧急":
-                    for col in range(7):
+                    for col in range(5):
                         item.setForeground(col, Qt.red)
                         font = item.font(col)
                         font.setBold(True)
                         item.setFont(col, font)
                 elif priority == "高":
-                    for col in range(7):
+                    for col in range(5):
                         item.setForeground(col, QColor(200, 0, 0))
                 elif todo.get("status") == "未完成":
-                    for col in range(7):
+                    for col in range(5):
                         item.setForeground(col, Qt.red)
             
             self.tree.addTopLevelItem(item)
     
     def _filter_todos(self):
-        filter_text = self.filter_combo.currentText()
+        view = getattr(self, '_current_view', "全部")
         search_text = self.search_input.text().lower()
+        today = datetime.now().strftime("%Y-%m-%d")
+        week_later = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
         
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
@@ -763,18 +836,24 @@ class TodoWidget(QWidget):
             
             show_item = True
             
-            if filter_text == "未完成" and todo.get("completed", False):
-                show_item = False
-            elif filter_text == "已完成" and not todo.get("completed", False):
-                show_item = False
-            elif filter_text == "今日到期":
-                due_date = todo.get("due_date", "")
-                today = datetime.now().strftime("%Y-%m-%d")
-                if due_date != today:
+            if view == "今天":
+                if todo.get("due_date", "") != today:
                     show_item = False
-            elif filter_text == "过期":
+            elif view == "即将到期":
                 due_date = todo.get("due_date", "")
-                today = datetime.now().strftime("%Y-%m-%d")
+                if not due_date or due_date < today or due_date > week_later or todo.get("completed", False):
+                    show_item = False
+            elif view == "进行中":
+                if todo.get("completed", False) or todo.get("status", "") != "进行中":
+                    show_item = False
+            elif view == "未完成":
+                if todo.get("completed", False) or todo.get("status", "") != "未完成":
+                    show_item = False
+            elif view == "已完成":
+                if not todo.get("completed", False):
+                    show_item = False
+            elif view == "过期":
+                due_date = todo.get("due_date", "")
                 if not due_date or due_date >= today or todo.get("completed", False):
                     show_item = False
             

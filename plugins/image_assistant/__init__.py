@@ -13,12 +13,13 @@ from PyQt5.QtGui import QPixmap, QImage, QIcon, QCursor
 from PyQt5.QtWidgets import (
     QFileDialog, QFrame, QScrollArea, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QListWidget, QListWidgetItem, QLabel, QPushButton,
-    QStatusBar, QApplication
+    QStatusBar, QApplication, QAction
 )
 from qfluentwidgets import (
     PushButton, LineEdit, FluentIcon as FIF,
     InfoBar, InfoBarPosition, setCustomStyleSheet, isDarkTheme, qconfig,
-    TransparentToolButton, CaptionLabel, SubtitleLabel, BodyLabel, ScrollArea
+    TransparentToolButton, CaptionLabel, BodyLabel, ScrollArea,
+    RoundMenu
 )
 from core import PluginInterface, get_app_data_path
 from ui import CustomFluentIcon
@@ -368,14 +369,17 @@ class ImageAssistantWidget(QWidget):
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(10, 10, 10, 10)
         
-        self._list_title = SubtitleLabel("图片列表", left_widget)
+        self._list_title = QLabel("图片列表", left_widget)
+        self._list_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         left_layout.addWidget(self._list_title)
         
         self.image_list = QListWidget(left_widget)
         self.image_list.setIconSize(QSize(80, 80))
         self.image_list.setSpacing(8)
+        self.image_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.image_list.itemClicked.connect(self._on_image_selected)
         self.image_list.itemDoubleClicked.connect(self._on_image_double_clicked)
+        self.image_list.customContextMenuRequested.connect(self._show_image_context_menu)
         left_layout.addWidget(self.image_list)
         
         self._apply_list_style()
@@ -385,7 +389,8 @@ class ImageAssistantWidget(QWidget):
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(10, 10, 10, 10)
         
-        self._preview_title = SubtitleLabel("图片预览", right_widget)
+        self._preview_title = QLabel("图片预览", right_widget)
+        self._preview_title.setStyleSheet("font-size: 14px; font-weight: bold;")
         right_layout.addWidget(self._preview_title)
         
         self.preview_widget = ImagePreviewWidget(right_widget)
@@ -415,8 +420,6 @@ class ImageAssistantWidget(QWidget):
     def _apply_style(self):
         """应用样式"""
         if isDarkTheme():
-            self._list_title.setTextColor("#ffffff", "#ffffff")
-            self._preview_title.setTextColor("#ffffff", "#ffffff")
             self.setStyleSheet("""
                 QWidget#imageAssistantWidget {
                     background-color: #1e1e1e;
@@ -429,9 +432,9 @@ class ImageAssistantWidget(QWidget):
                     color: #ffffff;
                 }
             """)
+            self._list_title.setStyleSheet("color: #ffffff; font-size: 14px; font-weight: bold;")
+            self._preview_title.setStyleSheet("color: #ffffff; font-size: 14px; font-weight: bold;")
         else:
-            self._list_title.setTextColor("#000000", "#000000")
-            self._preview_title.setTextColor("#000000", "#000000")
             self.setStyleSheet("""
                 QWidget#imageAssistantWidget {
                     background-color: #f5f5f5;
@@ -444,6 +447,8 @@ class ImageAssistantWidget(QWidget):
                     color: #000000;
                 }
             """)
+            self._list_title.setStyleSheet("color: #000000; font-size: 14px; font-weight: bold;")
+            self._preview_title.setStyleSheet("color: #000000; font-size: 14px; font-weight: bold;")
 
         self.preview_widget._apply_style()
     
@@ -786,6 +791,19 @@ class ImageAssistantWidget(QWidget):
     def _on_image_double_clicked(self, item: QListWidgetItem):
         """双击图片"""
         self._on_image_selected(item)
+
+    def _show_image_context_menu(self, pos):
+        """显示右键菜单"""
+        item = self.image_list.itemAt(pos)
+        if not item:
+            return
+
+        self._on_image_selected(item)
+        menu = RoundMenu(parent=self)
+        delete_action = QAction("删除", self)
+        delete_action.triggered.connect(self._delete_image)
+        menu.addAction(delete_action)
+        menu.exec(QCursor.pos())
     
     def _refresh_image_list(self):
         """刷新图片列表"""

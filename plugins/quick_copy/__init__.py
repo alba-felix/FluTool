@@ -214,7 +214,7 @@ class QuickCopyCard(HeaderCardWidget):
         qconfig.themeChangedFinished.connect(self._on_theme_changed)
 
     def _on_theme_changed(self):
-        """主题变化时重建内容行，刷新图标"""
+        """主题变化时重建内容行，刷新颜色和图标"""
         QTimer.singleShot(0, self._refresh_content)
 
     def _refresh_content(self):
@@ -256,19 +256,25 @@ class QuickCopyCard(HeaderCardWidget):
         self._refresh_content()
 
     def _add_content_row(self, text: str, btn_text: str, remark: str = "") -> None:
-        """添加内容行"""
+        """添加内容行（固定高度，超出部分截断）"""
         row_widget = QWidget()
+        row_widget.setFixedHeight(28)
         row_widget.setStyleSheet("background-color: transparent;")
-        
+
         row_layout = QHBoxLayout(row_widget)
-        row_layout.setContentsMargins(0, 3, 5, 3)
+        row_layout.setContentsMargins(0, 0, 5, 0)
         row_layout.setSpacing(8)
 
         # 内容标签（左侧）
-        content_label = BodyLabel(text)
-        content_label.setWordWrap(True)
+        display_text = text if len(text) <= 26 else text[:26] + "..."
+        content_label = QLabel(display_text)
+        content_label.setWordWrap(False)
+        text_color = "#ffffff" if isDarkTheme() else "#1a1a1a"
+        content_label.setStyleSheet(f"background: transparent; color: {text_color};")
         if remark:
-            content_label.setToolTip(remark)
+            content_label.setToolTip(f"{text} ; {remark}")
+        else:
+            content_label.setToolTip(text)
         row_layout.addWidget(content_label, 1)
 
         # 复制按钮（右侧）
@@ -289,6 +295,7 @@ class QuickCopyCard(HeaderCardWidget):
 
         # 添加分隔线
         separator = CardSeparator(self)
+        separator.setFixedHeight(1)
         self.items_layout.addWidget(separator)
 
     def _copy_to_clipboard(self, text: str) -> None:
