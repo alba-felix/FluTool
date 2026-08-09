@@ -11,16 +11,23 @@ from typing import List, Dict, Any, Optional
 
 from PyQt5.QtCore import Qt, QBuffer, QByteArray, QIODevice, QUrl, QTimer, QSize
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter, QColor, QFont
-from PyQt5.QtWidgets import QFileDialog, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem, QLabel, QFrame, QSplitter
+from PyQt5.QtWidgets import (
+    QFileDialog, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
+    QListWidgetItem, QLabel, QFrame, QSplitter, QButtonGroup, QStackedWidget,
+)
 from qfluentwidgets import (
-    PushButton, LineEdit, FluentIcon as FIF,
+    PushButton, LineEdit, SegmentedWidget, PillPushButton, SegmentedItem,
+    FluentIcon as FIF,
     InfoBar, InfoBarPosition, StrongBodyLabel,
     setCustomStyleSheet, isDarkTheme, qconfig, TextEdit,
     MessageBox, TransparentToolButton, CaptionLabel,
     RoundMenu, SubtitleLabel, BodyLabel, ScrollArea
 )
 from core import PluginInterface, get_app_data_path
+from ui import CustomFluentIcon
 from plugins.clipboard.service import ClipboardService
+from plugins.clipboard.gallery import ImageGalleryWidget
+from plugins.clipboard.monitor import ClipboardMonitor
 
 
 THUMBNAIL_SIZE = 80
@@ -214,6 +221,13 @@ class ClipboardWidget(QWidget):
             self._setup_clipboard_monitor()
             self._update_list_view()
             self._monitor_initialized = True
+
+    def closeEvent(self, event):
+        """窗口关闭时停止底层监听线程"""
+        monitor = getattr(self, "_monitor", None)
+        if monitor is not None:
+            monitor.stop()
+        super().closeEvent(event)
     
     def _init_paths(self):
         """初始化路径"""
@@ -226,52 +240,88 @@ class ClipboardWidget(QWidget):
         self.setObjectName("clipboardWidget")
         
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(12)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(16, 12, 16, 16)
+        
+        # 顶部导航：剪贴板 | 图库
+        self._seg_nav = SegmentedWidget(self)
+        self._seg_nav.addItem("history", "剪贴板历史", icon=FIF.HISTORY)
+        self._seg_nav.addItem("gallery", "图片图库", icon=CustomFluentIcon.PICTURE)
+        self._seg_nav.currentItemChanged.connect(self._on_nav_changed)
+        main_layout.addWidget(self._seg_nav)
+        
+        # 内容堆栈
+        self._stack = QStackedWidget(self)
+        main_layout.addWidget(self._stack, 1)
+        
+        # ===== 页面一：剪切板历史 =====
+        history_page = QWidget()
+        history_layout = QVBoxLayout(history_page)
+        history_layout.setContentsMargins(0, 8, 0, 0)
+        history_layout.setSpacing(10)
         
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
         
-        self.search_input = LineEdit(self)
+        self.search_input = LineEdit(history_page)
         self.search_input.setPlaceholderText("搜索剪切板历史...")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._search_clipboard)
         header_layout.addWidget(self.search_input, 1)
         
-        self.monitor_btn = TransparentToolButton(FIF.PAUSE, self)
+        self.monitor_btn = TransparentToolButton(FIF.PAUSE, history_page)
         self.monitor_btn.setToolTip("暂停监控")
         self.monitor_btn.clicked.connect(self._toggle_monitor)
         header_layout.addWidget(self.monitor_btn)
         
-        clear_btn = TransparentToolButton(FIF.DELETE, self)
+        clear_btn = TransparentToolButton(FIF.DELETE, history_page)
         clear_btn.setToolTip("清空历史")
         clear_btn.clicked.connect(self._clear_history)
         header_layout.addWidget(clear_btn)
         
-        export_btn = TransparentToolButton(FIF.SAVE, self)
+        export_btn = TransparentToolButton(FIF.SAVE, history_page)
         export_btn.setToolTip("导出")
         export_btn.clicked.connect(self._export_history)
         header_layout.addWidget(export_btn)
         
-        main_layout.addLayout(header_layout)
+        history_layout.addLayout(header_layout)
+        
+        # 类型筛选栏
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(4)
+        self._filter_group = QButtonGroup(history_page)
+        self._filter_group.setExclusive(True)
+        self._filter_buttons = {}
+        for key, label in (("all", "全部"), ("text", "文本"),
+                           ("image", "图片"), ("urls", "文件")):
+            btn = PillPushButton(label, history_page)
+            btn.setCheckable(True)
+            btn.setFixedHeight(28)
+            btn.clicked.connect(lambda checked=False, k=key: self._on_filter_changed(k))
+            self._filter_group.addButton(btn)
+            self._filter_buttons[key] = btn
+            filter_row.addWidget(btn)
+        filter_row.addStretch()
+        self._filter_buttons["all"].setChecked(True)
+        history_layout.addLayout(filter_row)
         
         input_layout = QHBoxLayout()
         input_layout.setSpacing(8)
         
-        self.edit_input = LineEdit(self)
+        self.edit_input = LineEdit(history_page)
         self.edit_input.setPlaceholderText("输入文本，按回车添加到剪切板...")
         self.edit_input.returnPressed.connect(self._add_and_pin_text)
         input_layout.addWidget(self.edit_input, 1)
         
-        add_btn = PushButton("添加", self)
+        add_btn = PushButton("添加", history_page)
         add_btn.setIcon(FIF.ADD)
         add_btn.clicked.connect(self._add_and_pin_text)
         input_layout.addWidget(add_btn)
         
-        main_layout.addLayout(input_layout)
+        history_layout.addLayout(input_layout)
         
         # 使用 QListWidget 显示缩略图列表
-        self.list_widget = QListWidget(self)
+        self.list_widget = QListWidget(history_page)
         self.list_widget.setSpacing(8)
         self.list_widget.setResizeMode(QListWidget.Adjust)
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -283,12 +333,47 @@ class ClipboardWidget(QWidget):
         self.list_widget.customContextMenuRequested.connect(self._show_context_menu)
         
         self._apply_list_style()
+        
+        history_layout.addWidget(self.list_widget, 1)
+        
+        self.status_label = CaptionLabel("就绪", history_page)
+        history_layout.addWidget(self.status_label)
+        
+        # ===== 页面 2：图片图库（合并自图片插件）=====
+        self._gallery_widget = ImageGalleryWidget(self.core, self)
+        
+        self._stack.addWidget(history_page)
+        self._stack.addWidget(self._gallery_widget)
+        
         qconfig.themeChangedFinished.connect(self._apply_list_style)
-        
-        main_layout.addWidget(self.list_widget)
-        
-        self.status_label = CaptionLabel("就绪", self)
-        main_layout.addWidget(self.status_label)
+    
+    def _on_nav_changed(self, route_key) -> None:
+        """切换 剪贴板/图库 页面"""
+        index = self._stack.count() - 1
+        if route_key == "history" or route_key in (0, 0.0):
+            index = 0
+        elif route_key == "gallery" or route_key == 1:
+            index = 1
+        if 0 <= index < self._stack.count():
+            self._stack.setCurrentIndex(index)
+            if index == 1:
+                self._gallery_widget.load_data()
+    
+    def _on_filter_changed(self, key: str) -> None:
+        """切换历史类型筛选"""
+        if self._filter_buttons.get("all") is not None:
+            for k, btn in self._filter_buttons.items():
+                btn.setChecked(k == key)
+        self._search_clipboard()
+    
+    def _apply_history_filter(self, item_data: Dict) -> bool:
+        """判断条目是否匹配当前类型筛选"""
+        for key, btn in self._filter_buttons.items():
+            if btn.isChecked():
+                if key == "all":
+                    return True
+                return item_data.get("type") == key
+        return True
     
     def _apply_list_style(self):
         """应用列表样式"""
@@ -331,13 +416,21 @@ class ClipboardWidget(QWidget):
         """)
     
     def _setup_clipboard_monitor(self):
-        """设置剪切板监控"""
+        """设置剪切板监控
+
+        优先使用 Win32 底层序列号监听（后台/最小化时依然可靠）；
+        平台不支持或监听失败时回退到 Qt 定时器轮询。
+        """
         self.clipboard = QApplication.clipboard()
         self.clipboard.dataChanged.connect(self._on_clipboard_change)
         self._last_clipboard_hash = None
-        self._clipboard_check_timer = QTimer(self)
-        self._clipboard_check_timer.timeout.connect(self._check_clipboard_content)
-        self._clipboard_check_timer.start(500)
+        self._monitor = ClipboardMonitor(parent=self)
+        if self._monitor.start():
+            self._monitor.sequence_changed.connect(self._check_clipboard_content)
+        else:
+            self._clipboard_check_timer = QTimer(self)
+            self._clipboard_check_timer.timeout.connect(self._check_clipboard_content)
+            self._clipboard_check_timer.start(500)
     
     def _check_clipboard_content(self):
         """定时检查剪切板内容（确保最小化时也能捕获）"""
@@ -481,10 +574,28 @@ class ClipboardWidget(QWidget):
         self._update_list_view()
     
     def _update_list_view(self):
-        """更新列表视图"""
+        """更新列表视图（应用类型筛选与搜索词）"""
+        search_text = self.search_input.text().lower()
         self.list_widget.clear()
-        
+
         for item_data in self.clipboard_data:
+            if not self._apply_history_filter(item_data):
+                continue
+            content_type = item_data.get("type", "text")
+            if search_text:
+                if content_type == "text":
+                    if search_text not in item_data.get("content", "").lower() \
+                            and search_text not in item_data.get("timestamp", "").lower():
+                        continue
+                elif content_type == "image":
+                    if (search_text not in "图片 image"
+                            and search_text not in item_data.get("timestamp", "").lower()):
+                        continue
+                elif content_type == "urls":
+                    content = " ".join(item_data.get("content", []) or []).lower()
+                    if search_text not in content \
+                            and search_text not in item_data.get("timestamp", "").lower():
+                        continue
             list_item = QListWidgetItem(self.list_widget)
             item_widget = ClipboardItemWidget(item_data, self)
             list_item.setSizeHint(item_widget.sizeHint())
@@ -660,35 +771,8 @@ class ClipboardWidget(QWidget):
                 )
     
     def _search_clipboard(self):
-        """搜索剪切板历史"""
-        search_text = self.search_input.text().lower()
-        
-        self.list_widget.clear()
-        
-        for item_data in self.clipboard_data:
-            content_type = item_data.get("type", "text")
-            match = False
-            
-            if content_type == "text":
-                content = item_data["content"].lower()
-                if search_text in content or search_text in item_data["timestamp"].lower():
-                    match = True
-            elif content_type == "image":
-                if search_text in "图片 image" or search_text in item_data["timestamp"].lower():
-                    match = True
-            elif content_type == "urls":
-                if isinstance(item_data["content"], list):
-                    content = " ".join(item_data["content"]).lower()
-                    if search_text in content or search_text in item_data["timestamp"].lower():
-                        match = True
-            
-            if match or not search_text:
-                list_item = QListWidgetItem(self.list_widget)
-                item_widget = ClipboardItemWidget(item_data, self)
-                list_item.setSizeHint(item_widget.sizeHint())
-                list_item.setData(Qt.UserRole, item_data)
-                self.list_widget.addItem(list_item)
-                self.list_widget.setItemWidget(list_item, item_widget)
+        """搜索剪切板历史（结合类型筛选）"""
+        self._update_list_view()
     
     def _add_and_pin_text(self):
         """添加并置顶文本"""

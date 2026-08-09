@@ -2,6 +2,7 @@
 
 from PyQt5.QtCore import QRegularExpression
 from PyQt5.QtGui import QSyntaxHighlighter, QTextCharFormat, QFont, QColor
+from qfluentwidgets import isDarkTheme
 
 
 class HighlighterCache:
@@ -132,6 +133,11 @@ class NotebookHighlighter(QSyntaxHighlighter):
         self._bash_rules = self._create_bash_rules()
         self._inline_fmt = HighlighterCache.get_format('inline', (255, 200, 100))
 
+    @staticmethod
+    def _number_color():
+        """数字高亮颜色：随主题反转，避免暗色刺眼/亮色看不见"""
+        return (255, 190, 80) if isDarkTheme() else (170, 110, 0)
+
     def _init_snippet_matchers(self):
         p = HighlighterCache.get_pattern
         self._snippet_matchers = [
@@ -148,11 +154,16 @@ class NotebookHighlighter(QSyntaxHighlighter):
         p = cache.get_pattern
         f = cache.get_format
         return [
-            (p(r'\b\d+(?:\.\d+)?\b'), f('base_num', (255, 255, 0))),
+            (p(r'\b\d+(?:\.\d+)?\b'), f('base_num', self._number_color())),
             (p(r'"[^"]*"'), f('base_str', (0, 255, 0))),
             (p(r"'[^']*'"), f('base_str', (0, 255, 0))),
             (p(r'#[^\n]*'), f('base_comment', (128, 128, 128), italic=True)),
         ]
+
+    def refresh_theme(self):
+        """主题切换后刷新数字高亮颜色"""
+        self._base_rules = self._create_base_rules()
+        self.rehighlight()
 
     def _create_python_rules(self):
         cache = HighlighterCache

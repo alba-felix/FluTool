@@ -656,6 +656,10 @@ class PushFluentWindow(FramelessMainWindow):
 		translate_action.triggered.connect(self._show_translator_window)
 		self._tray_menu.addAction(translate_action)
 		
+		clipboard_action = QAction("剪切板", self._tray_menu)
+		clipboard_action.triggered.connect(self._open_clipboard_from_tray)
+		self._tray_menu.addAction(clipboard_action)
+		
 		self._tray_menu.addSeparator()
 		
 		quit_action = QAction("退出程序", self._tray_menu)
@@ -783,6 +787,15 @@ class PushFluentWindow(FramelessMainWindow):
 			self.core.logger.error(f"Failed to import TranslatorWindow: {e}")
 		except Exception as e:
 			self.core.logger.error(f"Failed to show translator window: {e}")
+	
+	def _open_clipboard_from_tray(self) -> None:
+		"""从托盘打开剪切板页面"""
+		plugin_id = "clipboard"
+		if not hasattr(self, '_plugin_containers') or plugin_id not in self._plugin_containers:
+			self._show_tray_warning("剪切板插件未加载")
+			return
+		self.show_and_activate()
+		self.switchTo(self._plugin_containers[plugin_id])
 	
 	def _toggle_theme(self) -> None:
 		from qfluentwidgets import qconfig

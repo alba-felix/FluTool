@@ -80,7 +80,7 @@ class BackupManager(QObject):
             self._core.logger.warning("Data directory not found, skip backup")
             return False
         
-        backup_filename = f"flutool_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        backup_filename = f"flutool_backup_{datetime.now().strftime('%Y%m')}.zip"
         backup_file_path = backup_dir_path / backup_filename
         
         try:

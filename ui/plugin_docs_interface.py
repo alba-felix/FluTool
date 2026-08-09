@@ -71,12 +71,14 @@ PLUGIN_DOCS: Dict[str, Dict[str, Any]] = {
     "clipboard": {
         "name": "剪贴板",
         "icon": FIF.PASTE,
-        "description": "剪贴板历史记录管理",
+        "description": "剪贴板历史与图片图库管理",
         "usage": [
             "自动记录复制的内容",
             "点击历史记录快速粘贴",
-            "支持文本和图片",
-            "可固定常用内容"
+            "支持文本、图片和文件",
+            "可固定常用内容",
+            "内置图片图库：粘贴、添加、复制、另存与删除图片",
+            "图库数据兼容旧版图片助手"
         ],
         "shortcuts": ["Ctrl+Shift+V: 显示剪贴板历史"]
     },
@@ -199,18 +201,6 @@ PLUGIN_DOCS: Dict[str, Dict[str, Any]] = {
             "支持代码高亮"
         ],
         "shortcuts": ["Ctrl+Enter: 发送消息"]
-    },
-    "image_assistant": {
-        "name": "图片助手",
-        "icon": CFIF.PICTURE,
-        "description": "图片处理和转换工具",
-        "usage": [
-            "图片格式转换",
-            "图片压缩",
-            "尺寸调整",
-            "批量处理"
-        ],
-        "shortcuts": ["拖拽图片快速导入"]
     },
     "dev_tools": {
         "name": "开发工具",

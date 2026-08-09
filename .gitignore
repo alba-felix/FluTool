@@ -14,7 +14,8 @@ scripts/
 config/local_settings.ini
 tests/__pycache__/
 tests/*.log
-tests/
+tests/*
+!tests/conftest.py
 config/time_lock_data.json
 cert/
 .golutra/

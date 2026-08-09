@@ -109,6 +109,7 @@ class NotebookEditor(QWidget):
         """延迟刷新编辑器样式，避免阻塞主题切换"""
         self._editor.line_number_area.update_style()
         self._update_editor_style()
+        self._editor.highlighter.refresh_theme()
 
     def _update_editor_style(self):
         """更新编辑器样式"""

@@ -1,7 +1,7 @@
 """笔记管理插件 - 独立窗口模式"""
-# TODO: 主窗口获得焦点时自动隐藏笔记窗口（focusChanged 方案暂不稳定，后续处理）
+# 窗口切换：笔记窗口失去焦点（如点击主窗口）时自动隐藏，由 NotesWindow.focusOutEvent 处理
 
-from PyQt5.QtWidgets import QWidget, QApplication
+from PyQt5.QtWidgets import QWidget
 from PyQt5.QtCore import Qt
 from qfluentwidgets import FluentIcon as FIF
 
@@ -14,12 +14,16 @@ class NotesWindowManager:
 
     _window = None
     _main_window = None
-    _connected = False  # 是否已连接 focusChanged 信号
     _runtime = None
 
     @classmethod
     def set_main_window(cls, window):
         cls._main_window = window
+
+    @classmethod
+    def get_main_window(cls):
+        """获取主窗口引用"""
+        return cls._main_window
 
     @classmethod
     def set_runtime(cls, runtime):
@@ -33,9 +37,6 @@ class NotesWindowManager:
             from .widgets.note_window import NotesWindow
             cls._window = NotesWindow(runtime=cls._runtime or get_notes_runtime())
             cls._window.setWindowFlags(cls._window.windowFlags() | Qt.Window)
-            if not cls._connected:
-                QApplication.instance().focusChanged.connect(cls._on_focus_changed)
-                cls._connected = True
 
         if not cls._window.isVisible():
             cls._window.show()
@@ -55,25 +56,10 @@ class NotesWindowManager:
             cls._window.move(notes_x, notes_y)
 
     @classmethod
-    def _on_focus_changed(cls, old, new):
-        """全局焦点变化时，若焦点回到主窗口则隐藏笔记窗口"""
-        if cls._window is None or not cls._window.isVisible():
-            return
-        if cls._main_window is None:
-            return
-        if new is not None and new.window() is cls._main_window:
-            cls._window.hide()
-
-    @classmethod
     def close_window(cls):
-        """关闭笔记窗口并清理资源"""
-        if cls._connected:
-            try:
-                QApplication.instance().focusChanged.disconnect(cls._on_focus_changed)
-            except (TypeError, RuntimeError):
-                pass
-            cls._connected = False
+        """销毁笔记窗口并清理资源（仅插件退出时调用）"""
         if cls._window is not None:
+            cls._window.allow_close()
             cls._window.close()
             cls._window.deleteLater()
             cls._window = None

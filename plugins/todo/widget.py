@@ -333,7 +333,12 @@ class TodoReminderManager(QObject):
 
         # 强制弹窗，无论窗口状态如何
         try:
-            dialog = QDialog(None, Qt.WindowStaysOnTopHint | Qt.Dialog | Qt.WindowCloseButtonHint)
+            dialog = QDialog(None)
+            dialog.setWindowFlags(
+                Qt.WindowStaysOnTopHint | Qt.Dialog
+                | Qt.WindowCloseButtonHint | Qt.WindowTitleHint
+                | Qt.WindowSystemMenuHint
+            )
             dialog.setWindowTitle("⏰ 代办事项提醒")
             dialog.setFixedSize(450, 250)
             layout = QVBoxLayout(dialog)
@@ -392,11 +397,13 @@ class TodoReminderManager(QObject):
             layout.addLayout(btn_layout)
 
             self._style_notification_dialog(dialog)
-            
-            # 强制置顶并获取焦点
-            dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowStaysOnTopHint)
-            dialog.activateWindow()
+
+            # 强制置顶：先 show 再激活，确保托盘/失焦场景也能置顶抢到焦点
+            dialog.show()
+            dialog.setWindowState(dialog.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
             dialog.raise_()
+            dialog.activateWindow()
+            QApplication.setActiveWindow(dialog)
             
             # 播放系统提示音
             try:

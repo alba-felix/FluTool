@@ -15,6 +15,7 @@ class NotebookSidebar(QWidget):
     note_deleted = pyqtSignal(int)
     note_renamed = pyqtSignal(int, str)
     note_exported = pyqtSignal(int)
+    layout_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,7 +41,14 @@ class NotebookSidebar(QWidget):
         self._search_box.setPlaceholderText("搜索笔记")
         self._search_box.textChanged.connect(self._queue_filter)
         top_layout.addWidget(self._search_box, 1)
-        
+
+        self._layout_btn = ToolButton(FIF.VIEW)
+        self._layout_btn.setToolTip("切换布局：笔记编辑 / 表格")
+        self._layout_btn.setCheckable(True)
+        self._layout_btn.setFixedSize(32, 32)
+        self._layout_btn.toggled.connect(self.layout_toggled.emit)
+        top_layout.addWidget(self._layout_btn)
+
         self._new_btn = ToolButton(CFIF.NOTEBOOK)
         self._new_btn.setToolTip("新建笔记")
         self._new_btn.setFixedSize(32, 32)

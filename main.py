@@ -9,7 +9,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 import time
 import traceback
 from pathlib import Path
-from PyQt5.QtCore import Qt, QObject
+from PyQt5.QtCore import Qt, QObject, QTimer
 from PyQt5.QtNetwork import QLocalSocket, QLocalServer
 from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 from PyQt5.QtGui import QIcon
@@ -71,8 +71,8 @@ class SingleInstance(QObject):
             print(f"[SingleInstance] Error checking instance: {e}")
             return False
 
-    def activate_existing_instance(self) -> bool:
-        """尝试激活已有实例"""
+    def activate_existing_instance(self, data: str = "activate") -> bool:
+        """尝试激活已有实例，可附带数据（如 filecomment:C:\\path）"""
         if not self._is_frozen:
             return False
 
@@ -80,7 +80,8 @@ class SingleInstance(QObject):
             self._socket = QLocalSocket()
             self._socket.connectToServer(_server_name)
             if self._socket.waitForConnected(50):
-                self._socket.write(b"activate")
+                payload = data.encode("utf-8") if isinstance(data, str) else data
+                self._socket.write(payload)
                 self._socket.flush()
                 self._socket.waitForBytesWritten(50)
                 self._socket.disconnectFromServer()
@@ -127,19 +128,63 @@ def show_error_and_exit(title: str, message: str, exit_code: int = 1) -> int:
     return exit_code
 
 
-def _setup_tooltip_style():
+def _setup_global_styles():
+    """设置应用级全局样式（工具提示 + 滚动条），随主题刷新"""
     app = QApplication.instance()
     if app is None:
         return
-    app.setStyleSheet("""
-        QToolTip {
-            background-color: #2d2d2d;
-            color: #e0e0e0;
-            border: 1px solid #3d3d3d;
+
+    from qfluentwidgets import isDarkTheme
+
+    dark = isDarkTheme()
+    scroll_handle = "#4d4d4d" if dark else "#c0c0c0"
+    scroll_handle_hover = "#5f5f5f" if dark else "#a8a8a8"
+    tooltip_bg = "#2d2d2d" if dark else "#ffffff"
+    tooltip_fg = "#e0e0e0" if dark else "#1f1f1f"
+    tooltip_border = "#3d3d3d" if dark else "#d0d0d0"
+
+    app.setStyleSheet(f"""
+        QToolTip {{
+            background-color: {tooltip_bg};
+            color: {tooltip_fg};
+            border: 1px solid {tooltip_border};
             border-radius: 4px;
             padding: 4px 8px;
             font-size: 12px;
-        }
+        }}
+        QScrollBar {{
+            background: transparent;
+            margin: 2px;
+        }}
+        QScrollBar:vertical {{
+            width: 10px;
+        }}
+        QScrollBar:horizontal {{
+            height: 10px;
+        }}
+        QScrollBar::handle {{
+            background: {scroll_handle};
+            border-radius: 5px;
+            min-height: 30px;
+            min-width: 30px;
+        }}
+        QScrollBar::handle:hover {{
+            background: {scroll_handle_hover};
+        }}
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {{
+            height: 0px;
+        }}
+        QScrollBar::add-line:horizontal,
+        QScrollBar::sub-line:horizontal {{
+            width: 0px;
+        }}
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical,
+        QScrollBar::add-page:horizontal,
+        QScrollBar::sub-page:horizontal {{
+            background: transparent;
+        }}
     """)
 
 
@@ -152,12 +197,22 @@ def main():
     # 检测 --minimized 参数（开机自启传入）
     _start_minimized = "--minimized" in sys.argv
 
+    # 检测 --filecomment <路径> 参数（资源管理器右键菜单传入）
+    _filecomment_path = None
+    if "--filecomment" in sys.argv:
+        idx = sys.argv.index("--filecomment")
+        if len(sys.argv) > idx + 1:
+            _filecomment_path = sys.argv[idx + 1]
+
     # 单实例检测
     try:
         single_instance = SingleInstance()
         if single_instance.is_running():
             print("FluTool is already running, trying to activate...")
-            if single_instance.activate_existing_instance():
+            if _filecomment_path:
+                # 已运行实例：转发路径让其弹出浮窗
+                single_instance.activate_existing_instance(f"filecomment:{_filecomment_path}")
+            elif single_instance.activate_existing_instance():
                 print("Activation request sent to existing instance")
             else:
                 print("Cannot activate existing instance")
@@ -180,13 +235,17 @@ def main():
         # 设置全局字体，避免 Qt 回退到 Fixedsys 导致 DirectWrite 警告
         from PyQt5.QtGui import QFont
         app.setFont(QFont("Microsoft YaHei", 9))
+        # 托盘常驻应用：窗口全部关闭（如提醒弹窗）不让应用自动退出，
+        # 退出统一走托盘菜单 / _on_real_close
+        app.setQuitOnLastWindowClosed(False)
     except Exception as e:
         return show_error_and_exit("启动失败", f"无法创建应用程序: {e}")
 
     try:
         setThemeColor("#0078d4")
         setTheme(Theme.DARK)
-        _setup_tooltip_style()
+        _setup_global_styles()
+        qconfig.themeChanged.connect(lambda: _setup_global_styles())
     except Exception as e:
         print(f"[main] Theme setup failed: {e}")
 
@@ -214,6 +273,21 @@ def main():
         traceback.print_exc()
         return show_error_and_exit("界面加载失败", f"无法创建主窗口:\n{e}")
 
+    def _open_filecomment(path: str) -> None:
+        """让 filecomment 插件弹出指定文件夹的备注浮窗"""
+        if not core:
+            return
+        plugin = core.plugin_manager.get_plugin("filecomment")
+        if plugin is None:
+            return
+        try:
+            plugin.open_comment(path)
+        except Exception as e:
+            core.logger.error(f"filecomment open failed: {e}")
+
+    # 右键菜单/单实例转发的路径：插件注册完成后弹出浮窗
+    _filecomment_path_local = _filecomment_path
+
     # 设置单实例激活回调
     def on_socket_connection():
         if not single_instance._server:
@@ -231,6 +305,12 @@ def main():
             if data == b"activate" and window:
                 window.show_and_activate()
                 socket.write(b"activated")
+                socket.flush()
+            elif data.startswith(b"filecomment:") and window:
+                window.show_and_activate()
+                path = data[len(b"filecomment:"):].decode("utf-8", errors="replace")
+                _open_filecomment(path)
+                socket.write(b"ok")
                 socket.flush()
         except Exception as e:
             print(f"[main] Socket read error: {e}")
@@ -278,6 +358,10 @@ def main():
     except Exception as e:
         core.logger.error(f"Failed to show window: {e}")
         return show_error_and_exit("启动失败", f"无法显示主窗口: {e}")
+
+    # 右键菜单传入的文件夹路径：延迟到事件循环就绪后弹浮窗
+    if _filecomment_path_local:
+        QTimer.singleShot(400, lambda: _open_filecomment(_filecomment_path_local))
 
     # 最小化启动：检测 --minimized 参数（开机自启时由 set_auto_start 注入）
     try:

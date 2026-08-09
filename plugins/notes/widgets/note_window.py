@@ -1,4 +1,4 @@
-"""笔记独立窗口 - QDialog 版本"""
+"""笔记独立窗口 - QWidget 版本"""
 
 from typing import Optional, List
 from PyQt5.QtWidgets import (
@@ -23,6 +23,7 @@ from ..models.note import Note
 from ..services.category_service import CategoryService
 from ..services.note_service import NoteService
 from .note_card import NoteCard
+from .table_grid import TableGrid
 
 
 class ScrollableNavButton(NavigationWidget):
@@ -371,7 +372,7 @@ class NoteListWidget(QWidget):
         self.scroll_layout.insertWidget(0, empty_widget)
 
 
-class NotesWindow(QDialog):
+class NotesWindow(QWidget):
     """笔记管理独立窗口"""
 
     NAV_ALL = "all"
@@ -380,9 +381,10 @@ class NotesWindow(QDialog):
 
     def __init__(self, parent=None, runtime=None):
         super().__init__(parent)
+        self._allow_close = False
         self._runtime = runtime or get_notes_runtime()
         self.setWindowTitle("笔记管理")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        self.setWindowFlags(Qt.Window)
         self.resize(1100, 700)
         self.setMinimumSize(700, 500)
         self.setAttribute(Qt.WA_StyledBackground)
@@ -399,6 +401,44 @@ class NotesWindow(QDialog):
         self._update_window_background()
         self._connect_signals()
         self._load_notes()
+
+    def focusOutEvent(self, event):
+        """失去焦点（如点击主窗口）时把笔记窗口移到主窗口下方，保持可见"""
+        super().focusOutEvent(event)
+        if self._allow_close:
+            return
+        QTimer.singleShot(0, self._move_below_main_window)
+
+    def _is_focus_inside(self) -> bool:
+        """当前焦点是否在本窗口或其子窗口内"""
+        focus_widget = QApplication.focusWidget()
+        if focus_widget is None:
+            return True
+        current = focus_widget.window()
+        while current is not None:
+            if current is self:
+                return True
+            current = current.parentWidget()
+        return False
+
+    def _move_below_main_window(self):
+        """把笔记窗口移到主窗口正下方（屏幕放不下则移到上方）"""
+        if self._allow_close or not self.isVisible():
+            return
+        if self._is_focus_inside():
+            return
+        from .. import NotesWindowManager
+        mw = NotesWindowManager.get_main_window()
+        if mw is None or not mw.isVisible():
+            return
+        notes_geom = self.geometry()
+        mw_geom = mw.geometry()
+        x = mw_geom.x() + (mw_geom.width() - notes_geom.width()) // 2
+        y = mw_geom.y() + mw_geom.height() + 8
+        screen_rect = QApplication.primaryScreen().availableGeometry()
+        if y + notes_geom.height() > screen_rect.bottom():
+            y = mw_geom.y() - notes_geom.height() - 8
+        self.move(x, y)
 
     def _update_window_background(self):
         """根据当前主题设置窗口背景色"""
@@ -436,10 +476,19 @@ class NotesWindow(QDialog):
 
         self.search_input = SearchLineEdit()
         self.search_input.setPlaceholderText("搜索笔记...")
-        self.search_input.setFixedWidth(220)
+        self.search_input.setFixedWidth(160)
         self.search_input.searchSignal.connect(self._on_search)
         self.search_input.clearSignal.connect(self._on_clear_search)
         toolbar_layout.addWidget(self.search_input)
+
+        # 布局切换：卡片 | 表格
+        self._layout_switch = PushButton("表格")
+        self._layout_switch.setFixedSize(64, 32)
+        self._layout_switch.setCheckable(True)
+        self._layout_switch.setIcon(FIF.VIEW)
+        self._layout_switch.setToolTip("切换到表格视图（迷你 Excel）")
+        self._layout_switch.clicked.connect(self._toggle_layout)
+        toolbar_layout.addWidget(self._layout_switch)
 
         self.manage_category_btn = PushButton("分类管理")
         self.manage_category_btn.setFixedHeight(32)
@@ -486,7 +535,15 @@ class NotesWindow(QDialog):
         self.note_list.note_favorite_clicked.connect(self._toggle_favorite)
         self.note_list.note_archive_clicked.connect(self._toggle_archive)
         self.note_list.note_content_updated.connect(self._on_note_content_updated)
-        content_layout.addWidget(self.note_list, 1)
+
+        # 内容堆叠：卡片视图(0) / 表格视图(1)
+        self._view_stack = QStackedWidget()
+        self._view_stack.addWidget(self.note_list)
+
+        self.table_grid = TableGrid(self._note_service)
+        self._view_stack.addWidget(self.table_grid)
+
+        content_layout.addWidget(self._view_stack, 1)
 
         main_layout.addWidget(content, 1)
 
@@ -573,6 +630,19 @@ class NotesWindow(QDialog):
     def _on_clear_search(self):
         self._search_keyword = ""
         self._load_notes()
+
+    def _toggle_layout(self):
+        """切换 卡片/表格 布局"""
+        is_table = self._view_stack.currentIndex() == 1
+        if is_table:
+            self._view_stack.setCurrentIndex(0)
+            self._layout_switch.setText("表格")
+            self._layout_switch.setToolTip("切换到表格视图（迷你 Excel）")
+        else:
+            self._view_stack.setCurrentIndex(1)
+            self._layout_switch.setText("卡片")
+            self._layout_switch.setToolTip("切换到卡片视图")
+            self.table_grid._refresh_table_list()
 
     def _load_notes(self):
         notes = []
@@ -752,7 +822,20 @@ class NotesWindow(QDialog):
         dialog.exec()
 
     def closeEvent(self, event):
-        """关闭窗口时清理信号连接，避免内存泄漏"""
+        """关闭窗口时默认仅隐藏（保留信号连接），只在插件退出时真正销毁"""
+        if self._allow_close:
+            self._cleanup_signals()
+            event.accept()
+        else:
+            event.ignore()
+            self.hide()
+
+    def allow_close(self) -> None:
+        """允许真正关闭窗口（由 NotesWindowManager 在销毁前调用）"""
+        self._allow_close = True
+
+    def _cleanup_signals(self) -> None:
+        """清理事件总线信号连接，避免内存泄漏"""
         try:
             self._event_bus.note_created.disconnect(self._on_note_changed)
             self._event_bus.note_updated.disconnect(self._on_note_changed)
@@ -767,4 +850,3 @@ class NotesWindow(QDialog):
             pass
         if hasattr(self, '_theme_refresh_cb'):
             self._theme_manager.unregister_callback(self._theme_refresh_cb)
-        event.accept()

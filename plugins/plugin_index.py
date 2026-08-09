@@ -17,7 +17,6 @@ BUILTIN_PLUGIN_MANIFESTS = [
     {"package": "dev_tools", "id": "dev_tools", "priority": 8.3, "module": "plugins.dev_tools"},
     {"package": "clipboard", "id": "clipboard", "priority": 10, "module": "plugins.clipboard"},
     {"package": "todo", "id": "todo", "priority": 11, "module": "plugins.todo"},
-    {"package": "image_assistant", "id": "image_assistant", "priority": 15, "module": "plugins.image_assistant"},
     {"package": "color_palette", "id": "color_palette", "priority": 13, "module": "plugins.color_palette"},
     {"package": "script_manager", "id": "script_manager", "priority": 14, "module": "plugins.script_manager"},
     {"package": "app_launcher", "id": "app_launcher", "priority": 12, "module": "plugins.app_launcher"},

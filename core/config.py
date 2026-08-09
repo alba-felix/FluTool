@@ -15,3 +15,8 @@ class AppConfig(QConfig):
     
     auto_backup_enabled = ConfigItem("Backup", "AutoBackupEnabled", False, BoolValidator())
     auto_backup_path = ConfigItem("Backup", "AutoBackupPath", "", None)
+
+    filecomment_hotkey = ConfigItem("FileComment", "Hotkey", "alt+space", None)
+    filecomment_data_path = ConfigItem("FileComment", "DataPath", "", None)
+    filecomment_autostart = ConfigItem("FileComment", "AutoStart", False, BoolValidator())
+    filecomment_context_menu = ConfigItem("FileComment", "ContextMenu", False, BoolValidator())

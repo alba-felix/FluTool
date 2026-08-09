@@ -2,7 +2,9 @@
 
 from typing import Optional, List, Dict, Any
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QFileDialog
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QStackedWidget, QFileDialog
+)
 from qfluentwidgets import (
     LineEdit, ComboBox, SpinBox, PushButton, ToolButton, 
     SearchLineEdit, InfoBar, InfoBarPosition, MessageBox, MessageBoxBase
@@ -18,6 +20,8 @@ from .toolbar import NotebookToolBar
 from .editor import NotebookEditor
 from .quick_replace import QuickReplacePanel
 from .text_processor import TextProcessor
+from .table_grid import TableGrid
+from .table_service import TableService
 
 
 class NotebookWidget(QWidget):
@@ -31,6 +35,7 @@ class NotebookWidget(QWidget):
         self.core = core
         self.PLUGIN_ID = "notebook"
         self.service = NotebookService(self.PLUGIN_ID)
+        self.table_service = TableService(self.PLUGIN_ID, self.service.db)
         self._current_note_id = None
         self._quick_replace_visible = False
         self._setup_ui()
@@ -101,6 +106,9 @@ class NotebookWidget(QWidget):
             }
         """)
         self._left_splitter.addWidget(self._sidebar)
+
+        self._view_stack = QStackedWidget()
+        self._view_stack.setObjectName("notebookViewStack")
 
         self._editor_container = QWidget()
         self._editor_container.setObjectName("editorContainer")
@@ -192,7 +200,12 @@ class NotebookWidget(QWidget):
         self._editor_scroll_area.setWidget(self._editor)
         self._editor_layout.addWidget(self._editor_scroll_area)
 
-        self._left_splitter.addWidget(self._editor_container)
+        self._view_stack.addWidget(self._editor_container)
+
+        self._table_grid = TableGrid(self.table_service, self)
+        self._view_stack.addWidget(self._table_grid)
+
+        self._left_splitter.addWidget(self._view_stack)
         self._left_splitter.setStretchFactor(0, 0)
         self._left_splitter.setStretchFactor(1, 1)
         self._left_splitter.setSizes([250, 800])
@@ -219,6 +232,7 @@ class NotebookWidget(QWidget):
         self._sidebar.note_deleted.connect(self._delete_note_by_id)
         self._sidebar.note_renamed.connect(self._rename_note)
         self._sidebar.note_exported.connect(self._export_note_by_id)
+        self._sidebar.layout_toggled.connect(self._toggle_layout)
 
         self._toolbar.new_note_signal.connect(self._create_new_note)
         self._toolbar.save_note_signal.connect(self._save_note)
@@ -249,13 +263,34 @@ class NotebookWidget(QWidget):
         self._current_note_id = None
         self._editor.clear()
         self.load_data()
+
+    def _toggle_layout(self, grid_mode: bool):
+        """切换布局：False 为笔记编辑，True 为表格布局2"""
+        if grid_mode:
+            self._view_stack.setCurrentWidget(self._table_grid)
+            self._table_grid._refresh_table_list()
+        else:
+            self._view_stack.setCurrentWidget(self._editor_container)
+            self._sidebar._layout_btn.setChecked(False)
+        self._sync_sidebar_for_layout()
+
+    def _sync_sidebar_for_layout(self):
+        """表格布局下仅显示表格，避免普通笔记与表格混淆"""
+        if self._view_stack.currentWidget() is self._table_grid:
+            tables = self.table_service.list_tables()
+            self._sidebar.load_notes(tables)
+        else:
+            self._sidebar.load_notes(self.service.list_notes())
     
     def load_data(self):
         """加载数据"""
-        self._sidebar.load_notes(self.service.list_notes())
+        self._sync_sidebar_for_layout()
     
     def _load_note(self, note_id: int):
         """加载笔记"""
+        if self._view_stack.currentWidget() is self._table_grid:
+            self._select_table_in_grid(note_id)
+            return
         note = self.service.get_note(note_id)
         if not note:
             return
@@ -264,6 +299,16 @@ class NotebookWidget(QWidget):
         self._toolbar.set_note_type(note.get('note_type', 'markdown'))
         self._editor._editor.setLineWrapMode(1)
         self._toolbar.set_wrap_state(True)
+
+    def _select_table_in_grid(self, note_id: int):
+        """在表格布局中选中指定表格"""
+        if not self.table_service.is_table(self.service.get_note(note_id)):
+            return
+        combo = self._table_grid.table_combo
+        for idx in range(combo.count()):
+            if combo.itemData(idx) == note_id:
+                combo.setCurrentIndex(idx)
+                break
     
     def _create_new_note(self):
         """创建新笔记"""
