@@ -27,7 +27,7 @@ from qfluentwidgets import (
     setTheme, Theme, qconfig,
 )
 
-from plugins.text_tools.page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 from .skill_manager import (
     Skill, Agent, Preset, Workspace, SkillService,
     DEFAULT_SKILLS_ROOT, SYNC_MODE_COPY, SYNC_MODE_SYMLINK,

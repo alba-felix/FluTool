@@ -20,7 +20,7 @@ from qfluentwidgets import (
     StrongBodyLabel, SubtitleLabel, MessageBoxBase
 )
 
-from plugins.text_tools.page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 
 
 class SearchResultPopup(MessageBoxBase):

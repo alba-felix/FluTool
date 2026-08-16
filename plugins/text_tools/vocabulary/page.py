@@ -13,7 +13,7 @@ from qfluentwidgets import (
     isDarkTheme, qconfig,
 )
 
-from .page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 from .vocabulary_service import VocabularyService
 
 
@@ -1018,5 +1018,5 @@ class VocabularyPage(TabPageInterface):
     page_name = "单词背诵"
 
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return VocabularyWidget(parent)

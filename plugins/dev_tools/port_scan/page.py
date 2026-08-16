@@ -15,7 +15,7 @@ from qfluentwidgets import (
     StrongBodyLabel, isDarkTheme, qconfig
 )
 
-from plugins.text_tools.page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 
 
 class NetstatThread(QThread):

@@ -1,5 +1,5 @@
 from storage import DatabaseManager
-from plugins.text_tools.translator_data_service import TranslatorDataService
+from plugins.text_tools.translator.translator_data_service import TranslatorDataService
 
 
 def reset_database_singleton():

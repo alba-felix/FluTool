@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from qfluentwidgets import PushButton, TextEdit, StrongBodyLabel, InfoBar, InfoBarPosition
 
-from .page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 
 
 class HexConverterPage(TabPageInterface):
@@ -17,7 +17,7 @@ class HexConverterPage(TabPageInterface):
     page_name = "Hex 转换"
 
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return HexConverterWidget(parent)
 
 

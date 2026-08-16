@@ -15,7 +15,7 @@ from qfluentwidgets import (
     CardWidget, CheckBox, RoundMenu
 )
 
-from .page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 from .translator_data_service import TranslatorDataService
 from .translation_service import get_translation_service, reset_translation_service
 
@@ -846,5 +846,5 @@ class TranslatorPage(TabPageInterface):
     page_icon = FIF.LANGUAGE
 
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return TranslatorWidget(parent)

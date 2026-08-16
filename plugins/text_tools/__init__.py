@@ -18,23 +18,10 @@ from qfluentwidgets import (
 from core import PluginInterface
 
 from .page_interface import TabPageInterface
-from .translator_manager import TranslatorPage
-from .hex_converter import HexConverterPage
-from .vocabulary_page import VocabularyPage
-from .learning_card_page import LearningCardPage
-
-
-class TabPageInterface:
-    """标签页接口 - 所有标签页必须实现此接口"""
-    
-    page_id: str = ""
-    page_name: str = ""
-    page_icon: Optional[FIF] = None
-    
-    @classmethod
-    def create(cls, parent=None) -> QWidget:
-        """创建标签页内容"""
-        raise NotImplementedError
+from .translator import TranslatorPage
+from .hex import HexConverterPage
+from .vocabulary import VocabularyPage
+from .learning_card import LearningCardPage
 
 
 class OverflowPopup(QWidget):

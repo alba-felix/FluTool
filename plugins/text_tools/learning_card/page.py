@@ -13,7 +13,7 @@ from qfluentwidgets import (
     isDarkTheme, qconfig,
 )
 
-from .page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 from .learning_card_service import LearningCardService
 
 
@@ -996,5 +996,5 @@ class LearningCardPage(TabPageInterface):
     page_name = "知识卡片"
 
     @classmethod
-    def create(cls, parent=None) -> QWidget:
+    def create(cls, parent=None, core=None) -> QWidget:
         return LearningCardWidget(parent)

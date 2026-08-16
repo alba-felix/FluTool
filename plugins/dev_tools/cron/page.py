@@ -14,7 +14,7 @@ from qfluentwidgets import (
     qconfig, isDarkTheme
 )
 
-from plugins.text_tools.page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 
 
 class CronFieldWidget(QFrame):

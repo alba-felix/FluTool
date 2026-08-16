@@ -6,7 +6,7 @@ from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QFont, QSyntaxHighlighte
 from PyQt5.QtSvg import QSvgRenderer
 from qfluentwidgets import PushButton, PrimaryPushButton, InfoBar, InfoBarPosition, isDarkTheme, qconfig, TextEdit, StrongBodyLabel
 
-from plugins.text_tools.page_interface import TabPageInterface
+from ..page_interface import TabPageInterface
 
 
 class SvgHighlighter(QSyntaxHighlighter):

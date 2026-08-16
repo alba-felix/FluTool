@@ -14,12 +14,12 @@ from qfluentwidgets import (
 )
 
 from core import PluginInterface
-from plugins.text_tools.page_interface import TabPageInterface
-from .cron_tool import CronToolPage
-from .deepseek_tool import DeepSeekToolPage
-from .svg_viewer_tool import SvgViewerTool
-from .port_scan_tool import PortScanToolPage
-from .skill_tool import SkillToolPage
+from .page_interface import TabPageInterface
+from .cron import CronToolPage
+from .deepseek import DeepSeekToolPage
+from .svg_viewer import SvgViewerTool
+from .port_scan import PortScanToolPage
+from .skill import SkillToolPage
 
 
 class OverflowPopup(QWidget):
