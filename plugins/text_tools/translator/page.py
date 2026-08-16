@@ -12,12 +12,99 @@ from qfluentwidgets import (
     PushButton, TransparentToolButton, StrongBodyLabel,
     ComboBox, LineEdit, InfoBar, InfoBarPosition,
     TextEdit as FluentTextEdit, SegmentedWidget, ListWidget,
-    CardWidget, CheckBox, RoundMenu
+    CardWidget, CheckBox, RoundMenu,
+    MessageBoxBase, PasswordLineEdit, SubtitleLabel,
+    BodyLabel, CaptionLabel, TransparentPushButton
 )
 
+from core.api_key_manager import get_api_key_manager
 from ..page_interface import TabPageInterface
 from .translator_data_service import TranslatorDataService
 from .translation_service import get_translation_service, reset_translation_service
+
+
+class ApiKeySettingDialog(MessageBoxBase):
+    """在线翻译密钥设置对话框 - 密钥加密保存在本地 config/local_api_key.json"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._manager = get_api_key_manager()
+        self._saved = False  # 标记本次会话是否发生保存/清除，供调用方刷新服务
+
+        self.yesButton.setText("保存")
+        self.cancelButton.setText("取消")
+        self.widget.setMinimumWidth(420)
+
+        title_label = SubtitleLabel("在线翻译密钥设置")
+        tip_label = CaptionLabel(
+            "填写有道开放平台的应用 ID 与密钥后启用在线翻译，"
+            "密钥将以加密形式保存在本地 config/local_api_key.json"
+        )
+        tip_label.setWordWrap(True)
+
+        key_label = BodyLabel("应用 ID (App Key)")
+        self._app_key_edit = LineEdit()
+        self._app_key_edit.setPlaceholderText("有道开放平台的应用 ID")
+        self._app_key_edit.setText(self._manager.get("youdao_app_key"))
+
+        secret_label = BodyLabel("应用密钥 (App Secret)")
+        self._app_secret_edit = PasswordLineEdit()
+        self._app_secret_edit.setPlaceholderText("有道开放平台的应用密钥")
+        self._app_secret_edit.setText(self._manager.get("youdao_app_secret"))
+
+        self._status_label = CaptionLabel()
+        self._update_status_label()
+
+        self._clear_btn = TransparentPushButton(FIF.DELETE, "清除已保存密钥")
+        self._clear_btn.clicked.connect(self._on_clear)
+
+        for w in (title_label, tip_label, key_label, self._app_key_edit,
+                  secret_label, self._app_secret_edit, self._status_label,
+                  self._clear_btn):
+            self.viewLayout.addWidget(w)
+
+    def _update_status_label(self) -> None:
+        """刷新配置状态提示"""
+        configured = (self._manager.has_key("youdao_app_key")
+                      and self._manager.has_key("youdao_app_secret"))
+        if configured:
+            self._status_label.setText("当前状态：已配置，在线翻译可用")
+        else:
+            self._status_label.setText("当前状态：未配置，仅本地词典可用")
+
+    def validate(self) -> bool:
+        """保存前校验：两项必填，通过后写入加密存储"""
+        app_key = self._app_key_edit.text().strip()
+        app_secret = self._app_secret_edit.text().strip()
+        if not app_key or not app_secret:
+            InfoBar.warning(title="提示", content="应用 ID 和密钥均不能为空",
+                            orient=Qt.Horizontal, isClosable=True,
+                            position=InfoBarPosition.TOP, duration=2000, parent=self)
+            return False
+
+        self._manager.set("youdao_app_key", app_key)
+        self._manager.set("youdao_app_secret", app_secret)
+        self._saved = True
+        InfoBar.success(title="密钥已保存", content="在线翻译服务已启用",
+                        orient=Qt.Horizontal, isClosable=True,
+                        position=InfoBarPosition.TOP, duration=2000, parent=self)
+        return True
+
+    def _on_clear(self) -> None:
+        """清除已保存的密钥并停用在线翻译"""
+        self._manager.remove("youdao_app_key")
+        self._manager.remove("youdao_app_secret")
+        self._app_key_edit.clear()
+        self._app_secret_edit.clear()
+        self._saved = True
+        self._update_status_label()
+        InfoBar.success(title="已清除", content="在线翻译已停用，仅本地词典可用",
+                        orient=Qt.Horizontal, isClosable=True,
+                        position=InfoBarPosition.TOP, duration=2000, parent=self)
+
+    def is_saved(self) -> bool:
+        """本次会话是否发生保存/清除（调用方据此刷新翻译服务）"""
+        return self._saved
 
 
 class TranslatePanel(QWidget):
@@ -65,6 +152,12 @@ class TranslatePanel(QWidget):
         lang_layout.addWidget(self._target_lang_combo)
 
         lang_layout.addStretch()
+
+        self._api_key_btn = TransparentToolButton(FIF.SETTING, self)
+        self._api_key_btn.setFixedSize(28, 28)
+        self._api_key_btn.setToolTip("在线翻译密钥设置")
+        self._api_key_btn.clicked.connect(self._on_open_api_key_dialog)
+        lang_layout.addWidget(self._api_key_btn)
 
         self._translate_btn = PushButton("翻译", self)
         self._translate_btn.setFixedHeight(32)
@@ -140,6 +233,13 @@ class TranslatePanel(QWidget):
         splitter.setSizes([400, 400])
 
         layout.addWidget(splitter, 1)
+
+    def _on_open_api_key_dialog(self) -> None:
+        """打开密钥设置对话框，保存/清除后刷新翻译服务"""
+        dialog = ApiKeySettingDialog(self)
+        dialog.exec()
+        if dialog.is_saved():
+            self._translation_service = reset_translation_service()
 
     def _on_swap_lang(self) -> None:
         source_idx = self._source_lang_combo.currentIndex()
