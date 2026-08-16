@@ -187,7 +187,7 @@ class TableGrid(QWidget):
             self.table_combo.blockSignals(True)
             self.table_combo.clear()
             for note in tables:
-                self.table_combo.addItem(note.get("title") or "表格", note["id"])
+                self.table_combo.addItem(note.get("title") or "表格", userData=note["id"])
         finally:
             self.table_combo.blockSignals(False)
             self._loading = False

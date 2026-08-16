@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem,
-    QPushButton, QLineEdit, QWidget
+    QPushButton, QWidget
 )
 from PyQt5.QtCore import Qt
 from qfluentwidgets import (
@@ -134,13 +134,14 @@ class CategoryManagerDialog(MessageBoxBase):
         if not category:
             return
 
-        from qfluentwidgets import MessageBox
+        from qfluentwidgets import MessageBox, LineEdit
         dialog = MessageBox('\u91cd\u547d\u540d\u5206\u7c7b', '\u8bf7\u8f93\u5165\u65b0\u7684\u5206\u7c7b\u540d\u79f0:', self)
         dialog.yesButton.setText('\u786e\u5b9a')
         dialog.cancelButton.setText('\u53d6\u6d88')
 
         input_layout = QHBoxLayout()
-        input_edit = QLineEdit(category.name)
+        input_edit = LineEdit()
+        input_edit.setText(category.name)
         input_layout.addWidget(input_edit)
         dialog.textLayout.addLayout(input_layout)
 

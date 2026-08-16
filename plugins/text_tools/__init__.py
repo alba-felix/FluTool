@@ -300,9 +300,9 @@ class TabManager:
         """获取所有已注册的标签页"""
         return self._pages.copy()
 
-    def create_all(self, parent=None) -> List[QWidget]:
+    def create_all(self, parent=None, core=None) -> List[QWidget]:
         """创建所有标签页内容"""
-        return [page.create(parent) for page in self._pages]
+        return [page.create(parent, core=core) for page in self._pages]
 
 
 class SubPluginWidget(QWidget):
@@ -374,7 +374,7 @@ class SubPluginWidget(QWidget):
     def _init_tabs(self) -> None:
         """初始化所有已注册的标签页"""
         pages = self._tab_manager.get_pages()
-        widgets = self._tab_manager.create_all(self)
+        widgets = self._tab_manager.create_all(self, core=self.core)
         
         for page_class, widget in zip(pages, widgets):
             self.tab_bar.addTab(page_class.page_id, page_class.page_name)

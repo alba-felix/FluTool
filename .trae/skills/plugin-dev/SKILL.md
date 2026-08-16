@@ -19,6 +19,68 @@ plugins/
 
 不要在 `plugins/__init__.py` 中导入新插件。该文件必须保持轻量，否则会破坏懒加载。
 
+### 1.2 多页面（子插件）插件
+
+需要容纳多个独立工具的插件（如 `text_tools`、`dev_tools`）使用"子插件"模式：
+注册表 + 标签页接口 + 标签栏容器，每个子工具一个文件。
+
+参考实现：`plugins/text_tools/__init__.py`（标签页管理 + 溢出处理）。
+
+```
+plugins/text_tools/
+├── __init__.py            # Plugin + SubPluginWidget + CustomTabBar + TabManager
+├── page_interface.py      # TabPageInterface 页面契约
+├── hex_converter.py       # 子工具页面 1
+├── vocabulary_page.py     # 子工具页面 2（数据走 storage.DatabaseManager）
+└── ...
+```
+
+#### 页面契约（page_interface.py）
+
+```python
+class TabPageInterface:
+    """所有标签页必须实现此接口"""
+    page_id: str = ""
+    page_name: str = ""
+    page_icon: Optional[FIF] = None
+
+    @classmethod
+    def create(cls, parent=None, core=None) -> QWidget:
+        """创建标签页内容。core 为 AppCore 实例，需要访问核心服务时使用"""
+        raise NotImplementedError
+```
+
+#### 子工具页面实现
+
+```python
+class MyToolPage(TabPageInterface):
+    page_id = "my_tool"
+    page_name = "我的工具"
+
+    @classmethod
+    def create(cls, parent=None, core=None) -> QWidget:
+        widget = MyToolWidget(parent)
+        widget.core = core          # 需要核心服务时保存
+        return widget
+```
+
+#### 注册与装配（__init__.py 的 Plugin.initialize）
+
+```python
+def initialize(self, core) -> None:
+    self.core = core
+    self._tab_manager = TabManager()
+    self._tab_manager.register(MyToolPage)   # 每新增一个子工具注册一行
+    self._tab_manager.register(OtherToolPage)
+    self._widget = None
+```
+
+`SubPluginWidget` 使用 `TabManager.create_all(parent, core=core)` 创建所有页面，
+`CustomTabBar` 渲染标签（溢出自动折叠为"更多"弹出菜单），`QStackedWidget` 切换内容。
+
+注意：`TabManager.create_all()` 必须把 `core` 传给每个页面（`page.create(parent, core=core)`），
+否则页面里的 `core` 为 None，无法访问核心服务。
+
 ### 1.2 插件基本结构
 
 ```python

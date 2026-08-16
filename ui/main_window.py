@@ -279,6 +279,7 @@ class ScrollableNavigationPanel(QWidget):
 		self._bottom_layout.setAlignment(Qt.AlignBottom)
 		
 		self._scroll_area.setWidget(self._scroll_widget)
+		self._scroll_area.verticalScrollBar().valueChanged.connect(self._check_overflow)
 		
 		self.vBoxLayout.addWidget(self._menu_btn)
 		self.vBoxLayout.addWidget(self._up_btn)
@@ -354,6 +355,21 @@ class ScrollableNavigationPanel(QWidget):
 			self._items[self._currentKey].setSelected(False)
 		self._currentKey = routeKey
 		self._items[routeKey].setSelected(True)
+		self._ensure_item_visible(routeKey)
+		self._check_overflow()
+
+	def _ensure_item_visible(self, routeKey: str):
+		"""滚动导航区，确保当前选中项位于可视视口内"""
+		btn = self._items.get(routeKey)
+		if btn is None or btn.parent() is not self._scroll_widget:
+			return
+		bar = self._scroll_area.verticalScrollBar()
+		y = btn.mapTo(self._scroll_widget, QPoint(0, 0)).y()
+		viewport_h = self._scroll_area.viewport().height()
+		if y < bar.value():
+			bar.setValue(y)
+		elif y + btn.height() > bar.value() + viewport_h:
+			bar.setValue(y + btn.height() - viewport_h)
 	
 	def currentItem(self):
 		return self._items.get(self._currentKey)
@@ -428,41 +444,44 @@ class ScrollableNavigationPanel(QWidget):
 			QTimer.singleShot(50, self._update_overflow)
 			return
 		
-		if widget_height > viewport_height:
-			bar = self._scroll_area.verticalScrollBar()
+		bar = self._scroll_area.verticalScrollBar()
+		self._update_overflow_items()
+		
+		# 有溢出项或有可滚动内容时才显示"更多"按钮
+		if self._overflow_items or widget_height > viewport_height:
 			self._up_btn.setVisible(bar.value() > 0)
-			# self._down_btn.setVisible(bar.value() < bar.maximum())
 			self._more_btn.show()
 		else:
 			self._up_btn.hide()
-			# self._down_btn.hide()
 			self._more_btn.hide()
-		
-		self._update_overflow_items()
 	
 	def _update_overflow_items(self):
 		self._overflow_items.clear()
 		
-		available_height = self._scroll_area.viewport().height()
+		viewport_height = self._scroll_area.viewport().height()
+		bar = self._scroll_area.verticalScrollBar()
 		
-		if available_height <= 0:
+		if viewport_height <= 0:
 			return
 		
-		accumulated_height = 0
-		margin = self._scroll_layout.contentsMargins()
+		# 视口可见范围：滚动值 ~ 滚动值 + 视口高度
+		scroll_value = bar.value()
+		viewport_top = scroll_value
+		viewport_bottom = scroll_value + viewport_height
 		
 		for key, btn in self._items.items():
-			btn_height = btn.height()
-			spacing = self._scroll_layout.spacing()
-			
-			if accumulated_height + btn_height > available_height:
+			# 底部固定的项（设置、关于等）不进溢出
+			if btn.parent() is not self._scroll_widget:
+				continue
+			btn_top = btn.mapTo(self._scroll_widget, QPoint(0, 0)).y()
+			btn_bottom = btn_top + btn.height()
+			# 视口外的项（上方滚出的或下方未显示的）进入溢出
+			if btn_bottom < viewport_top or btn_top > viewport_bottom:
 				self._overflow_items.append({
 					'routeKey': key,
 					'icon': btn._icon,
 					'text': btn._text
 				})
-			else:
-				accumulated_height += btn_height + spacing
 	
 	def resizeEvent(self, e):
 		super().resizeEvent(e)

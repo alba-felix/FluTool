@@ -3,11 +3,11 @@
 from typing import Optional, List
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QStackedWidget, QLineEdit, QApplication, QAbstractButton, QMenu, QAction,
+    QStackedWidget, QApplication, QAbstractButton, QMenu, QAction,
     QFrame, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QEasingCurve, QPoint, QRect, QSize, QVariantAnimation, QTimer
-from PyQt5.QtGui import QFont, QPainter, QColor, QIcon, QPen, QPixmap, QCursor
+from PyQt5.QtCore import Qt, pyqtSignal, QEasingCurve, QPoint, QRect, QSize, QVariantAnimation, QTimer, QMimeData
+from PyQt5.QtGui import QFont, QPainter, QColor, QIcon, QPen, QPixmap, QCursor, QDrag
 from qfluentwidgets import (
     FluentIcon as FIF, FluentStyleSheet, isDarkTheme,
     NavigationWidget, SmoothScrollArea, StrongBodyLabel,
@@ -29,14 +29,34 @@ from .table_grid import TableGrid
 class ScrollableNavButton(NavigationWidget):
     """可滚动导航按钮"""
     clicked = pyqtSignal(bool)
+    moved = pyqtSignal(str, str)  # from_route_key, to_route_key
+    contextMenuRequested = pyqtSignal(str, QPoint)  # route_key, global_pos
 
-    def __init__(self, icon, text: str, parent=None):
+    DRAG_MIME = "application/x-flutool-nav-route"
+
+    def __init__(self, icon, text: str, route_key: str = "", parent=None):
         super().__init__(True, parent)
         self._icon = icon
         self._text = text
+        self.route_key = route_key
         self._expandWidth = 180
+        self._drag_start_pos = None
+        self._drag_enabled = False
         setFont(self)
         self.setToolTip(text)
+        self.setAcceptDrops(True)
+
+    def setDragEnabled(self, enabled: bool):
+        """是否允许作为拖拽源和放置目标（仅分类按钮启用）"""
+        self._drag_enabled = enabled
+
+    def contextMenuEvent(self, e):
+        """右键菜单：仅分类按钮弹出重命名/删除菜单"""
+        if self._drag_enabled and self.route_key.startswith("category_"):
+            self.contextMenuRequested.emit(self.route_key, e.globalPos())
+            e.accept()
+            return
+        super().contextMenuEvent(e)
 
     def text(self):
         return self._text
@@ -66,6 +86,42 @@ class ScrollableNavButton(NavigationWidget):
         else:
             self.setFixedSize(self._expandWidth, 36)
         self.update()
+
+    def mousePressEvent(self, e):
+        super().mousePressEvent(e)
+        if e.button() == Qt.LeftButton and self._drag_enabled:
+            self._drag_start_pos = e.pos()
+
+    def mouseMoveEvent(self, e):
+        if self._drag_enabled and self._drag_start_pos is not None:
+            if (e.pos() - self._drag_start_pos).manhattanLength() > QApplication.startDragDistance():
+                drag = QDrag(self)
+                mime = QMimeData()
+                mime.setData(self.DRAG_MIME, self.route_key.encode("utf-8"))
+                drag.setMimeData(mime)
+                drag.exec_(Qt.MoveAction)
+                self._drag_start_pos = None
+        super().mouseMoveEvent(e)
+
+    def dragEnterEvent(self, e):
+        if self._drag_enabled and e.mimeData().hasFormat(self.DRAG_MIME):
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        if self._drag_enabled and e.mimeData().hasFormat(self.DRAG_MIME):
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
+    def dropEvent(self, e):
+        if not self._drag_enabled or not e.mimeData().hasFormat(self.DRAG_MIME):
+            return
+        from_key = bytes(e.mimeData().data(self.DRAG_MIME)).decode("utf-8", errors="replace")
+        if from_key and from_key != self.route_key:
+            self.moved.emit(from_key, self.route_key)
+        e.acceptProposedAction()
 
     def paintEvent(self, e):
         painter = QPainter(self)
@@ -98,6 +154,7 @@ class ScrollableNavButton(NavigationWidget):
 class ScrollableNavigationPanel(QWidget):
     """可滚动导航面板"""
     displayModeChanged = pyqtSignal(bool)
+    itemMoved = pyqtSignal(str, str)  # from_route_key, to_route_key
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -153,18 +210,34 @@ class ScrollableNavigationPanel(QWidget):
         self.setAttribute(Qt.WA_StyledBackground)
         FluentStyleSheet.NAVIGATION_INTERFACE.apply(self)
 
-    def addItem(self, routeKey: str, icon, text: str, onClick=None, position=None):
+    def addItem(self, routeKey: str, icon, text: str, onClick=None, position=None, draggable: bool = False):
         if routeKey in self._items:
             return
-        btn = ScrollableNavButton(icon, text, self._scroll_widget)
+        btn = ScrollableNavButton(icon, text, routeKey, self._scroll_widget)
         btn.setExpandWidth(self._expandWidth)
+        btn.setDragEnabled(draggable)
         btn.clicked.connect(lambda: self._on_item_clicked(routeKey))
+        btn.moved.connect(self._on_item_moved)
         if onClick:
             btn.clicked.connect(onClick)
         btn.setCompacted(not self._isExpanded)
         self._items[routeKey] = btn
         self._scroll_layout.addWidget(btn, 0, Qt.AlignTop)
         return btn
+
+    def _on_item_moved(self, from_key: str, to_key: str):
+        """拖拽交换两个导航项的位置并发出信号"""
+        from_btn = self._items.get(from_key)
+        to_btn = self._items.get(to_key)
+        if from_btn is None or to_btn is None or from_key == to_key:
+            return
+        from_index = self._scroll_layout.indexOf(from_btn)
+        to_index = self._scroll_layout.indexOf(to_btn)
+        if from_index < 0 or to_index < 0:
+            return
+        self._scroll_layout.removeWidget(from_btn)
+        self._scroll_layout.insertWidget(to_index, from_btn)
+        self.itemMoved.emit(from_key, to_key)
 
     def removeItem(self, routeKey: str):
         if routeKey not in self._items:
@@ -490,10 +563,10 @@ class NotesWindow(QWidget):
         self._layout_switch.clicked.connect(self._toggle_layout)
         toolbar_layout.addWidget(self._layout_switch)
 
-        self.manage_category_btn = PushButton("分类管理")
+        self.manage_category_btn = PushButton("添加分类")
         self.manage_category_btn.setFixedHeight(32)
-        self.manage_category_btn.setIcon(FIF.SETTING)
-        self.manage_category_btn.clicked.connect(self._show_category_manager)
+        self.manage_category_btn.setIcon(FIF.ADD)
+        self.manage_category_btn.clicked.connect(self._show_add_category)
         toolbar_layout.addWidget(self.manage_category_btn)
 
         self.quick_add_btn = PushButton("快速添加")
@@ -580,14 +653,17 @@ class NotesWindow(QWidget):
                 self.navigation.removeItem(route_key)
             except Exception:
                 pass
-            self.navigation.addItem(
+            btn = self.navigation.addItem(
                 routeKey=route_key,
                 icon=FIF.TAG,
                 text=category.name,
-                onClick=lambda checked=False, cid=category.id: self._on_category_nav_changed(cid)
+                onClick=lambda checked=False, cid=category.id: self._on_category_nav_changed(cid),
+                draggable=True,
             )
+            btn.contextMenuRequested.connect(self._show_category_context_menu)
 
     def _connect_signals(self):
+        self.navigation.itemMoved.connect(self._on_category_moved)
         self._event_bus.note_created.connect(self._on_note_changed)
         self._event_bus.note_updated.connect(self._on_note_changed)
         self._event_bus.note_deleted.connect(self._on_note_changed)
@@ -681,6 +757,43 @@ class NotesWindow(QWidget):
             self.navigation.setCurrentItem(self.NAV_ALL)
             self.title_label.setText("全部笔记")
         self._load_notes()
+
+    def _on_category_moved(self, from_key: str, to_key: str):
+        """分类拖拽排序：按侧边栏当前顺序持久化到数据库"""
+        try:
+            from_id = int(from_key.replace("category_", ""))
+            to_id = int(to_key.replace("category_", ""))
+            if from_id <= 0 or to_id <= 0:
+                return
+            # 读取当前布局顺序（含固定项），提取分类 ID 顺序
+            ordered_ids = []
+            layout = self.navigation._scroll_layout
+            for i in range(layout.count()):
+                widget = layout.itemAt(i).widget()
+                if widget is None or not isinstance(widget, ScrollableNavButton):
+                    continue
+                route_key = getattr(widget, "route_key", "")
+                if route_key.startswith("category_"):
+                    try:
+                        ordered_ids.append(int(route_key.replace("category_", "")))
+                    except ValueError:
+                        continue
+            if len(ordered_ids) < 2:
+                return
+            if self._category_service.reorder(ordered_ids):
+                if self._current_category_id in ordered_ids:
+                    self.navigation.setCurrentItem(f"category_{self._current_category_id}")
+                InfoBar.success(
+                    title="排序已保存",
+                    content="分类顺序已更新",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=1500,
+                    parent=self,
+                )
+        except Exception as e:
+            self.core.logger.error(f"Failed to reorder categories: {e}")
 
     def _show_quick_add(self):
         from .quick_note_dialog import QuickNoteDialog
@@ -816,10 +929,173 @@ class NotesWindow(QWidget):
     def _toggle_archive(self, note_id: int):
         self._note_service.toggle_archive(note_id)
 
-    def _show_category_manager(self):
-        from .category_manager_dialog import CategoryManagerDialog
-        dialog = CategoryManagerDialog(self, category_service=self._category_service)
-        dialog.exec()
+    def _show_add_category(self):
+        """弹出输入框快速添加分类"""
+        from qfluentwidgets import MessageBox
+
+        dialog = MessageBox('添加分类', '请输入新的分类名称:', self)
+        dialog.yesButton.setText('添加')
+        dialog.cancelButton.setText('取消')
+
+        from qfluentwidgets import LineEdit
+        input_layout = QHBoxLayout()
+        input_edit = LineEdit()
+        input_edit.setPlaceholderText('输入分类名称')
+        input_layout.addWidget(input_edit)
+        dialog.textLayout.addLayout(input_layout)
+
+        if dialog.exec():
+            name = input_edit.text().strip()
+            if not name:
+                InfoBar.warning(
+                    title='提示',
+                    content='请输入分类名称',
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            if self._category_service.get_by_name(name):
+                InfoBar.warning(
+                    title='提示',
+                    content='分类已存在',
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            category_id = self._category_service.add(name)
+            if category_id:
+                self.navigation.setCurrentItem(f"category_{category_id}")
+                InfoBar.success(
+                    title='添加成功',
+                    content=f'分类 "{name}" 已创建',
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+            else:
+                InfoBar.error(
+                    title='错误',
+                    content='添加分类失败',
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+
+    def _rename_category(self, category_id: int):
+        """重命名分类（右键菜单入口）"""
+        from qfluentwidgets import MessageBox
+
+        category = self._category_service.get_by_id(category_id)
+        if not category:
+            return
+
+        dialog = MessageBox('重命名分类', '请输入新的分类名称:', self)
+        dialog.yesButton.setText('确定')
+        dialog.cancelButton.setText('取消')
+
+        from qfluentwidgets import LineEdit
+        input_layout = QHBoxLayout()
+        input_edit = LineEdit()
+        input_edit.setText(category.name)
+        input_layout.addWidget(input_edit)
+        dialog.textLayout.addLayout(input_layout)
+
+        if dialog.exec():
+            new_name = input_edit.text().strip()
+            if new_name and new_name != category.name:
+                if self._category_service.rename(category_id, new_name):
+                    InfoBar.success(
+                        title='重命名成功',
+                        content=f'分类已重命名为 "{new_name}"',
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+                else:
+                    InfoBar.error(
+                        title='错误',
+                        content='重命名失败，名称可能已存在',
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+
+    def _delete_category(self, category_id: int):
+        """删除分类（右键菜单入口），笔记移至默认分类"""
+        from qfluentwidgets import MessageBox
+
+        category = self._category_service.get_by_id(category_id)
+        if not category:
+            return
+
+        note_count = self._category_service.get_note_count(category_id)
+        message = f'确定删除分类 "{category.name}" 吗？'
+        if note_count > 0:
+            message += f'\n该分类下的 {note_count} 条笔记将移动到"默认"分类。'
+
+        dialog = MessageBox('删除分类', message, self)
+        dialog.yesButton.setText('删除')
+        dialog.cancelButton.setText('取消')
+
+        if dialog.exec():
+            if self._category_service.delete(category_id):
+                InfoBar.success(
+                    title='删除成功',
+                    content=f'分类 "{category.name}" 已删除',
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+            else:
+                InfoBar.error(
+                    title='错误',
+                    content='删除分类失败',
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+
+    def _show_category_context_menu(self, route_key: str, global_pos):
+        """分类导航按钮右键菜单：重命名 / 删除"""
+        from qfluentwidgets import RoundMenu, FluentIcon as FIF2
+
+        if not route_key.startswith("category_"):
+            return
+        try:
+            category_id = int(route_key[len("category_"):])
+        except ValueError:
+            return
+        category = self._category_service.get_by_id(category_id)
+        if not category:
+            return
+
+        menu = RoundMenu(parent=self)
+        from qfluentwidgets.common.icon import Action
+        rename_action = Action(FIF2.EDIT, '重命名')
+        delete_action = Action(FIF2.DELETE, '删除')
+        rename_action.triggered.connect(lambda: self._rename_category(category_id))
+        delete_action.triggered.connect(lambda: self._delete_category(category_id))
+        menu.addAction(rename_action)
+        menu.addAction(delete_action)
+        menu.exec(global_pos)
 
     def closeEvent(self, event):
         """关闭窗口时默认仅隐藏（保留信号连接），只在插件退出时真正销毁"""

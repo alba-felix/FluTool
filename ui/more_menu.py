@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QApplication, QScrollArea
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen
 from qfluentwidgets import FluentIcon as FIF, isDarkTheme
@@ -9,7 +9,7 @@ _ITEM_HEIGHT = 40
 _ITEM_WIDTH = 140
 _MARGIN = 6
 _SPACING = 4
-_MAX_MENU_HEIGHT = 400
+_MAX_MENU_HEIGHT = 500
 _MENU_WIDTH = 172
 _EDGE_PADDING = 10
 
@@ -74,23 +74,42 @@ class MoreMenu(QWidget):
         self.setAttribute(Qt.WA_StyledBackground)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
-        layout.setSpacing(_SPACING)
-        layout.setAlignment(Qt.AlignTop)
+        self._scroll_area = QScrollArea(self)
+        # 关闭自动伸缩：scroll_area 视口固定为菜单高度，container 按内容高自然撑开，超出才滚动
+        self._scroll_area.setWidgetResizable(False)
+        self._scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+        )
+        # 滚动条保持可见，便于展示更多项目
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        self._container = QWidget()
+        self._container.setStyleSheet("background: transparent;")
+        self._layout = QVBoxLayout(self._container)
+        self._layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        self._layout.setSpacing(_SPACING)
+        self._layout.setAlignment(Qt.AlignTop)
+
+        self._scroll_area.setWidget(self._container)
+
+        self._scroll_area.setGeometry(0, 0, _MENU_WIDTH, _MAX_MENU_HEIGHT)
+        self.setFixedSize(_MENU_WIDTH, _MAX_MENU_HEIGHT)
 
     def clearItems(self):
         for item in self._items:
-            layout = self.layout()
-            layout.removeWidget(item)
+            self._layout.removeWidget(item)
             item.deleteLater()
         self._items.clear()
+        self._recalc_size()
 
     def addItem(self, routeKey: str, icon, text: str):
-        item = MoreMenuItem(routeKey, icon, text, self)
+        item = MoreMenuItem(routeKey, icon, text, self._container)
         item.clicked.connect(self._on_item_clicked)
         self._items.append(item)
-        self.layout().addWidget(item)
+        self._layout.addWidget(item)
+        self._recalc_size()
 
     def setItems(self, items: list):
         self.clearItems()
@@ -99,19 +118,20 @@ class MoreMenu(QWidget):
         self._recalc_size()
 
     def _recalc_size(self):
-        """根据条目数量重新计算并锁定窗口尺寸"""
-        if not self._items:
-            self.setFixedSize(_MENU_WIDTH, _ITEM_HEIGHT + _MARGIN * 2)
-            return
+        """锁定为固定高度面板（不随条目数量收缩）"""
+        menu_height = _MAX_MENU_HEIGHT if self._items else _ITEM_HEIGHT + _MARGIN * 2
+        self.setFixedSize(_MENU_WIDTH, menu_height)
+        self._scroll_area.setGeometry(0, 0, _MENU_WIDTH, menu_height)
+        self._resize_container()
 
+    def _resize_container(self):
+        """widgetResizable(False) 下 QScrollArea 不会撑开容器，需按内容手动计算尺寸"""
         count = len(self._items)
-        total_height = (
-            _MARGIN * 2
-            + count * _ITEM_HEIGHT
-            + (count - 1) * _SPACING
-        )
-        final_height = min(total_height, _MAX_MENU_HEIGHT)
-        self.setFixedSize(_MENU_WIDTH, final_height)
+        if count == 0:
+            self._container.resize(_MENU_WIDTH, _ITEM_HEIGHT + _MARGIN * 2)
+            return
+        content_height = _MARGIN * 2 + count * _ITEM_HEIGHT + (count - 1) * _SPACING
+        self._container.resize(_MENU_WIDTH, content_height)
 
     def _on_item_clicked(self, routeKey: str):
         self.itemClicked.emit(routeKey)

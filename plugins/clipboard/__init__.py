@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from PyQt5.QtCore import Qt, QBuffer, QByteArray, QIODevice, QUrl, QTimer, QSize
+from PyQt5.QtCore import Qt, QBuffer, QByteArray, QIODevice, QUrl, QTimer, QSize, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QIcon, QPainter, QColor, QFont
 from PyQt5.QtWidgets import (
     QFileDialog, QApplication, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
@@ -212,21 +212,32 @@ class ClipboardWidget(QWidget):
         
         self._init_paths()
         self._setup_ui()
+        self._bind_plugin_signals()
+    
+    def _bind_plugin_signals(self):
+        """连接插件层监听信号（监听器生命周期在 Plugin 层，与 UI 解耦）"""
+        try:
+            plugin = self.core.plugin_manager.get_plugin("clipboard")
+            if plugin is not None and hasattr(plugin, "clipboard_updated"):
+                plugin.clipboard_updated.connect(self._on_plugin_clipboard_updated)
+        except Exception as e:
+            self.core.logger.error(f"Failed to bind clipboard plugin signals: {e}")
+    
+    def _on_plugin_clipboard_updated(self):
+        """插件层监听到剪切板变化：重新从数据库加载并刷新"""
+        self._load_clipboard_history()
+        self._update_list_view()
     
     def showEvent(self, event):
-        """窗口显示时初始化"""
+        """窗口显示时加载历史"""
         super().showEvent(event)
         if not self._monitor_initialized:
             self._load_clipboard_history()
-            self._setup_clipboard_monitor()
             self._update_list_view()
             self._monitor_initialized = True
 
     def closeEvent(self, event):
-        """窗口关闭时停止底层监听线程"""
-        monitor = getattr(self, "_monitor", None)
-        if monitor is not None:
-            monitor.stop()
+        """窗口关闭（监听器生命周期在 Plugin 层，此处无需停止）"""
         super().closeEvent(event)
     
     def _init_paths(self):
@@ -415,54 +426,13 @@ class ClipboardWidget(QWidget):
             }}
         """)
     
-    def _setup_clipboard_monitor(self):
-        """设置剪切板监控
-
-        优先使用 Win32 底层序列号监听（后台/最小化时依然可靠）；
-        平台不支持或监听失败时回退到 Qt 定时器轮询。
-        """
-        self.clipboard = QApplication.clipboard()
-        self.clipboard.dataChanged.connect(self._on_clipboard_change)
-        self._last_clipboard_hash = None
-        self._monitor = ClipboardMonitor(parent=self)
-        if self._monitor.start():
-            self._monitor.sequence_changed.connect(self._check_clipboard_content)
-        else:
-            self._clipboard_check_timer = QTimer(self)
-            self._clipboard_check_timer.timeout.connect(self._check_clipboard_content)
-            self._clipboard_check_timer.start(500)
-    
-    def _check_clipboard_content(self):
-        """定时检查剪切板内容（确保最小化时也能捕获）"""
-        if not self._is_monitoring:
-            return
-        
-        mime_data = self.clipboard.mimeData()
-        if not mime_data:
-            return
-        
-        current_hash = self._calculate_mime_hash(mime_data)
-        if current_hash and current_hash != self._last_clipboard_hash:
-            self._last_clipboard_hash = current_hash
-            self._on_clipboard_change()
-    
-    def _calculate_mime_hash(self, mime_data) -> Optional[str]:
-        """计算剪切板内容的哈希值"""
-        if mime_data.hasImage():
-            image = mime_data.imageData()
-            if isinstance(image, QImage):
-                return f"img_{image.width()}_{image.height()}_{image.sizeInBytes()}"
-        elif mime_data.hasText():
-            text = mime_data.text()
-            return f"text_{hash(text)}"
-        elif mime_data.hasUrls():
-            urls = mime_data.urls()
-            return f"urls_{hash(tuple(str(u.toString()) for u in urls))}"
-        return None
-    
     def _toggle_monitor(self):
-        """切换监控状态"""
-        self._is_monitoring = not self._is_monitoring
+        """切换监控状态（状态保存在 Plugin 层监听器）"""
+        plugin = self.core.plugin_manager.get_plugin("clipboard")
+        if plugin is not None and hasattr(plugin, "toggle_monitoring"):
+            self._is_monitoring = plugin.toggle_monitoring()
+        else:
+            self._is_monitoring = not self._is_monitoring
         if self._is_monitoring:
             self.monitor_btn.setIcon(FIF.PAUSE)
             self.monitor_btn.setToolTip("暂停监控")
@@ -471,30 +441,6 @@ class ClipboardWidget(QWidget):
             self.monitor_btn.setIcon(FIF.PLAY)
             self.monitor_btn.setToolTip("继续监控")
             self.status_label.setText("监控已暂停")
-    
-    def _on_clipboard_change(self):
-        """剪切板内容变化时的处理"""
-        if not self._is_monitoring:
-            return
-        
-        mime_data = self.clipboard.mimeData()
-        current_hash = self._calculate_mime_hash(mime_data)
-        
-        if current_hash and current_hash == self._last_clipboard_hash:
-            return
-        
-        self._last_clipboard_hash = current_hash
-        
-        if mime_data.hasImage():
-            image = mime_data.imageData()
-            self._add_image_to_history(image)
-        elif mime_data.hasUrls():
-            urls = mime_data.urls()
-            self._add_urls_to_history(urls)
-        elif mime_data.hasText():
-            text = mime_data.text()
-            if text.strip():
-                self._add_text_to_history(text)
     
     def _add_text_to_history(self, text: str):
         """添加文本到历史记录"""
@@ -509,62 +455,6 @@ class ClipboardWidget(QWidget):
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         self.clipboard_data.insert(0, item_data)
-        
-        if len(self.clipboard_data) > self.max_history:
-            removed = self.clipboard_data.pop()
-            if 'id' in removed:
-                self.service.delete_item(removed['id'])
-        
-        self._update_list_view()
-    
-    def _add_image_to_history(self, image):
-        """添加图片到剪切板历史"""
-        if isinstance(image, QImage):
-            pixmap = QPixmap.fromImage(image)
-        elif isinstance(image, QPixmap):
-            pixmap = image
-        else:
-            return
-        
-        byte_array = QByteArray()
-        buffer = QBuffer(byte_array)
-        buffer.open(QIODevice.WriteOnly)
-        pixmap.save(buffer, "PNG")
-        image_data = byte_array.toBase64().data().decode()
-        
-        item_id = self.service.add_item("image", image_data, "png")
-        self.clipboard_data.insert(0, {
-            "id": item_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "type": "image",
-            "content": image_data,
-            "format": "png"
-        })
-        
-        if len(self.clipboard_data) > self.max_history:
-            removed = self.clipboard_data.pop()
-            if 'id' in removed:
-                self.service.delete_item(removed['id'])
-        
-        self._update_list_view()
-    
-    def _add_urls_to_history(self, urls):
-        """添加URLs到剪切板历史"""
-        paths = [url.toLocalFile() for url in urls if url.isLocalFile()]
-        
-        if not paths:
-            return
-        
-        if self.clipboard_data and self.clipboard_data[0].get("type") == "urls" and self.clipboard_data[0].get("content") == paths:
-            return
-        
-        item_id = self.service.add_item("urls", json.dumps(paths))
-        self.clipboard_data.insert(0, {
-            "id": item_id,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "type": "urls",
-            "content": paths
-        })
         
         if len(self.clipboard_data) > self.max_history:
             removed = self.clipboard_data.pop()
@@ -621,20 +511,21 @@ class ClipboardWidget(QWidget):
         content_type = item_data.get("type", "text")
         
         try:
+            clipboard = QApplication.clipboard()
             if content_type == "text":
-                self.clipboard.setText(item_data["content"])
+                clipboard.setText(item_data["content"])
                 self.status_label.setText("已复制文本到剪切板")
             elif content_type == "image":
                 image_data = base64.b64decode(item_data["content"])
                 pixmap = QPixmap()
                 pixmap.loadFromData(image_data, "PNG")
-                self.clipboard.setPixmap(pixmap)
+                clipboard.setPixmap(pixmap)
                 self.status_label.setText("已复制图片到剪切板")
             elif content_type == "urls":
                 urls = [QUrl.fromLocalFile(path) for path in item_data["content"]]
-                mime_data = self.clipboard.mimeData().__class__()
+                mime_data = clipboard.mimeData().__class__()
                 mime_data.setUrls(urls)
-                self.clipboard.setMimeData(mime_data)
+                clipboard.setMimeData(mime_data)
                 self.status_label.setText(f"已复制 {len(urls)} 个文件到剪切板")
             
             InfoBar.success(
@@ -820,13 +711,129 @@ class Plugin(PluginInterface):
     PLUGIN_ICON = FIF.PASTE
     PLUGIN_PRIORITY = 10
     
+    clipboard_updated = pyqtSignal()
+    
     def initialize(self, core) -> None:
-        """初始化插件"""
+        """初始化插件：启动剪切板监听（独立于 UI 生命周期，托盘驻留时依然可靠）"""
         self.core = core
+        self._is_monitoring = True
+        self._last_clipboard_hash = None
+        self._monitor = None
+        self._clipboard_check_timer = None
+        self.clipboard = QApplication.clipboard()
+        self.clipboard.dataChanged.connect(self._on_clipboard_change)
+        self._start_monitor()
         core.logger.info(f"Plugin '{self.PLUGIN_NAME}' initialized")
     
+    def _start_monitor(self):
+        """启动剪切板监听：优先 Win32 序列号线程，失败回退 Qt 定时器轮询"""
+        self._monitor = ClipboardMonitor(parent=self)
+        if self._monitor.start():
+            self._monitor.sequence_changed.connect(self._check_clipboard_content)
+        else:
+            self._clipboard_check_timer = QTimer(self)
+            self._clipboard_check_timer.timeout.connect(self._check_clipboard_content)
+            self._clipboard_check_timer.start(500)
+    
+    def toggle_monitoring(self) -> bool:
+        """切换监控状态，返回切换后的状态"""
+        self._is_monitoring = not self._is_monitoring
+        return self._is_monitoring
+    
+    def _check_clipboard_content(self):
+        """定时检查剪切板内容（确保最小化/托盘时也能捕获）"""
+        if not self._is_monitoring:
+            return
+        
+        mime_data = self.clipboard.mimeData()
+        if not mime_data:
+            return
+        
+        current_hash = self._calculate_mime_hash(mime_data)
+        if current_hash and current_hash != self._last_clipboard_hash:
+            self._last_clipboard_hash = current_hash
+            self._on_clipboard_change()
+    
+    def _calculate_mime_hash(self, mime_data) -> Optional[str]:
+        """计算剪切板内容的哈希值"""
+        if mime_data.hasImage():
+            image = mime_data.imageData()
+            if isinstance(image, QImage):
+                return f"img_{image.width()}_{image.height()}_{image.sizeInBytes()}"
+        elif mime_data.hasText():
+            text = mime_data.text()
+            return f"text_{hash(text)}"
+        elif mime_data.hasUrls():
+            urls = mime_data.urls()
+            return f"urls_{hash(tuple(str(u.toString()) for u in urls))}"
+        return None
+    
+    def _on_clipboard_change(self):
+        """剪切板内容变化时的处理"""
+        if not self._is_monitoring:
+            return
+        
+        mime_data = self.clipboard.mimeData()
+        current_hash = self._calculate_mime_hash(mime_data)
+        
+        if current_hash and current_hash == self._last_clipboard_hash:
+            return
+        
+        self._last_clipboard_hash = current_hash
+        
+        if mime_data.hasImage():
+            image = mime_data.imageData()
+            self._save_image_to_history(image)
+        elif mime_data.hasUrls():
+            urls = mime_data.urls()
+            self._save_urls_to_history(urls)
+        elif mime_data.hasText():
+            text = mime_data.text()
+            if text.strip():
+                self._save_text_to_history(text)
+        
+        self.clipboard_updated.emit()
+    
+    def _save_text_to_history(self, text: str):
+        """保存文本到历史"""
+        service = ClipboardService()
+        service.add_item("text", text)
+    
+    def _save_image_to_history(self, image):
+        """保存图片到历史"""
+        if isinstance(image, QImage):
+            pixmap = QPixmap.fromImage(image)
+        elif isinstance(image, QPixmap):
+            pixmap = image
+        else:
+            return
+        
+        byte_array = QByteArray()
+        buffer = QBuffer(byte_array)
+        buffer.open(QIODevice.WriteOnly)
+        pixmap.save(buffer, "PNG")
+        image_data = byte_array.toBase64().data().decode()
+        
+        service = ClipboardService()
+        service.add_item("image", image_data, "png")
+    
+    def _save_urls_to_history(self, urls):
+        """保存URLs到历史"""
+        paths = [url.toLocalFile() for url in urls if url.isLocalFile()]
+        if not paths:
+            return
+        service = ClipboardService()
+        service.add_item("urls", json.dumps(paths))
+    
     def shutdown(self) -> None:
-        """关闭插件"""
+        """关闭插件：停止监听线程"""
+        try:
+            if self._monitor is not None:
+                self._monitor.stop()
+            if self._clipboard_check_timer is not None:
+                self._clipboard_check_timer.stop()
+        except Exception as e:
+            self.core.logger.error(f"Clipboard monitor shutdown error: {e}")
         self.core.logger.info(f"Plugin '{self.PLUGIN_NAME}' shutdown")
     
     def _create_widget(self, parent=None) -> QWidget:

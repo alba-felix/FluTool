@@ -72,7 +72,7 @@ class SingleInstance(QObject):
             return False
 
     def activate_existing_instance(self, data: str = "activate") -> bool:
-        """尝试激活已有实例，可附带数据（如 filecomment:C:\\path）"""
+        """尝试激活已有实例，可附带数据"""
         if not self._is_frozen:
             return False
 
@@ -197,22 +197,15 @@ def main():
     # 检测 --minimized 参数（开机自启传入）
     _start_minimized = "--minimized" in sys.argv
 
-    # 检测 --filecomment <路径> 参数（资源管理器右键菜单传入）
-    _filecomment_path = None
-    if "--filecomment" in sys.argv:
-        idx = sys.argv.index("--filecomment")
-        if len(sys.argv) > idx + 1:
-            _filecomment_path = sys.argv[idx + 1]
+    # 检测 --silent 参数：真正无页面启动，不显示主窗口，仅驻留托盘
+    _start_silent = "--silent" in sys.argv
 
     # 单实例检测
     try:
         single_instance = SingleInstance()
         if single_instance.is_running():
             print("FluTool is already running, trying to activate...")
-            if _filecomment_path:
-                # 已运行实例：转发路径让其弹出浮窗
-                single_instance.activate_existing_instance(f"filecomment:{_filecomment_path}")
-            elif single_instance.activate_existing_instance():
+            if single_instance.activate_existing_instance():
                 print("Activation request sent to existing instance")
             else:
                 print("Cannot activate existing instance")
@@ -273,21 +266,6 @@ def main():
         traceback.print_exc()
         return show_error_and_exit("界面加载失败", f"无法创建主窗口:\n{e}")
 
-    def _open_filecomment(path: str) -> None:
-        """让 filecomment 插件弹出指定文件夹的备注浮窗"""
-        if not core:
-            return
-        plugin = core.plugin_manager.get_plugin("filecomment")
-        if plugin is None:
-            return
-        try:
-            plugin.open_comment(path)
-        except Exception as e:
-            core.logger.error(f"filecomment open failed: {e}")
-
-    # 右键菜单/单实例转发的路径：插件注册完成后弹出浮窗
-    _filecomment_path_local = _filecomment_path
-
     # 设置单实例激活回调
     def on_socket_connection():
         if not single_instance._server:
@@ -306,12 +284,6 @@ def main():
                 window.show_and_activate()
                 socket.write(b"activated")
                 socket.flush()
-            elif data.startswith(b"filecomment:") and window:
-                window.show_and_activate()
-                path = data[len(b"filecomment:"):].decode("utf-8", errors="replace")
-                _open_filecomment(path)
-                socket.write(b"ok")
-                socket.flush()
         except Exception as e:
             print(f"[main] Socket read error: {e}")
         finally:
@@ -321,51 +293,21 @@ def main():
     if not single_instance.start_server(on_socket_connection):
         print("[main] Warning: Single instance server not started")
 
-    # 加载插件
-    loaded_count = 0
-    failed_count = 0
+    # 显示窗口（--silent 模式跳过，仅驻留托盘）
     try:
-        if getattr(sys, 'frozen', False):
-            plugin_path = None
-            discovered = core.plugin_manager.scan_builtin_plugins()
+        if not _start_silent:
+            window.show()
+            if _start_time:
+                core.logger.info(f"Window shown in {(time.time() - _start_time) * 1000:.0f}ms")
         else:
-            plugin_path = project_root / "plugins"
-            discovered = core.plugin_manager.scan_plugins(str(plugin_path))
-
-        for plugin_id in discovered:
-            try:
-                plugin = core.plugin_manager.load_plugin(plugin_id)
-                if plugin:
-                    icon = plugin.get_icon() or FIF.DOCUMENT
-                    name = plugin.get_name() or plugin_id
-                    hidden = getattr(plugin, "PLUGIN_HIDDEN", False)
-                    window.register_plugin(plugin_id, icon, name, hidden)
-                    loaded_count += 1
-                else:
-                    failed_count += 1
-            except Exception as e:
-                failed_count += 1
-                core.logger.error(f"Failed to register plugin {plugin_id}: {e}")
-
-        if failed_count > 0:
-            core.logger.warning(f"{failed_count} plugin(s) failed to load")
-    except Exception as e:
-        core.logger.error(f"Plugin loading failed: {e}")
-
-    # 显示窗口
-    try:
-        window.show()
+            core.logger.info("Silent start: window hidden, tray only")
     except Exception as e:
         core.logger.error(f"Failed to show window: {e}")
         return show_error_and_exit("启动失败", f"无法显示主窗口: {e}")
 
-    # 右键菜单传入的文件夹路径：延迟到事件循环就绪后弹浮窗
-    if _filecomment_path_local:
-        QTimer.singleShot(400, lambda: _open_filecomment(_filecomment_path_local))
-
-    # 最小化启动：检测 --minimized 参数（开机自启时由 set_auto_start 注入）
+    # 兼容旧 --minimized：显示后立即隐藏并提示（仅非 silent 时生效）
     try:
-        if _start_minimized:
+        if _start_minimized and not _start_silent:
             window.hide()
             window.tray_icon.showMessage(
                 "FluTool",
@@ -384,10 +326,47 @@ def main():
     except Exception as e:
         core.logger.error(f"Failed to sync auto-start: {e}")
 
-    # 记录启动时间
-    if _start_time:
-        elapsed = (time.time() - _start_time) * 1000
-        core.logger.info(f"Application started in {elapsed:.0f}ms, {loaded_count} plugins loaded")
+    # 插件加载：先显示窗口，再延迟加载，缩短首屏等待
+    def _load_plugins() -> None:
+        """扫描并加载全部插件（窗口显示后调用）"""
+        nonlocal loaded_count
+        nonlocal failed_count
+        try:
+            if getattr(sys, 'frozen', False):
+                discovered = core.plugin_manager.scan_builtin_plugins()
+            else:
+                discovered = core.plugin_manager.scan_plugins(str(project_root / "plugins"))
+
+            for plugin_id in discovered:
+                try:
+                    plugin = core.plugin_manager.load_plugin(plugin_id)
+                    if plugin:
+                        icon = plugin.get_icon() or FIF.DOCUMENT
+                        name = plugin.get_name() or plugin_id
+                        hidden = getattr(plugin, "PLUGIN_HIDDEN", False)
+                        window.register_plugin(plugin_id, icon, name, hidden)
+                        loaded_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    failed_count += 1
+                    core.logger.error(f"Failed to register plugin {plugin_id}: {e}")
+
+            if failed_count > 0:
+                core.logger.warning(f"{failed_count} plugin(s) failed to load")
+        except Exception as e:
+            core.logger.error(f"Plugin loading failed: {e}")
+
+        # 记录启动时间
+        if _start_time:
+            elapsed = (time.time() - _start_time) * 1000
+            core.logger.info(f"Application started in {elapsed:.0f}ms, {loaded_count} plugins loaded")
+
+    loaded_count = 0
+    failed_count = 0
+
+    # 延迟到事件循环就绪后再加载，界面立即响应
+    QTimer.singleShot(0, _load_plugins)
 
     # 运行事件循环
     try:

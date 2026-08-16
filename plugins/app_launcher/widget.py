@@ -6,7 +6,7 @@ import re
 import subprocess
 from typing import List, Dict, Any, Optional, Set
 
-from PyQt5.QtCore import Qt, QSize, QTimer
+from PyQt5.QtCore import Qt, QSize, QTimer, QFileInfo
 from PyQt5.QtGui import QCursor
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,

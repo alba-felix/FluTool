@@ -33,6 +33,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
+                sort_order INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -58,6 +59,15 @@ class Database:
         cursor.execute("SELECT COUNT(*) FROM categories WHERE name = '默认'")
         if cursor.fetchone()[0] == 0:
             cursor.execute("INSERT INTO categories (name) VALUES ('默认')")
+
+        # 迁移：为旧库补充 sort_order 列（按 created_at 顺序初始化）
+        columns = [row[1] for row in cursor.execute("PRAGMA table_info(categories)").fetchall()]
+        if 'sort_order' not in columns:
+            cursor.execute("ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0")
+            cursor.execute(
+                "UPDATE categories SET sort_order = id "
+                "WHERE sort_order = 0"
+            )
 
         self._connection.commit()
 

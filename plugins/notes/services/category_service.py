@@ -52,6 +52,20 @@ class CategoryService:
         """获取用户创建的分类（排除默认分类）"""
         return [c for c in self._category_dao.get_all() if c.name != '默认']
     
+    def reorder(self, ordered_ids: List[int]) -> bool:
+        """按给定 ID 顺序重新排序分类
+
+        参数:
+            ordered_ids: 分类 ID 列表，顺序即侧边栏展示顺序
+
+        返回:
+            排序成功返回 True
+        """
+        result = self._category_dao.reorder(ordered_ids)
+        if result:
+            self._event_bus.emit_category_changed()
+        return result
+    
     def create(self, name: str) -> Optional[int]:
         """
         创建新分类

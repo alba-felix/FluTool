@@ -9,12 +9,6 @@
         "EfficiencyMode": false,
         "MinimizeToTray": true
     },
-    "FileComment": {
-        "AutoStart": false,
-        "ContextMenu": false,
-        "DataPath": "H:\\Programming\\Projects\\2026\\FluTool\\data\\filecomment",
-        "Hotkey": "space"
-    },
     "QFluentWidgets": {
         "FontFamilies": [
             "Segoe UI",

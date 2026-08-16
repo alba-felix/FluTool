@@ -11,7 +11,7 @@ class CategoryDAO:
 
     def get_all(self) -> List[Category]:
         cursor = self.db.execute(
-            "SELECT id, name, created_at FROM categories ORDER BY created_at ASC"
+            "SELECT id, name, created_at FROM categories ORDER BY sort_order ASC, created_at ASC"
         )
         categories = []
         for row in cursor.fetchall():
@@ -21,6 +21,31 @@ class CategoryDAO:
                 created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else None
             ))
         return categories
+
+    def reorder(self, ordered_ids: List[int]) -> bool:
+        """按给定 ID 顺序更新分类排序
+
+        Args:
+            ordered_ids: 分类 ID 列表，顺序即最终展示顺序
+
+        Returns:
+            是否全部更新成功
+        """
+        try:
+            for index, category_id in enumerate(ordered_ids):
+                cursor = self.db.execute(
+                    "UPDATE categories SET sort_order = ? WHERE id = ?",
+                    (index, category_id)
+                )
+            self.db.commit()
+            return True
+        except Exception:
+            return False
+
+    def get_max_sort_order(self) -> int:
+        """获取当前最大排序值"""
+        cursor = self.db.execute("SELECT COALESCE(MAX(sort_order), 0) FROM categories")
+        return cursor.fetchone()[0]
 
     def get_by_id(self, category_id: int) -> Optional[Category]:
         cursor = self.db.execute(
@@ -53,8 +78,8 @@ class CategoryDAO:
     def add(self, name: str) -> Optional[int]:
         try:
             cursor = self.db.execute(
-                "INSERT INTO categories (name) VALUES (?)",
-                (name,)
+                "INSERT INTO categories (name, sort_order) VALUES (?, ?)",
+                (name, self.get_max_sort_order() + 1)
             )
             self.db.commit()
             return cursor.lastrowid
