@@ -1,6 +1,6 @@
 """随手记编辑器 - 文本编辑区域 - 性能优化版本"""
 
-from PyQt5.QtCore import Qt, pyqtSignal, QRect, QTimer
+from PyQt5.QtCore import Qt, pyqtSignal, QRect, QRectF, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit
 from PyQt5.QtGui import QColor, QKeyEvent, QPainter, QFont, QFontMetrics
 from qfluentwidgets import isDarkTheme, qconfig, RoundMenu, Action
@@ -125,7 +125,7 @@ class NotebookEditor(QWidget):
             QPlainTextEdit {{
                 background: transparent;
                 border: none;
-                padding: 10px;
+                padding: 16px 10px 10px 10px;
                 outline: none;
                 color: {text_color};
             }}
@@ -222,6 +222,18 @@ class CustomTextEdit(QPlainTextEdit):
         # 设置 Fluent 风格滚动条
         self._setup_scrollbar_style()
     
+    def inputMethodQuery(self, query):
+        """重写输入法查询，将光标矩形下移，避免 IME 候选窗口与工具栏重叠"""
+        result = super().inputMethodQuery(query)
+        if query == Qt.ImCursorRectangle:
+            if isinstance(result, QRectF):
+                result.translate(0, 50)
+                return result
+            if isinstance(result, QRect):
+                result.translate(0, 50)
+                return QRectF(result)
+        return result
+
     def _setup_scrollbar_style(self):
         """设置 Fluent 风格滚动条"""
         scrollbar_style = """
