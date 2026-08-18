@@ -62,6 +62,8 @@ def convert_image(src_path: str, output_dir: str, fmt: str,
     - ICO：全部尺寸嵌入单个 {base}.ico（Pillow 按源图比例生成各帧）
     - 两者皆空时抛出 ValueError
     """
+    if not HAS_PIL:
+        raise RuntimeError("Pillow未安装，无法进行图片转换")
     image = Image.open(src_path)
     if image.mode not in ("RGBA", "P", "LA"):
         image = image.convert("RGBA")
