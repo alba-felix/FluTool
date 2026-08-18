@@ -4,12 +4,13 @@ from typing import Dict, Optional
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QApplication, QComboBox, QDialog, QFileDialog,
+    QAbstractItemView, QApplication, QDialog, QFileDialog,
     QHBoxLayout, QHeaderView, QInputDialog, QMessageBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
-    CaptionLabel, FluentIcon as FIF, PushButton, TransparentToolButton,
+    CaptionLabel, ComboBox, FluentIcon as FIF, InfoBar, InfoBarPosition,
+    PushButton, TransparentToolButton, isDarkTheme, qconfig,
 )
 
 from ..services.note_service import NoteService
@@ -34,6 +35,11 @@ class TableGrid(QWidget):
 
         self._setup_ui()
         self._refresh_table_list()
+        qconfig.themeChangedFinished.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self):
+        """主题切换后刷新样式"""
+        self._apply_grid_style()
 
     # ───────────────────────── 界面构建 ─────────────────────────
 
@@ -46,7 +52,7 @@ class TableGrid(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(6)
 
-        self.table_combo = QComboBox()
+        self.table_combo = ComboBox()
         self.table_combo.setMinimumWidth(160)
         self.table_combo.setToolTip("选择表格")
         self.table_combo.currentIndexChanged.connect(self._on_table_selected)
@@ -123,33 +129,54 @@ class TableGrid(QWidget):
         self.grid.setSelectionMode(QAbstractItemView.SingleSelection)
         self.grid.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.grid.itemChanged.connect(self._on_item_changed)
-        self.grid.setStyleSheet(self._style_qss())
+        self._apply_grid_style()
 
-    @staticmethod
-    def _style_qss():
-        return """
-            QTableWidget {
-                background: transparent;
-                border: 1px solid rgba(128, 128, 128, 0.3);
-                gridline-color: rgba(128, 128, 128, 0.2);
-                selection-background-color: rgba(0, 120, 212, 0.15);
-                selection-color: palette(text);
-            }
-            QTableWidget::item {
+    def _apply_grid_style(self):
+        """应用主题感知的网格样式（颜色随亮/暗主题反转）"""
+        dark = isDarkTheme()
+        text = "#e0e0e0" if dark else "#333333"
+        bg = "#242424" if dark else "#ffffff"
+        header_bg = "#2f2f2f" if dark else "#ececec"
+        border = "rgba(255, 255, 255, 0.25)" if dark else "rgba(128, 128, 128, 0.3)"
+        gridline = "rgba(255, 255, 255, 0.12)" if dark else "rgba(128, 128, 128, 0.2)"
+        header_line = "rgba(255, 255, 255, 0.2)" if dark else "rgba(128, 128, 128, 0.25)"
+        header_hover = "rgba(255, 255, 255, 0.15)" if dark else "rgba(128, 128, 128, 0.15)"
+        selection = "rgba(0, 120, 212, 0.3)" if dark else "rgba(0, 120, 212, 0.15)"
+        editor_bg = "#2b2b2b" if dark else "#ffffff"
+        self.grid.setStyleSheet(
+            f"""
+            QTableWidget {{
+                background: {bg};
+                border: 1px solid {border};
+                gridline-color: {gridline};
+                selection-background-color: {selection};
+                selection-color: {text};
+            }}
+            QTableWidget::item {{
                 padding: 0px 4px;
-            }
-            QHeaderView::section {
-                background: transparent;
-                border: none;
-                border-right: 1px solid rgba(128, 128, 128, 0.25);
-                border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-                padding: 2px 4px;
-                color: palette(text);
-            }
-            QHeaderView::section:hover {
-                background: rgba(128, 128, 128, 0.15);
-            }
-        """
+                color: {text};
+            }}
+            QTableWidget QLineEdit {{
+                background: {editor_bg};
+                color: {text};
+                border: 1px solid {border};
+                selection-background-color: {selection};
+            }}
+            """
+        )
+        header_qss = (
+            f"QHeaderView::section {{"
+            f" background: {header_bg};"
+            f" border: none;"
+            f" border-right: 1px solid {header_line};"
+            f" border-bottom: 1px solid {header_line};"
+            f" padding: 2px 4px;"
+            f" color: {text};"
+            f" }}"
+            f"QHeaderView::section:hover {{ background: {header_hover}; }}"
+        )
+        self.grid.horizontalHeader().setStyleSheet(header_qss)
+        self.grid.verticalHeader().setStyleSheet(header_qss)
 
     # ───────────────────────────── 数据加载 ─────────────────────────────
 
@@ -162,12 +189,13 @@ class TableGrid(QWidget):
             self.table_combo.clear()
             for note in tables:
                 self.table_combo.addItem(note.title or "表格", note.id)
+            if tables:
+                self.table_combo.setCurrentIndex(0)
         finally:
             self.table_combo.blockSignals(False)
             self._loading = False
 
         if tables:
-            self.table_combo.setCurrentIndex(0)
             self._load_current()
         else:
             self.grid.clearContents()
@@ -246,10 +274,15 @@ class TableGrid(QWidget):
             self.status_label.setText("新建失败")
             return
         self._refresh_table_list()
+        target_idx = -1
         for idx in range(self.table_combo.count()):
             if self.table_combo.itemData(idx) == note_id:
-                self.table_combo.setCurrentIndex(idx)
+                target_idx = idx
                 break
+        if target_idx >= 0:
+            self.table_combo.blockSignals(True)
+            self.table_combo.setCurrentIndex(target_idx)
+            self.table_combo.blockSignals(False)
         self._load_current()
         self.status_label.setText("已新建表格，编辑后点击「保存」")
 
@@ -282,8 +315,21 @@ class TableGrid(QWidget):
 
     # ───────────────────────────── 导出 ─────────────────────────────
 
+    def _notify_no_table(self) -> None:
+        """提示先选择表格"""
+        InfoBar.warning(
+            title="提示",
+            content="请先选择表格",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self,
+        )
+
     def _export_markdown(self):
         if self._current_id is None:
+            self._notify_no_table()
             return
         md = self._table_service.to_markdown(self._current_cells)
         path, _ = QFileDialog.getSaveFileName(
@@ -297,6 +343,7 @@ class TableGrid(QWidget):
 
     def _copy_markdown(self):
         if self._current_id is None:
+            self._notify_no_table()
             return
         md = self._table_service.to_markdown(self._current_cells)
         QApplication.clipboard().setText(md)

@@ -1,10 +1,10 @@
 from PyQt5.QtWidgets import (
 	QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QWidget, QFileDialog,
-	QMenu
 )
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal
 from PyQt5.QtGui import QFont, QTextCharFormat, QColor, QSyntaxHighlighter, QIcon, QKeyEvent
-from qfluentwidgets import BodyLabel, CaptionLabel, isDarkTheme, ToolTipFilter
+from qfluentwidgets import BodyLabel, CaptionLabel, isDarkTheme, ToolTipFilter, FluentIcon as FIF
+from qfluentwidgets.common.icon import Action
 
 from ..models.note import Note
 from ..resources.styles.note_card_style import DARK_STYLE, LIGHT_STYLE
@@ -14,46 +14,54 @@ from ..core.custom_icon import CustomFluentIcon
 
 
 class NoteCardTextEdit(QTextEdit):
-    """自定义文本编辑框，使用QFluentWidgets圆角菜单替换原生右键菜单"""
+    """笔记内容编辑框，右键菜单走 Fluent 风格圆角菜单"""
 
     def contextMenuEvent(self, event):
-        menu = QMenu(self)
+        from qfluentwidgets import RoundMenu
+        menu = RoundMenu(parent=self)
 
         cursor = self.textCursor()
         has_selection = cursor.hasSelection()
+        editable = not self.isReadOnly()
 
-        undo_action = menu.addAction("撤销")
+        undo_action = Action('撤销')
         undo_action.triggered.connect(self.undo)
         undo_action.setEnabled(self.document().isUndoAvailable())
 
-        redo_action = menu.addAction("重做")
+        redo_action = Action('重做')
         redo_action.triggered.connect(self.redo)
         redo_action.setEnabled(self.document().isRedoAvailable())
 
-        menu.addSeparator()
-
-        cut_action = menu.addAction("剪切")
+        cut_action = Action(FIF.CUT, '剪切')
         cut_action.triggered.connect(self.cut)
-        cut_action.setEnabled(has_selection and not self.isReadOnly())
+        cut_action.setEnabled(has_selection and editable)
 
-        copy_action = menu.addAction("复制")
+        copy_action = Action(FIF.COPY, '复制')
         copy_action.triggered.connect(self.copy)
         copy_action.setEnabled(has_selection)
 
-        paste_action = menu.addAction("粘贴")
+        paste_action = Action(FIF.PASTE, '粘贴')
         paste_action.triggered.connect(self.paste)
-        paste_action.setEnabled(not self.isReadOnly())
+        paste_action.setEnabled(editable)
 
-        delete_action = menu.addAction("删除")
+        delete_action = Action(FIF.DELETE, '删除')
         delete_action.triggered.connect(cursor.removeSelectedText)
-        delete_action.setEnabled(has_selection and not self.isReadOnly())
+        delete_action.setEnabled(has_selection and editable)
 
-        menu.addSeparator()
-
-        select_all_action = menu.addAction("全选")
+        select_all_action = Action('全选')
         select_all_action.triggered.connect(self.selectAll)
 
-        menu.exec_(event.globalPos())
+        menu.addAction(undo_action)
+        menu.addAction(redo_action)
+        menu.addSeparator()
+        menu.addAction(cut_action)
+        menu.addAction(copy_action)
+        menu.addAction(paste_action)
+        menu.addAction(delete_action)
+        menu.addSeparator()
+        menu.addAction(select_all_action)
+
+        menu.exec(event.globalPos())
 
 
 class NoteCard(QFrame):

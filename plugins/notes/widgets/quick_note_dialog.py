@@ -1,10 +1,23 @@
 from typing import Optional
 
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QHBoxLayout
 from qfluentwidgets import MessageBoxBase, SubtitleLabel, LineEdit, TextEdit, PrimaryPushButton, PushButton, ComboBox, CaptionLabel
 
 from ..core.runtime import get_notes_runtime
 from ..services.category_service import CategoryService
+
+
+class _ContentEdit(TextEdit):
+    """内容输入框：Ctrl+Enter 发出保存请求，普通 Enter 保留换行"""
+
+    saveRequested = pyqtSignal()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and e.modifiers() == Qt.ControlModifier:
+            self.saveRequested.emit()
+            return
+        super().keyPressEvent(e)
 
 
 class QuickNoteDialog(MessageBoxBase):
@@ -34,8 +47,8 @@ class QuickNoteDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.title_input)
 
         # 内容输入
-        self.content_input = TextEdit(self)
-        self.content_input.setPlaceholderText('\u5185\u5bb9\uff08\u5fc5\u586b\uff09')
+        self.content_input = _ContentEdit(self)
+        self.content_input.setPlaceholderText('内容（必填，Ctrl+Enter 保存）')
         self.content_input.setFixedHeight(200)
         self.viewLayout.addWidget(self.content_input)
 
@@ -57,7 +70,16 @@ class QuickNoteDialog(MessageBoxBase):
         self.window().setMinimumWidth(500)
 
     def _connect_signals(self):
-        pass
+        # 标题框 Enter / 内容框 Ctrl+Enter 直接保存
+        self.title_input.returnPressed.connect(self._try_quick_save)
+        self.content_input.saveRequested.connect(self._try_quick_save)
+
+    def _try_quick_save(self):
+        """快捷保存：内容为空时聚焦内容框，否则等效点击保存"""
+        if self.validate():
+            self.yesButton.click()
+        else:
+            self.content_input.setFocus()
     
     def _refresh_categories(self):
         """刷新分类列表"""
