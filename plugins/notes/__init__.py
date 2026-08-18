@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QWidget
 from PyQt5.QtCore import Qt
 from qfluentwidgets import FluentIcon as FIF
 
-from core import PluginInterface, get_app_data_path
+from core import PluginInterface, SearchResult, get_app_data_path
 from .core.runtime import NotesRuntime, set_notes_runtime, get_notes_runtime
 
 
@@ -105,6 +105,19 @@ class Plugin(PluginInterface):
         set_notes_runtime(runtime)
         NotesWindowManager.set_runtime(runtime)
 
+        # 数据恢复后重建 notes.db 连接（重跑建表迁移）并刷新窗口
+        core.event_bus.listen("data_restored", lambda _data: self._on_data_restored())
+
+    def _on_data_restored(self) -> None:
+        """数据恢复后重建连接并刷新窗口数据"""
+        from .dao.database import Database
+
+        Database.reinitialize()
+        window = NotesWindowManager._window
+        if window is not None and window.isVisible():
+            window._refresh_category_navigation()
+            window._load_notes()
+
     def shutdown(self) -> None:
         NotesWindowManager.close_window()
         self.core.logger.info("笔记管理插件 shutdown")
@@ -127,3 +140,40 @@ class Plugin(PluginInterface):
     def is_window_visible(self) -> bool:
         """笔记窗口是否可见"""
         return NotesWindowManager.is_window_visible()
+
+    def supports_search(self) -> bool:
+        """启用全局搜索支持"""
+        return True
+
+    def search(self, query: str):
+        """全局搜索笔记（标题/内容/标签/备注）"""
+        if not query or not query.strip():
+            return []
+
+        from .dao.note_dao import NoteDAO
+
+        query_lower = query.lower()
+        results = []
+        for note in NoteDAO().search(query)[:20]:
+            content = note.content or ''
+            preview = content[:100] + '...' if len(content) > 100 else content
+            results.append(SearchResult(
+                plugin_id=self.PLUGIN_ID,
+                plugin_name=self.get_name(),
+                title=note.title or '无标题笔记',
+                description=preview,
+                icon=self.PLUGIN_ICON,
+                relevance=1.0 if query_lower in (note.title or '').lower() else 0.5,
+                action=lambda kw=query: self._open_notes_with_search(kw),
+                metadata={'note_id': note.id}
+            ))
+        return results
+
+    def _open_notes_with_search(self, keyword: str) -> None:
+        """打开笔记窗口并按关键词过滤列表"""
+        NotesWindowManager.show_window()
+        window = NotesWindowManager._window
+        if window is None:
+            return
+        window.search_input.setText(keyword)
+        window._on_search(keyword)

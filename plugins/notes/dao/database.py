@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from typing import Optional
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from core.utils import get_app_data_path
 class Database:
     _instance: Optional['Database'] = None
     _connection: Optional[sqlite3.Connection] = None
+    # 类级锁：__init__ 会被重复调用，实例属性锁可能被替换，类属性对单例始终一致
+    _lock = threading.RLock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -18,16 +21,22 @@ class Database:
         if self._connection is None:
             self._connect()
 
-    def _connect(self):
+    def _create_connection(self) -> sqlite3.Connection:
+        """创建新连接并完成建表迁移，全部成功后才返回（失败不影响现有连接）"""
         db_path: Path = get_app_data_path("data/notes/notes.db")
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(str(db_path), check_same_thread=False)
-        self._connection.row_factory = sqlite3.Row
-        self._connection.execute("PRAGMA foreign_keys = ON")
-        self._init_tables()
+        connection = sqlite3.connect(str(db_path), check_same_thread=False)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        self._init_tables(connection)
+        return connection
 
-    def _init_tables(self):
-        cursor = self._connection.cursor()
+    def _connect(self):
+        with self._lock:
+            self._connection = self._create_connection()
+
+    def _init_tables(self, connection: sqlite3.Connection):
+        cursor = connection.cursor()
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS categories (
@@ -69,27 +78,45 @@ class Database:
                 "WHERE sort_order = 0"
             )
 
-        self._connection.commit()
+        connection.commit()
 
     @property
     def connection(self) -> sqlite3.Connection:
-        return self._connection
+        with self._lock:
+            return self._connection
 
     def execute(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
-        cursor = self._connection.cursor()
-        cursor.execute(query, params)
+        with self._lock:
+            cursor = self._connection.cursor()
+            cursor.execute(query, params)
         return cursor
 
     def commit(self):
-        self._connection.commit()
+        with self._lock:
+            self._connection.commit()
 
     def close(self):
-        if self._connection:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection:
+                self._connection.close()
+                self._connection = None
 
     @classmethod
     def get_instance(cls) -> 'Database':
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    @classmethod
+    def reinitialize(cls) -> 'Database':
+        """重建数据库连接并重跑建表迁移（数据恢复后调用）。
+
+        线程安全：先在新连接上完成全部初始化，再持锁原子替换引用；
+        失败时保留旧连接。旧连接不主动 close——正在使用它的线程
+        （如全局搜索线程池）通过游标持有引用，待其查询结束后由
+        引用计数自动回收，避免 "Cannot operate on a closed database"。
+        """
+        instance = cls.get_instance()
+        with cls._lock:
+            instance._connection = instance._create_connection()
+        return instance

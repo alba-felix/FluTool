@@ -458,6 +458,18 @@ class AIAssistantWidget(QWidget):
             content = message.get("content", "")
             self.chat_view.add_message(content, is_user)
 
+    def select_conversation(self, conversation_id: int) -> None:
+        """按 ID 选中并加载历史会话（供全局搜索跳转）"""
+        history_list = self._sidebar.history_list
+        for row in range(history_list.count()):
+            item = history_list.item(row)
+            if item is None or item.data(Qt.UserRole) is None:
+                continue
+            if int(item.data(Qt.UserRole)) == int(conversation_id):
+                history_list.setCurrentItem(item)
+                self._on_conversation_selected(item)
+                return
+
     def _on_chat_send(self, text: str, attachments: list) -> None:
         if not text and not attachments:
             return

@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QSize, Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, pyqtSignal
 from PyQt5.QtGui import QFont, QTextCharFormat, QColor, QSyntaxHighlighter, QIcon, QKeyEvent
-from qfluentwidgets import BodyLabel, CaptionLabel, isDarkTheme, ToolTipFilter, FluentIcon as FIF
+from qfluentwidgets import BodyLabel, CaptionLabel, isDarkTheme, ToolTipFilter, FluentIcon as FIF, RoundMenu
 from qfluentwidgets.common.icon import Action
 
 from ..models.note import Note
@@ -17,7 +17,6 @@ class NoteCardTextEdit(QTextEdit):
     """笔记内容编辑框，右键菜单走 Fluent 风格圆角菜单"""
 
     def contextMenuEvent(self, event):
-        from qfluentwidgets import RoundMenu
         menu = RoundMenu(parent=self)
 
         cursor = self.textCursor()

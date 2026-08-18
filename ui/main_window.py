@@ -875,14 +875,15 @@ class PushFluentWindow(FramelessMainWindow):
 		if not plugin_id:
 			return
 		
+		# 有容器的插件先切换页面；独立窗口/隐藏插件的跳转由 action 自行处理
 		if plugin_id in self._plugin_containers:
 			self.switchTo(self._plugin_containers[plugin_id])
-			action = getattr(result, 'action', None)
-			if action and callable(action):
-				try:
-					action()
-				except Exception as e:
-					self.core.logger.error(f"Failed to execute search result action: {e}")
+		action = getattr(result, 'action', None)
+		if action and callable(action):
+			try:
+				action()
+			except Exception as e:
+				self.core.logger.error(f"Failed to execute search result action: {e}")
 	
 	def _on_real_close(self) -> None:
 		self.real_close()

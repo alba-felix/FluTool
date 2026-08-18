@@ -31,6 +31,15 @@ class SettingsInterface(ScrollArea):
         self.setObjectName("settings")
         self._init_paths()
         self._setup_ui()
+        self._connect_backup_signals()
+
+    def _connect_backup_signals(self) -> None:
+        """连接备份管理器的恢复结果信号"""
+        manager = getattr(self.core, "backup_manager", None)
+        if manager is None:
+            return
+        manager.restore_completed.connect(self._on_restore_finished)
+        manager.restore_failed.connect(self._on_restore_error)
 
     def _init_paths(self) -> None:
         """初始化路径"""
@@ -581,19 +590,43 @@ class SettingsInterface(ScrollArea):
         
         if not file_path:
             return
-        
+
         try:
-            ok, message = self.core.backup_manager.restore_backup(file_path)
+            ok, message = self.core.backup_manager.restore_backup_async(file_path)
             if not ok:
                 raise RuntimeError(message)
-            InfoBar.success(
-                title="恢复成功",
-                content=message,
+            InfoBar.info(
+                title="正在恢复",
+                content="正在后台恢复数据，请勿关闭应用...",
                 orient=Qt.Horizontal,
-                isClosable=True,
+                isClosable=False,
                 position=InfoBarPosition.TOP,
-                duration=3000,
+                duration=-1,
                 parent=self
             )
         except Exception as e:
             MessageBox("恢复失败", f"无法恢复数据：{str(e)}", main_window).exec()
+
+    def _on_restore_finished(self, backup_path: str) -> None:
+        """后台恢复完成：弹出成功提示"""
+        self._close_restoring_bars()
+        InfoBar.success(
+            title="恢复成功",
+            content="数据已恢复，插件数据已刷新",
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=3000,
+            parent=self
+        )
+
+    def _on_restore_error(self, message: str) -> None:
+        """后台恢复失败：弹窗提示（需手动关闭）"""
+        self._close_restoring_bars()
+        MessageBox("恢复失败", f"无法恢复数据：{message}", self._get_main_window()).exec()
+
+    def _close_restoring_bars(self) -> None:
+        """关闭所有"正在恢复"提示条"""
+        for bar in self.findChildren(InfoBar):
+            if bar.title == "正在恢复":
+                bar.close()
