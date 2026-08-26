@@ -19,11 +19,23 @@ from ..services.note_service import NoteService
 
 class InputMethodFixMixin:
     """修复无边框窗口输入法位置问题的混入类"""
-    
+
+    IME_OFFSET_Y = 50  # IME 候选窗口相对光标的下移偏移量（像素）
+
     def event(self, event):
         if event.type() == QEvent.Type.InputMethod:
             self.setAttribute(Qt.WA_InputMethodEnabled, True)
         return super().event(event)
+
+    def inputMethodQuery(self, query):
+        """重写输入法查询，将光标矩形下移，避免 IME 候选窗口遮挡文字"""
+        result = super().inputMethodQuery(query)
+        if query == Qt.ImCursorRectangle:
+            if isinstance(result, QRectF):
+                return QRectF(result).translated(0, self.IME_OFFSET_Y)
+            if isinstance(result, QRect):
+                return QRectF(result).translated(0, self.IME_OFFSET_Y)
+        return result
 
 
 class TextEditWithContextMenu(InputMethodFixMixin, TextEdit):
@@ -37,18 +49,6 @@ class TextEditWithContextMenu(InputMethodFixMixin, TextEdit):
     
     def _has_selection(self) -> bool:
         return self.textCursor().hasSelection()
-    
-    def inputMethodQuery(self, query):
-        """重写输入法查询，将光标矩形下移，避免 IME 候选窗口遮挡文字"""
-        result = super().inputMethodQuery(query)
-        if query == Qt.ImCursorRectangle:
-            if isinstance(result, QRectF):
-                result.translate(0, 50)
-                return result
-            if isinstance(result, QRect):
-                result.translate(0, 50)
-                return QRectF(result)
-        return result
     
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -85,6 +85,10 @@ class TextEditWithContextMenu(InputMethodFixMixin, TextEdit):
         select_all_action.triggered.connect(self.selectAll)
 
         menu.exec(event.globalPos())
+
+
+class LineEditWithIMFix(InputMethodFixMixin, LineEdit):
+    """带有输入法位置修复的单行输入框"""
 
 
 class TagWidget(QWidget):
@@ -238,7 +242,7 @@ class NoteEditorDialog(MessageBoxBase):
 
         title_layout = QHBoxLayout()
         title_layout.addWidget(QLabel('\u6807\u9898:'))
-        self.title_input = LineEdit()
+        self.title_input = LineEditWithIMFix()
         self.title_input.setPlaceholderText('\u8f93\u5165\u6807\u9898\uff08\u53ef\u9009\uff09')
         self.title_input.setClearButtonEnabled(True)
         title_layout.addWidget(self.title_input)
@@ -260,7 +264,7 @@ class NoteEditorDialog(MessageBoxBase):
         scroll_layout.addWidget(tags_label)
 
         tags_input_layout = QHBoxLayout()
-        self.tag_input = LineEdit()
+        self.tag_input = LineEditWithIMFix()
         self.tag_input.setPlaceholderText('\u8f93\u5165\u6807\u7b7e\u540e\u6309\u56de\u8f66\u6dfb\u52a0')
         self.tag_input.setClearButtonEnabled(True)
         tags_input_layout.addWidget(self.tag_input)
