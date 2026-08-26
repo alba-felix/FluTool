@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QWidget,
     QComboBox, QTextEdit, QPushButton, QFileDialog, QSizePolicy, QMenu
 )
-from PyQt5.QtCore import Qt, QRectF, QEvent, pyqtSignal
+from PyQt5.QtCore import Qt, QRectF, QRect, QEvent, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QKeySequence
 from qfluentwidgets import (
     MessageBoxBase, SubtitleLabel, LineEdit, TextEdit, ComboBox,
