@@ -2,10 +2,11 @@
 图片服务模块
 负责图片的保存、删除和路径管理
 """
+import io
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 from dataclasses import dataclass
 
 
@@ -80,7 +81,7 @@ class ImageService:
         index: int = 0
     ) -> Optional[str]:
         """
-        保存图片到本地
+        保存图片到本地（先轻微压缩：JPEG 85 重编码，谁小留谁）
 
         参数:
             image_data: 图片数据（bytes 或 QPixmap）
@@ -89,29 +90,82 @@ class ImageService:
             index: 序号
 
         返回:
-            保存的文件名，失败返回 None
+            保存的文件名（扩展名随最终格式 .jpg/.png），失败返回 None
         """
         if image_data is None:
             return None
         try:
+            original = self._to_bytes(image_data)
+            if original is None:
+                return None
+            data, ext = self._compress_light(original)
             if filename is None or not filename.strip():
-                filename = self.generate_filename(category_name, max(index, 0))
-            elif not filename.endswith('.png'):
-                filename = f"{filename}.png"
-            
-            image_path = self._image_dir / filename
-            
-            if hasattr(image_data, 'save'):
-                success = image_data.save(str(image_path), 'PNG')
-                if not success:
-                    return None
-            else:
-                with open(image_path, 'wb') as f:
-                    f.write(image_data)
-            
+                filename = self.generate_filename(category_name, max(index, 0),
+                                                  extension=ext)
+            elif '.' not in Path(filename).name:
+                filename = f"{filename}.{ext}"
+            elif not filename.rsplit('.', 1)[1].lower() in ('png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'):
+                filename = f"{filename}.{ext}"
+
+            with open(self._image_dir / filename, 'wb') as f:
+                f.write(data)
             return filename
         except Exception:
             return None
+
+    @staticmethod
+    def _to_bytes(image_data: Union[bytes, 'QPixmap']) -> Optional[bytes]:
+        """统一转 bytes（QPixmap 先编码为 PNG 字节再走压缩管线）"""
+        if hasattr(image_data, 'save'):
+            from PyQt5.QtCore import QBuffer
+            buf = QBuffer()
+            if not buf.open(QBuffer.ReadWrite) or not image_data.save(buf, 'PNG'):
+                return None
+            return bytes(buf.data())
+        if isinstance(image_data, (bytes, bytearray)):
+            return bytes(image_data)
+        return None
+
+    @staticmethod
+    def _compress_light(original: bytes):
+        """轻微压缩：JPEG 85 重编码 + EXIF 方向烘焙，谁小留谁。
+
+        与 Android 端 ImageService.compressLight 语义一致：
+        - 已压缩图片（微信图/截图）重编码后更大时保留原文件，数学上不可能膨胀
+        - GIF（重编码丢动画）与 Pillow 解码失败 → 原样返回 (original, 'png')
+        - 超过 4096 边长的超大图先降采样（防内存峰值，常规照片不受影响）
+        """
+        if original[:4] == b'GIF8':
+            return original, 'png'
+        try:
+            from PIL import Image, ImageOps
+            img = Image.open(io.BytesIO(original))
+            img.load()
+        except Exception:
+            return original, 'png'
+        try:
+            img = ImageOps.exif_transpose(img)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGBA')
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            max_edge = max(img.size)
+            if max_edge > 4096:
+                ratio = 4096 / max_edge
+                img = img.resize((max(1, round(img.width * ratio)),
+                                  max(1, round(img.height * ratio))),
+                                 Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, 'JPEG', quality=85, optimize=True)
+            compressed = buf.getvalue()
+            if len(compressed) < len(original):
+                return compressed, 'jpg'
+        except Exception:
+            pass
+        return original, 'png'
     
     def get_path(self, filename: str) -> Optional[Path]:
         """

@@ -204,15 +204,18 @@ class ClipboardWidget(QWidget):
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
-        self.service = ClipboardService()
         self.clipboard_data: List[Dict[str, Any]] = []
         self.max_history = 100
         self._is_monitoring = True
         self._monitor_initialized = False
+        # 数据层延后链接，避免阻塞或拖住 UI 页面展示
+        self.service = None
+        self.data_dir = None
+        self.json_file = None
+        self._data_linked = False
         
-        self._init_paths()
+        # 先加载并展示 UI 页面；数据链接延后到页面显示后再异步进行
         self._setup_ui()
-        self._bind_plugin_signals()
     
     def _bind_plugin_signals(self):
         """连接插件层监听信号（监听器生命周期在 Plugin 层，与 UI 解耦）"""
@@ -223,18 +226,43 @@ class ClipboardWidget(QWidget):
         except Exception as e:
             self.core.logger.error(f"Failed to bind clipboard plugin signals: {e}")
     
+    def _ensure_linked(self) -> bool:
+        """确保已链接数据 / 数据文件；UI 加载后调用，失败不影响页面显示"""
+        if self._data_linked:
+            return True
+        try:
+            self._init_paths()
+            self.service = ClipboardService()
+            self._bind_plugin_signals()
+            self._data_linked = True
+            return True
+        except Exception as e:
+            self.core.logger.error(f"Clipboard 数据链接失败: {e}")
+            if getattr(self, "status_label", None) is not None:
+                self.status_label.setText("数据加载失败")
+            return False
+    
     def _on_plugin_clipboard_updated(self):
         """插件层监听到剪切板变化：重新从数据库加载并刷新"""
+        if not self._ensure_linked():
+            return
         self._load_clipboard_history()
         self._update_list_view()
     
     def showEvent(self, event):
-        """窗口显示时加载历史"""
+        """窗口显示时链接数据，并把历史加载延后到页面绘制之后（避免点击卡顿）"""
         super().showEvent(event)
+        self._ensure_linked()
         if not self._monitor_initialized:
-            self._load_clipboard_history()
-            self._update_list_view()
-            self._monitor_initialized = True
+            QTimer.singleShot(0, self._deferred_first_load)
+
+    def _deferred_first_load(self):
+        """页面展示后再异步链接数据并加载历史"""
+        if self._monitor_initialized:
+            return
+        self._load_clipboard_history()
+        self._update_list_view()
+        self._monitor_initialized = True
 
     def closeEvent(self, event):
         """窗口关闭（监听器生命周期在 Plugin 层，此处无需停止）"""
@@ -444,6 +472,9 @@ class ClipboardWidget(QWidget):
     
     def _add_text_to_history(self, text: str):
         """添加文本到历史记录"""
+        if not self._ensure_linked():
+            self.status_label.setText("数据未就绪")
+            return
         if self.clipboard_data and self.clipboard_data[0].get('type') == 'text' and self.clipboard_data[0].get('content') == text:
             return
         
@@ -588,7 +619,7 @@ class ClipboardWidget(QWidget):
         row = self.list_widget.row(item)
         if row >= 0:
             item_data = self.clipboard_data.pop(row)
-            if 'id' in item_data:
+            if 'id' in item_data and self.service is not None:
                 self.service.delete_item(item_data['id'])
             self.list_widget.takeItem(row)
             self.status_label.setText("已删除")
@@ -597,7 +628,8 @@ class ClipboardWidget(QWidget):
         """清空剪切板历史"""
         box = MessageBox("确认清空", "确定要清空所有剪切板历史记录吗？", self)
         if box.exec():
-            self.service.clear_history()
+            if self._ensure_linked() and self.service is not None:
+                self.service.clear_history()
             self.clipboard_data.clear()
             self._update_list_view()
             self.status_label.setText("已清空剪切板历史")
@@ -677,6 +709,8 @@ class ClipboardWidget(QWidget):
     
     def _load_clipboard_history(self):
         """从数据库加载剪切板历史"""
+        if not self._ensure_linked():
+            return
         try:
             data = self.service.list_history(self.max_history)
             self.clipboard_data = []
@@ -697,7 +731,8 @@ class ClipboardWidget(QWidget):
             self.clipboard_data = []
     
     def load_data(self) -> None:
-        """加载数据"""
+        """加载数据（UI 已就绪后由宿主调用）"""
+        self._ensure_linked()
         if self._monitor_initialized:
             self._load_clipboard_history()
             self._update_list_view()

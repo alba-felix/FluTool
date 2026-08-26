@@ -414,6 +414,7 @@ class SettingsDialog(MessageBoxBase):
             return
         success, message = DataService.import_data(file_path)
         if success:
+            self._refresh_notes_window()
             InfoBar.success(
                 title='导入成功', content=message,
                 orient=Qt.Horizontal, isClosable=True,
@@ -425,6 +426,14 @@ class SettingsDialog(MessageBoxBase):
                 orient=Qt.Horizontal, isClosable=True,
                 position=InfoBarPosition.TOP, duration=3000, parent=self
             )
+
+    def _refresh_notes_window(self):
+        """合并导入后刷新笔记窗口数据（连接未替换，无需 reinitialize）"""
+        from .. import NotesWindowManager
+        window = NotesWindowManager._window
+        if window is not None and window.isVisible():
+            window._refresh_category_navigation()
+            window._load_notes()
 
     def closeEvent(self, event):
         """关闭事件"""

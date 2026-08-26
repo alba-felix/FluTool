@@ -4,7 +4,7 @@ from typing import Optional, List
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea,
     QStackedWidget, QApplication, QAbstractButton, QMenu, QAction,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QFileDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QEasingCurve, QPoint, QRect, QSize, QVariantAnimation, QTimer, QMimeData
 from PyQt5.QtGui import QFont, QPainter, QColor, QIcon, QPen, QPixmap, QCursor, QDrag
@@ -581,6 +581,14 @@ class NotesWindow(QWidget):
         self.full_add_btn.clicked.connect(self._show_full_add)
         toolbar_layout.addWidget(self.full_add_btn)
 
+        # 导出笔记数据
+        self._export_btn = PushButton("导出")
+        self._export_btn.setFixedSize(64, 32)
+        self._export_btn.setIcon(FIF.DOWNLOAD)
+        self._export_btn.setToolTip("导出笔记数据（db + 图片）")
+        self._export_btn.clicked.connect(self._export_notes)
+        toolbar_layout.addWidget(self._export_btn)
+
         # 主题切换
         self._theme_btn = TransparentToolButton(FIF.CONSTRACT, self._toolbar)
         self._theme_btn.setFixedSize(32, 32)
@@ -925,6 +933,73 @@ class NotesWindow(QWidget):
     def _toggle_theme(self):
         """切换主题并刷新卡片样式"""
         self._theme_manager.toggle()
+
+    def _export_notes(self):
+        """导出笔记数据（notes.db + images/）为 zip 文件"""
+        from core.utils import get_app_data_path
+        from pathlib import Path
+        import zipfile
+        from datetime import datetime
+
+        notes_dir = get_app_data_path("data/notes")
+        db_path = notes_dir / "notes.db"
+        images_dir = notes_dir / "images"
+
+        if not db_path.exists():
+            InfoBar.warning(
+                title="导出失败",
+                content="笔记数据库不存在",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self,
+            )
+            return
+
+        # WAL 模式下数据可能分散在 -wal 文件中，先 checkpoint 确保数据全部落盘到 .db
+        try:
+            from ..dao.database import Database
+            db = Database.get_instance()
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"flunotes_backup_{timestamp}.zip"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出笔记数据", default_name, "ZIP 文件 (*.zip)"
+        )
+        if not file_path:
+            return
+
+        try:
+            with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.write(db_path, "notes.db")
+                if images_dir.exists():
+                    for img_file in images_dir.iterdir():
+                        if img_file.is_file():
+                            zf.write(img_file, f"images/{img_file.name}")
+
+            InfoBar.success(
+                title="导出成功",
+                content=f"已保存到 {file_path}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
+        except Exception as e:
+            InfoBar.error(
+                title="导出失败",
+                content=str(e),
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self,
+            )
 
     def _toggle_archive(self, note_id: int):
         self._note_service.toggle_archive(note_id)

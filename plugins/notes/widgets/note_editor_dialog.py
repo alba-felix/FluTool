@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QWidget,
     QComboBox, QTextEdit, QPushButton, QFileDialog, QSizePolicy, QMenu
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QRectF, QEvent, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QKeySequence
 from qfluentwidgets import (
     MessageBoxBase, SubtitleLabel, LineEdit, TextEdit, ComboBox,
@@ -21,13 +21,13 @@ class InputMethodFixMixin:
     """修复无边框窗口输入法位置问题的混入类"""
     
     def event(self, event):
-        if event.type() == event.InputMethodUpdate:
+        if event.type() == QEvent.Type.InputMethod:
             self.setAttribute(Qt.WA_InputMethodEnabled, True)
         return super().event(event)
 
 
-class TextEditWithContextMenu(TextEdit):
-    """带有中文右键菜单的文本编辑器"""
+class TextEditWithContextMenu(TextEdit, InputMethodFixMixin):
+    """带有中文右键菜单和输入法位置修复的文本编辑器"""
     
     def _can_undo(self) -> bool:
         return self.document().isUndoAvailable()
@@ -37,6 +37,18 @@ class TextEditWithContextMenu(TextEdit):
     
     def _has_selection(self) -> bool:
         return self.textCursor().hasSelection()
+    
+    def inputMethodQuery(self, query):
+        """重写输入法查询，将光标矩形下移，避免 IME 候选窗口遮挡文字"""
+        result = super().inputMethodQuery(query)
+        if query == Qt.ImCursorRectangle:
+            if isinstance(result, QRectF):
+                result.translate(0, 50)
+                return result
+            if isinstance(result, QRect):
+                result.translate(0, 50)
+                return QRectF(result)
+        return result
     
     def contextMenuEvent(self, event):
         menu = QMenu(self)

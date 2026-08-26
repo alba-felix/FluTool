@@ -1,14 +1,16 @@
 import os
 import sys
+import threading
 from pathlib import Path
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFileDialog, QApplication
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from qfluentwidgets import (
     ScrollArea, SettingCardGroup, SwitchSettingCard,
     RangeSettingCard, FluentIcon as FIF,
     setCustomStyleSheet, PushSettingCard, MessageBox,
     InfoBar, InfoBarPosition, FolderListSettingCard,
-    MessageBoxBase, SubtitleLabel, LineEdit, ComboBox
+    MessageBoxBase, SubtitleLabel, LineEdit, ComboBox,
+    ConfigItem, CaptionLabel
 )
 from core import get_app_data_path
 from core.efficiency_mode import set_process_efficiency_mode, is_efficiency_mode_supported
@@ -19,10 +21,13 @@ from core.utils import set_auto_start
 class SettingsInterface(ScrollArea):
     """
     应用设置界面
-    
+
     集成 qfluentwidgets 设置卡片组件，提供可视化配置管理。
     """
-    
+
+    # 云同步连接测试结果（从工作线程发回主线程，避免跨线程操作 UI）
+    _syncTestDone = pyqtSignal(bool, str)
+
     def __init__(self, core, parent=None):
         super().__init__(parent)
         self.core = core
@@ -32,14 +37,27 @@ class SettingsInterface(ScrollArea):
         self._init_paths()
         self._setup_ui()
         self._connect_backup_signals()
+        self._connect_sync_signals()
 
     def _connect_backup_signals(self) -> None:
         """连接备份管理器的恢复结果信号"""
         manager = getattr(self.core, "backup_manager", None)
         if manager is None:
             return
+
         manager.restore_completed.connect(self._on_restore_finished)
         manager.restore_failed.connect(self._on_restore_error)
+
+    def _connect_sync_signals(self) -> None:
+        """连接云同步信号（notes 插件的 SyncService 单例；连接测试信号跨线程安全）"""
+        self._syncTestDone.connect(self._on_sync_test_done)
+        try:
+            from plugins.notes.services.sync_service import SyncService
+            self._sync_service = SyncService.get_instance()
+            self._sync_service.syncFinished.connect(self._on_sync_finished)
+        except Exception as e:
+            self.core.logger.warning(f"云同步服务不可用：{e}")
+            self._sync_service = None
 
     def _init_paths(self) -> None:
         """初始化路径"""
@@ -56,6 +74,7 @@ class SettingsInterface(ScrollArea):
         self._create_general_group()
         self._create_window_group()
         self._create_data_group()
+        self._create_sync_group()
         self._create_ai_group()
         self.vBoxLayout.addStretch(1)
         self.setWidget(self.view)
@@ -186,8 +205,320 @@ class SettingsInterface(ScrollArea):
         )
         self.loadCard.clicked.connect(self._load_data)
         self.dataGroup.addSettingCard(self.loadCard)
-        
+
         self.vBoxLayout.addWidget(self.dataGroup)
+
+    def _create_sync_group(self) -> None:
+        """创建云同步设置组（坚果云 WebDAV，笔记插件提供同步服务）"""
+        self.syncGroup = SettingCardGroup("云同步（坚果云）", self.view)
+
+        self.cloudSyncEnabledCard = SwitchSettingCard(
+            FIF.CLOUD,
+            "启用云同步",
+            "与其他设备自动合并同步笔记（绝不覆盖删除）",
+            configItem=ConfigItem('notes_sync', 'webdav_enabled', False)
+        )
+        self.cloudSyncEnabledCard.checkedChanged.connect(self._on_cloud_sync_enabled)
+        self.syncGroup.addSettingCard(self.cloudSyncEnabledCard)
+
+        self.cloudSyncAccountCard = PushSettingCard(
+            "编辑",
+            FIF.PEOPLE,
+            "坚果云账号",
+            "",
+            parent=self.view
+        )
+        self.cloudSyncAccountCard.clicked.connect(self._edit_sync_account)
+        self.syncGroup.addSettingCard(self.cloudSyncAccountCard)
+
+        self.cloudSyncPasswordCard = PushSettingCard(
+            "编辑",
+            FIF.CERTIFICATE,
+            "应用密码",
+            "",
+            parent=self.view
+        )
+        self.cloudSyncPasswordCard.clicked.connect(self._edit_sync_password)
+        self.syncGroup.addSettingCard(self.cloudSyncPasswordCard)
+
+        self.cloudSyncDirCard = PushSettingCard(
+            "编辑",
+            FIF.FOLDER,
+            "远端目录",
+            "坚果云网盘里的同步目录名",
+            parent=self.view
+        )
+        self.cloudSyncDirCard.clicked.connect(self._edit_sync_dir)
+        self.syncGroup.addSettingCard(self.cloudSyncDirCard)
+
+        self.cloudSyncIntervalCard = PushSettingCard(
+            "选择",
+            FIF.DATE_TIME,
+            "同步间隔",
+            "",
+            parent=self.view
+        )
+        self.cloudSyncIntervalCard.clicked.connect(self._edit_sync_interval)
+        self.syncGroup.addSettingCard(self.cloudSyncIntervalCard)
+
+        self.cloudSyncTestCard = PushSettingCard(
+            "测试",
+            FIF.SYNC,
+            "连接测试",
+            "验证账号与应用密码是否可用",
+            parent=self.view
+        )
+        self.cloudSyncTestCard.clicked.connect(self._test_cloud_sync)
+        self.syncGroup.addSettingCard(self.cloudSyncTestCard)
+
+        self.cloudSyncNowCard = PushSettingCard(
+            "立即同步",
+            FIF.UPDATE,
+            "手动同步",
+            "从云端拉取合并 + 推送本地改动",
+            parent=self.view
+        )
+        self.cloudSyncNowCard.clicked.connect(self._sync_cloud_now)
+        self.syncGroup.addSettingCard(self.cloudSyncNowCard)
+
+        self.cloudSyncStatusCard = PushSettingCard(
+            "刷新",
+            FIF.INFO,
+            "上次同步",
+            "",
+            parent=self.view
+        )
+        self.cloudSyncStatusCard.clicked.connect(self._refresh_sync_cards)
+        self.syncGroup.addSettingCard(self.cloudSyncStatusCard)
+
+        self.vBoxLayout.addWidget(self.syncGroup)
+        self._refresh_sync_cards()
+
+    # ── 云同步：配置读写与卡片刷新 ──
+
+    @staticmethod
+    def _get_sync_config() -> dict:
+        """读取云同步配置（notes 插件的 config.json；纯文件操作，不依赖插件已加载）"""
+        from plugins.notes.services.config_service import ConfigService
+        cs = ConfigService()
+        return {
+            'webdav_enabled': bool(cs.get('webdav_enabled', False)),
+            'webdav_account': cs.get('webdav_account', ''),
+            'webdav_password': cs.get('webdav_password', ''),
+            'webdav_dir': cs.get('webdav_dir', 'JotMe'),
+            'sync_interval': int(cs.get('sync_interval', 30) or 30),
+            'sync_last_time': cs.get('sync_last_time', ''),
+            'sync_last_result': cs.get('sync_last_result', ''),
+        }
+
+    @staticmethod
+    def _set_sync_config(**kv) -> None:
+        from plugins.notes.services.config_service import ConfigService
+        cs = ConfigService()
+        for key, value in kv.items():
+            cs.set(key, value)
+        cs.save()
+
+    def _refresh_sync_cards(self) -> None:
+        """按当前配置刷新云同步各卡片显示（blockSignals 防止程序化 setCheck 触发开关逻辑）"""
+        cfg = self._get_sync_config()
+        self.cloudSyncEnabledCard.blockSignals(True)
+        self.cloudSyncEnabledCard.setChecked(cfg['webdav_enabled'])
+        self.cloudSyncEnabledCard.blockSignals(False)
+        self.cloudSyncAccountCard.setContent(cfg['webdav_account'] or "未设置")
+        self.cloudSyncPasswordCard.setContent("已设置" if cfg['webdav_password'] else "未设置")
+        self.cloudSyncDirCard.setContent(cfg['webdav_dir'] or "JotMe")
+        minutes = cfg['sync_interval']
+        if minutes < 60:
+            label = f"每 {minutes} 分钟"
+        elif minutes < 1440:
+            label = f"每 {minutes // 60} 小时"
+        else:
+            label = f"每 {minutes // 1440} 天"
+        self.cloudSyncIntervalCard.setContent(label)
+        if cfg['sync_last_time']:
+            self.cloudSyncStatusCard.setContent(
+                f"{cfg['sync_last_time']} · {cfg['sync_last_result']}")
+        else:
+            self.cloudSyncStatusCard.setContent("尚未同步过")
+
+    # ── 云同步：事件处理 ──
+
+    def _on_cloud_sync_enabled(self, checked: bool) -> None:
+        """启用/关闭云同步"""
+        cfg = self._get_sync_config()
+        if checked and (not cfg['webdav_account'] or not cfg['webdav_password']):
+            self.cloudSyncEnabledCard.blockSignals(True)
+            self.cloudSyncEnabledCard.setChecked(False)
+            self.cloudSyncEnabledCard.blockSignals(False)
+            InfoBar.warning(
+                title="云同步",
+                content="请先设置坚果云账号与应用密码，再开启云同步",
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=3000, parent=self
+            )
+            return
+        self._set_sync_config(webdav_enabled=checked)
+        if self._sync_service is not None:
+            self._sync_service.start_auto_sync()  # 未启用时内部会停掉定时器
+            if checked:
+                self._sync_service.sync_now()
+        status = "开启" if checked else "关闭"
+        self.core.logger.info(f"云同步已{status}")
+
+    def _edit_sync_account(self) -> None:
+        """编辑坚果云账号"""
+        cfg = self._get_sync_config()
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel("坚果云账号", dialog)
+        dialog.viewLayout.addWidget(title)
+        input_edit = LineEdit(dialog)
+        input_edit.setPlaceholderText("坚果云账号（邮箱）")
+        input_edit.setText(cfg['webdav_account'])
+        dialog.viewLayout.addWidget(input_edit)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+        self._set_sync_config(webdav_account=input_edit.text().strip())
+        self._refresh_sync_cards()
+
+    def _edit_sync_password(self) -> None:
+        """编辑应用密码"""
+        cfg = self._get_sync_config()
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel("应用密码", dialog)
+        dialog.viewLayout.addWidget(title)
+        input_edit = LineEdit(dialog)
+        input_edit.setEchoMode(LineEdit.Password)
+        input_edit.setPlaceholderText("应用密码（非登录密码）")
+        input_edit.setText(cfg['webdav_password'])
+        dialog.viewLayout.addWidget(input_edit)
+        hint = CaptionLabel(
+            "获取方式：坚果云网页端 → 账户信息 → 安全选项 → 添加应用密码", dialog)
+        dialog.viewLayout.addWidget(hint)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+        self._set_sync_config(webdav_password=input_edit.text().strip())
+        self._refresh_sync_cards()
+
+    def _edit_sync_dir(self) -> None:
+        """编辑远端目录"""
+        cfg = self._get_sync_config()
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel("远端目录", dialog)
+        dialog.viewLayout.addWidget(title)
+        input_edit = LineEdit(dialog)
+        input_edit.setPlaceholderText("JotMe")
+        input_edit.setText(cfg['webdav_dir'])
+        dialog.viewLayout.addWidget(input_edit)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+        self._set_sync_config(webdav_dir=input_edit.text().strip() or "JotMe")
+        self._refresh_sync_cards()
+
+    def _edit_sync_interval(self) -> None:
+        """选择同步间隔"""
+        cfg = self._get_sync_config()
+        dialog = MessageBoxBase(self)
+        title = SubtitleLabel("同步间隔", dialog)
+        dialog.viewLayout.addWidget(title)
+        combo = ComboBox(dialog)
+        options = [
+            (10, "每 10 分钟"), (30, "每 30 分钟"), (60, "每 1 小时"), (180, "每 3 小时"),
+            (720, "每 12 小时"), (1440, "每 24 小时"), (4320, "每 3 天"), (10080, "每 7 天"),
+        ]
+        for _, label in options:
+            combo.addItem(label)
+        index = next((i for i, (m, _) in enumerate(options) if m == cfg['sync_interval']), 1)
+        combo.setCurrentIndex(index)
+        dialog.viewLayout.addWidget(combo)
+        dialog.yesButton.setText("保存")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+        if combo.currentIndex() < 0:
+            return
+        minutes = options[combo.currentIndex()][0]
+        self._set_sync_config(sync_interval=minutes)
+        if self._sync_service is not None:
+            self._sync_service.start_auto_sync()  # 用新间隔重启定时器
+        self._refresh_sync_cards()
+
+    def _test_cloud_sync(self) -> None:
+        """连接测试（后台线程，结果经信号回主线程）"""
+        cfg = self._get_sync_config()
+        if not cfg['webdav_account'] or not cfg['webdav_password']:
+            InfoBar.warning(
+                title="连接测试",
+                content="请先设置坚果云账号与应用密码",
+                orient=Qt.Horizontal, isClosable=True,
+                position=InfoBarPosition.TOP, duration=2500, parent=self
+            )
+            return
+        self.cloudSyncTestCard.button.setEnabled(False)
+        self.cloudSyncTestCard.button.setText("测试中…")
+
+        def run():
+            from plugins.notes.services.webdav_client import WebDavClient
+            client = WebDavClient('https://dav.jianguoyun.com/dav/',
+                                  cfg['webdav_account'], cfg['webdav_password'])
+            ok, msg = client.test_connection()
+            self._syncTestDone.emit(ok, msg)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_sync_test_done(self, ok: bool, msg: str) -> None:
+        """连接测试结果（主线程）"""
+        self.cloudSyncTestCard.button.setEnabled(True)
+        self.cloudSyncTestCard.button.setText("测试")
+        if ok:
+            InfoBar.success(title="连接测试", content=msg, orient=Qt.Horizontal,
+                            isClosable=True, position=InfoBarPosition.TOP,
+                            duration=2500, parent=self)
+        else:
+            InfoBar.error(title="连接测试", content=msg, orient=Qt.Horizontal,
+                          isClosable=True, position=InfoBarPosition.TOP,
+                          duration=4000, parent=self)
+
+    def _sync_cloud_now(self) -> None:
+        """立即同步"""
+        if self._sync_service is None:
+            InfoBar.error(title="云同步", content="同步服务不可用（笔记插件未加载）",
+                          orient=Qt.Horizontal, isClosable=True,
+                          position=InfoBarPosition.TOP, duration=3000, parent=self)
+            return
+        cfg = self._get_sync_config()
+        if not cfg['webdav_enabled']:
+            self._set_sync_config(webdav_enabled=True)
+            self.cloudSyncEnabledCard.blockSignals(True)
+            self.cloudSyncEnabledCard.setChecked(True)
+            self.cloudSyncEnabledCard.blockSignals(False)
+            self._sync_service.start_auto_sync()
+        self.cloudSyncNowCard.button.setEnabled(False)
+        self.cloudSyncNowCard.button.setText("同步中…")
+        self._sync_service.sync_now()
+
+    def _on_sync_finished(self, success: bool, message: str) -> None:
+        """同步结束（主线程；信号来自 SyncService 单例，含自动定时同步）"""
+        self.cloudSyncNowCard.button.setEnabled(True)
+        self.cloudSyncNowCard.button.setText("立即同步")
+        cfg = self._get_sync_config()
+        if cfg['sync_last_time']:
+            self.cloudSyncStatusCard.setContent(
+                f"{cfg['sync_last_time']} · {cfg['sync_last_result']}")
+        if success:
+            InfoBar.success(title="云同步", content=message, orient=Qt.Horizontal,
+                            isClosable=True, position=InfoBarPosition.TOP,
+                            duration=3000, parent=self)
+        else:
+            InfoBar.error(title="云同步", content=message, orient=Qt.Horizontal,
+                          isClosable=True, position=InfoBarPosition.TOP,
+                          duration=5000, parent=self)
 
     def _create_ai_group(self) -> None:
         """创建 AI 设置组"""

@@ -108,6 +108,13 @@ class Plugin(PluginInterface):
         # 数据恢复后重建 notes.db 连接（重跑建表迁移）并刷新窗口
         core.event_bus.listen("data_restored", lambda _data: self._on_data_restored())
 
+        # 坚果云自动同步：启动定时器（未启用/未配置时内部为空操作），
+        # 同步拉取合并到新笔记时自动刷新窗口
+        from .services.sync_service import SyncService
+        self._sync_service = SyncService.get_instance()
+        self._sync_service.syncFinished.connect(self._on_sync_finished)
+        self._sync_service.start_auto_sync()
+
     def _on_data_restored(self) -> None:
         """数据恢复后重建连接并刷新窗口数据"""
         from .dao.database import Database
@@ -117,6 +124,17 @@ class Plugin(PluginInterface):
         if window is not None and window.isVisible():
             window._refresh_category_navigation()
             window._load_notes()
+
+    def _on_sync_finished(self, success: bool, message: str) -> None:
+        """云同步结束：拉取合并新增了笔记时刷新窗口（连接未变，无需 reinitialize）"""
+        if not success:
+            return
+        if getattr(self, '_sync_service', None) and \
+                self._sync_service.last_result.get('added_notes', 0) > 0:
+            window = NotesWindowManager._window
+            if window is not None and window.isVisible():
+                window._refresh_category_navigation()
+                window._load_notes()
 
     def shutdown(self) -> None:
         NotesWindowManager.close_window()
