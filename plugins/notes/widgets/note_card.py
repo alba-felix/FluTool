@@ -11,9 +11,10 @@ from ..resources.styles.note_card_style import DARK_STYLE, LIGHT_STYLE
 from ..highlighter.factory import HighlighterFactory
 from ..highlighter.language_detector import detect_language
 from ..core.custom_icon import CustomFluentIcon
+from .note_editor_dialog import InputMethodFixMixin
 
 
-class NoteCardTextEdit(QTextEdit):
+class NoteCardTextEdit(InputMethodFixMixin, QTextEdit):
     """笔记内容编辑框，右键菜单走 Fluent 风格圆角菜单"""
 
     def contextMenuEvent(self, event):
