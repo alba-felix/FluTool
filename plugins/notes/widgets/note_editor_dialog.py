@@ -26,7 +26,7 @@ class InputMethodFixMixin:
         return super().event(event)
 
 
-class TextEditWithContextMenu(TextEdit, InputMethodFixMixin):
+class TextEditWithContextMenu(InputMethodFixMixin, TextEdit):
     """带有中文右键菜单和输入法位置修复的文本编辑器"""
     
     def _can_undo(self) -> bool:
