@@ -318,6 +318,10 @@ class ScrollableNavigationPanel(QWidget):
 	def getOverflowItems(self):
 		return self._overflow_items
 	
+	def widget(self, routeKey: str):
+		"""按路由键获取导航按钮"""
+		return self._items.get(routeKey)
+
 	def addItem(self, routeKey: str, icon, text: str, onClick=None, position=None):
 		if routeKey in self._items:
 			return
@@ -1279,7 +1283,7 @@ class MainWindow(PushFluentWindow):
 		else:
 			self.navigationInterface.collapse(useAni=False)
 	
-	def register_plugin(self, plugin_id: str, icon, name: str, hidden: bool = False) -> None:
+	def register_plugin(self, plugin_id: str, icon, name: str, hidden: bool = False, tooltip: str = "") -> None:
 		if hidden:
 			# 隐藏式插件：只注册容器不添加到导航栏
 			container = self._plugin_host.create_container(plugin_id)
@@ -1288,6 +1292,10 @@ class MainWindow(PushFluentWindow):
 			container = self._plugin_host.create_container(plugin_id)
 			self._plugin_containers[plugin_id] = container
 			self.addSubInterface(container, icon, name)
+			if tooltip:
+				item = self.navigationInterface.widget(container.objectName())
+				if item:
+					item.setToolTip(tooltip)
 	
 	def load_first_plugin(self) -> None:
 		if not self._plugin_containers:

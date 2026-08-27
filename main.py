@@ -344,7 +344,8 @@ def main():
                         icon = plugin.get_icon() or FIF.DOCUMENT
                         name = plugin.get_name() or plugin_id
                         hidden = getattr(plugin, "PLUGIN_HIDDEN", False)
-                        window.register_plugin(plugin_id, icon, name, hidden)
+                        tooltip = getattr(plugin, 'get_tooltip', lambda: '')()
+                        window.register_plugin(plugin_id, icon, name, hidden, tooltip=tooltip)
                         loaded_count += 1
                     else:
                         failed_count += 1

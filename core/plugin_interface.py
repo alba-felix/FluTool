@@ -88,6 +88,9 @@ class PluginInterface(QObject, metaclass=PluginMeta):
         if plugin_icon is not None:
             return plugin_icon
         return getattr(self, "_icon", None)
+    def get_tooltip(self) -> str:
+        """获取侧边栏悬浮提示，返回空字符串时回退为插件名称"""
+        return getattr(self, "PLUGIN_TOOLTIP", "")
 
     @property
     def is_widget_created(self) -> bool:

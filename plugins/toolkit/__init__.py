@@ -959,6 +959,13 @@ class Plugin(PluginInterface):
             self._widget = SubPluginWidget(self.core, self._tab_manager, parent)
         return self._widget
 
+    def get_tooltip(self) -> str:
+        """侧边栏悬浮提示：插件名（子插件1、子插件2...）"""
+        names = [p.page_name for p in self._tab_manager.get_pages() if getattr(p, 'page_name', '')]
+        if not names:
+            return ''
+        return f"{self.get_name()}（{'、'.join(names)}）"
+
     def supports_search(self) -> bool:
         return True
 
