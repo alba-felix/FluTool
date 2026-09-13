@@ -5,6 +5,8 @@ from storage import DatabaseManager
 
 PLUGIN_ID = 'text_tools_vocabulary'
 
+DEFAULT_CATEGORY_NAME = "默认分类"
+
 
 class VocabularyService:
     """单词背诵业务服务"""
@@ -16,6 +18,10 @@ class VocabularyService:
 
     def add_category(self, name: str) -> int:
         return self.db.categories.add_or_get(PLUGIN_ID, name)
+
+    def get_or_create_default_category(self) -> int:
+        """获取默认分类 id，不存在则自动创建"""
+        return self.db.categories.add_or_get(PLUGIN_ID, DEFAULT_CATEGORY_NAME)
 
     def list_categories(self) -> List[Dict[str, Any]]:
         return self.db.categories.get_by_plugin(PLUGIN_ID)

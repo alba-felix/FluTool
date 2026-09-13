@@ -26,10 +26,12 @@ COL_CATEGORY = 3
 class WordEditDialog(MessageBoxBase):
     """添加/编辑单词对话框"""
 
-    def __init__(self, service: VocabularyService, word_data: Optional[Dict[str, Any]] = None, parent=None):
+    def __init__(self, service: VocabularyService, word_data: Optional[Dict[str, Any]] = None,
+                 parent=None, preset_category_id: Optional[int] = None):
         super().__init__(parent)
         self.service = service
         self.word_data = word_data
+        self.preset_category_id = preset_category_id
         self._setup_ui()
 
     def _setup_ui(self):
@@ -63,11 +65,25 @@ class WordEditDialog(MessageBoxBase):
         self.viewLayout.addWidget(BodyLabel("所属分类:", self))
         self.category_combo = ComboBox(self)
         categories = self.service.list_categories()
-        self.category_combo.addItem("（无分类）", userData=None)
+        default_cat_id = self.service.get_or_create_default_category()
         current_category_id = self.word_data.get("category_id") if self.word_data else None
+        # 首项为默认分类，未显式选择时新单词归入默认分类
+        self.category_combo.addItem("默认分类", userData=default_cat_id)
         for cat in categories:
-            self.category_combo.addItem(cat["name"], userData=cat["id"])
-        if current_category_id is not None:
+            if cat["id"] != default_cat_id:
+                self.category_combo.addItem(cat["name"], userData=cat["id"])
+        if current_category_id is None:
+            # 编辑无分类旧数据时保留"（无分类）"选项，避免保存时被改动
+            if self.word_data is not None:
+                self.category_combo.addItem("（无分类）", userData=None)
+                self.category_combo.setCurrentIndex(self.category_combo.count() - 1)
+            # 新建单词且主界面筛选了下拉：动态预选该分类
+            elif self.preset_category_id is not None:
+                for i in range(self.category_combo.count()):
+                    if self.category_combo.itemData(i) == self.preset_category_id:
+                        self.category_combo.setCurrentIndex(i)
+                        break
+        else:
             for i in range(self.category_combo.count()):
                 if self.category_combo.itemData(i) == current_category_id:
                     self.category_combo.setCurrentIndex(i)
@@ -295,6 +311,7 @@ class VocabularyWidget(QWidget):
     # ============ 数据加载 ============
 
     def _load_data(self):
+        self.service.get_or_create_default_category()
         self._all_words = self.service.list_words()
         self._displayed_words = self._all_words.copy()
         self._load_categories()
@@ -846,7 +863,10 @@ class VocabularyWidget(QWidget):
     # ============ 单词操作 ============
 
     def _add_word(self):
-        dialog = WordEditDialog(self.service, parent=self)
+        dialog = WordEditDialog(
+            self.service, parent=self,
+            preset_category_id=self._current_category_id,
+        )
         if not dialog.exec():
             return
         data = dialog.get_data()
