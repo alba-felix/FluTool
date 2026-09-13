@@ -15,6 +15,7 @@ BUILTIN_PLUGIN_MANIFESTS = [
     {"package": "ai_assistant", "id": "ai_assistant", "priority": 8, "module": "plugins.ai_assistant"},
     {"package": "text_tools", "id": "text_tools", "priority": 8.2, "module": "plugins.text_tools"},
     {"package": "dev_tools", "id": "dev_tools", "priority": 8.3, "module": "plugins.dev_tools"},
+    {"package": "hardware_tools", "id": "hardware_tools", "priority": 8.4, "module": "plugins.hardware_tools"},
     {"package": "clipboard", "id": "clipboard", "priority": 10, "module": "plugins.clipboard"},
     {"package": "todo", "id": "todo", "priority": 11, "module": "plugins.todo"},
     {"package": "color_palette", "id": "color_palette", "priority": 13, "module": "plugins.color_palette"},
