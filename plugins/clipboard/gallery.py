@@ -147,6 +147,23 @@ class ImageLibrary:
                 return i
         return -1
 
+    def clear(self) -> bool:
+        """清空图库：删除全部图片文件并清空索引，返回是否全部删除成功"""
+        failed = 0
+        for entry in self.images:
+            path = entry.get("path", "")
+            if not os.path.exists(path):
+                continue
+            try:
+                os.remove(path)
+            except Exception as e:
+                if self.core:
+                    self.core.logger.error(f"删除图片文件失败: {e}")
+                failed += 1
+        self.images = []
+        self._save()
+        return failed == 0
+
 
 class GalleryPreviewWidget(QWidget):
     """图库预览组件（支持缩放与自适应窗口）"""
@@ -437,6 +454,11 @@ class ImageGalleryWidget(QWidget):
         self.delete_btn.clicked.connect(self._delete_image)
         toolbar.addWidget(self.delete_btn)
 
+        self.clear_btn = PushButton("清空", self)
+        self.clear_btn.setIcon(FIF.BROOM)
+        self.clear_btn.clicked.connect(self._clear_gallery)
+        toolbar.addWidget(self.clear_btn)
+
         toolbar.addStretch()
 
         self.zoom_out_btn = TransparentToolButton(FIF.ZOOM_OUT, self)
@@ -680,6 +702,23 @@ class ImageGalleryWidget(QWidget):
             _show_info(self, "删除成功", "已删除图片")
         else:
             _show_info(self, "删除失败", "无法删除图片文件", success=False)
+
+    def _clear_gallery(self):
+        """清空整个图库（带二次确认）"""
+        box = MessageDialog(
+            "清空图库",
+            f"确定要清空图库吗？将删除全部 {self.library.count()} 张图片，此操作不可恢复。",
+            self,
+        )
+        if not box.exec():
+            return
+        if self.library.clear():
+            self._thumb_cache.clear()
+            self.preview.clear()
+            self._refresh_grid()
+            _show_info(self, "清空成功", "图库已清空")
+        else:
+            _show_info(self, "清空失败", "部分图片文件无法删除", success=False)
 
     def _show_context_menu(self, pos):
         item = self.grid.itemAt(pos)
