@@ -4,8 +4,8 @@ from PyQt5.QtWidgets import (QAbstractButton, QAction, QApplication, QHBoxLayout
                              QVBoxLayout, QWidget, QFrame, QScrollArea)
 from qfluentwidgets import (BodyLabel, CaptionLabel, FluentIcon as FIF, FluentStyleSheet, HyperlinkLabel, InfoBar,
                            InfoBarPosition, isDarkTheme,
-                           NavigationWidget, setCustomStyleSheet, setTheme, SmoothScrollArea, StrongBodyLabel, Theme,
-                           TransparentToolButton, SubtitleLabel, qconfig, MessageBox)
+                            NavigationWidget, setCustomStyleSheet, setTheme, SmoothScrollArea, StrongBodyLabel, Theme,
+                            TransparentToolButton, SubtitleLabel, qconfig, MessageBox, ToolTipFilter)
 from qfluentwidgets.common.font import setFont
 from qfluentwidgets.common.icon import drawIcon, toQIcon
 from qfluentwidgets.window.stacked_widget import StackedWidget
@@ -32,12 +32,14 @@ class ScrollableNavButton(NavigationWidget):
 		self._expandWidth = 150
 		setFont(self)
 		self.setToolTip(text)
+		self.installEventFilter(ToolTipFilter(self, 100))
 	
 	def text(self):
 		return self._text
 	
 	def setText(self, text: str):
 		self._text = text
+		self.setToolTip(text)
 		self.update()
 	
 	def icon(self):
@@ -593,6 +595,7 @@ class PushFluentWindow(FramelessMainWindow):
 		self._theme_btn.setFixedSize(32, 32)
 		self._theme_btn.setIconSize(QSize(14, 14))
 		self._theme_btn.setToolTip("<p>切换主题</p>")
+		self._theme_btn.installEventFilter(ToolTipFilter(self._theme_btn, 100))
 		self._theme_btn.clicked.connect(self._toggle_theme)
 		self.titleBar.hBoxLayout.insertWidget(3, self._theme_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
 		self.titleBar.hBoxLayout.insertSpacing(4, 8)
@@ -601,6 +604,7 @@ class PushFluentWindow(FramelessMainWindow):
 		self._search_btn.setFixedSize(32, 32)
 		self._search_btn.setIconSize(QSize(14, 14))
 		self._search_btn.setToolTip("<p>全局搜索</p>")
+		self._search_btn.installEventFilter(ToolTipFilter(self._search_btn, 100))
 		self._search_btn.clicked.connect(self._on_global_search)
 		self.titleBar.hBoxLayout.insertWidget(3, self._search_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
 		self.titleBar.hBoxLayout.insertSpacing(4, 8)
@@ -609,6 +613,7 @@ class PushFluentWindow(FramelessMainWindow):
 		self._notes_btn.setFixedSize(32, 32)
 		self._notes_btn.setIconSize(QSize(14, 14))
 		self._notes_btn.setToolTip("<p>笔记管理</p>")
+		self._notes_btn.installEventFilter(ToolTipFilter(self._notes_btn, 100))
 		self._notes_btn.clicked.connect(self._on_notes_btn_clicked)
 		self.titleBar.hBoxLayout.insertWidget(4, self._notes_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
 		self.titleBar.hBoxLayout.insertSpacing(5, 8)
@@ -617,6 +622,7 @@ class PushFluentWindow(FramelessMainWindow):
 		self._hide_btn.setFixedSize(46, 32)
 		self._hide_btn.setIconSize(QSize(14, 14))
 		self._hide_btn.setToolTip("<p>隐藏窗口</p>")
+		self._hide_btn.installEventFilter(ToolTipFilter(self._hide_btn, 100))
 		self._hide_btn.clicked.connect(self._on_hide_window)
 		self.titleBar.hBoxLayout.insertWidget(self.titleBar.hBoxLayout.indexOf(self.titleBar.maxBtn) + 1, self._hide_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
 		
@@ -624,6 +630,7 @@ class PushFluentWindow(FramelessMainWindow):
 		self._quit_btn.setFixedSize(46, 32)
 		self._quit_btn.setIconSize(QSize(14, 14))
 		self._quit_btn.setToolTip("<p>退出程序</p>")
+		self._quit_btn.installEventFilter(ToolTipFilter(self._quit_btn, 100))
 		self._quit_btn.clicked.connect(self._on_real_close)
 		self.titleBar.hBoxLayout.insertWidget(self.titleBar.hBoxLayout.indexOf(self.titleBar.minBtn), self._quit_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
 	
