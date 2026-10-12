@@ -29,6 +29,7 @@
 | 场景 | 文档 |
 | :--- | :--- |
 | 当前架构、目录、打包、测试细则 | `docs/development_guide.md` |
+| flutoolpro 架构蓝图（插件化/横切/主题统一/环境分离/数据流） | `docs/architecture_design.md` |
 | 插件开发 | `.trae/skills/plugin-dev/SKILL.md` |
 | 全局搜索接入 | `.trae/skills/global-search/SKILL.md` |
 | 架构关系图和调用链 | `.trae/skills/codemap/SKILL.md` |
