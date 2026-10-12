@@ -20,6 +20,7 @@ from .deepseek import DeepSeekToolPage
 from .svg_viewer import SvgViewerTool
 from .port_scan import PortScanToolPage
 from .skill import SkillToolPage
+from .json_tool import JsonToolPage
 
 
 class OverflowPopup(QWidget):
@@ -391,6 +392,7 @@ class Plugin(PluginInterface):
         self._tab_manager.register(SvgViewerTool)
         self._tab_manager.register(PortScanToolPage)
         self._tab_manager.register(SkillToolPage)
+        self._tab_manager.register(JsonToolPage)
 
         self._widget = None
 
