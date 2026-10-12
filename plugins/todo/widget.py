@@ -256,6 +256,11 @@ class TodoReminderManager(QObject):
         self.core = core
         self.service = service
         self._reminded_todos: set = set()
+        self._expired_logged: set = set()  # 已记录过"过期跳过"日志的待办 id，避免每 15s 刷屏
+        self._snoozed: Dict[int, datetime] = {}
+        self._queue: List[Dict] = []
+        self._current_popup = None
+        self.on_complete_callback = None
 
     def check_and_notify(self, todos: List[Dict]) -> None:
         now = datetime.now()
@@ -282,10 +287,36 @@ class TodoReminderManager(QObject):
                 except ValueError:
                     continue
 
+            todo_id = todo.get("id")
+
+            # 稍后提醒（snooze）：屏蔽期内跳过；屏蔽到期后本 tick 强制重新触发一次，
+            # 即使待办已过期也要再弹（否则短截止待办 snooze 后会被过期静默吃掉，导致「没反应」）。
+            snooze_due = self._snoozed.get(todo_id) if todo_id is not None else None
+            if snooze_due is not None:
+                if now < snooze_due:
+                    continue
+                del self._snoozed[todo_id]
+                self.clear_reminded(todo_id)
+                if logger:
+                    logger.info(f"[提醒] 稍后提醒到期，重新触发: {todo.get('title')}")
+                self._enqueue(todo)
+                continue
+
             if now > deadline:
+                # 已提醒过且现已过期：完全静默，避免每 15s 刷屏
+                if todo.get("last_reminded"):
+                    continue
+                # 从未提醒过但已过期的待办：仅记录一次，之后静默
+                tid = todo.get("id")
+                if tid in self._expired_logged:
+                    continue
                 if logger:
                     logger.info(f"[提醒] 待办已过期，跳过: {todo.get('title')}")
+                if tid is not None:
+                    self._expired_logged.add(tid)
                 continue
+
+
 
             remaining = deadline - now
             remaining_minutes = remaining.total_seconds() / 60
@@ -309,155 +340,223 @@ class TodoReminderManager(QObject):
 
             if logger:
                 logger.info(f"[提醒] 触发通知: {todo.get('title')}")
-            self._show_notification(todo, remaining_minutes)
-            self._reminded_todos.add(key)
-            
-            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
-            todo_id = todo.get("id")
-            if todo_id:
-                self.service.update_fields(todo_id, last_reminded=now_str)
-                todo["last_reminded"] = now_str
+            self._enqueue(todo)
 
-    def _show_notification(self, todo: Dict, remaining_minutes: float) -> None:
-        title = todo.get("title", "未命名")
-        description = todo.get("description", "")
+        self._process_queue()
+
+    def _enqueue(self, todo: Dict) -> None:
+        """将待提醒的待办加入队列（非阻塞，由浮窗逐个展示）"""
+        self._queue.append(todo)
+        self._reminded_todos.add((todo.get("id"), todo.get("due_date", "")))
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        todo_id = todo.get("id")
+        if todo_id:
+            self.service.update_fields(todo_id, last_reminded=now_str)
+            todo["last_reminded"] = now_str
+
+    def _process_queue(self) -> None:
+        """顺序展示提醒浮窗，同一时刻只显示一条"""
+        if self._current_popup is not None or not self._queue:
+            return
+        todo = self._queue.pop(0)
+        if todo.get("completed"):
+            self._process_queue()
+            return
         logger = getattr(self.core, 'logger', None)
-
-        if remaining_minutes < 60:
-            time_text = f"{int(remaining_minutes)} 分钟"
-        else:
-            hours = int(remaining_minutes / 60)
-            time_text = f"{hours} 小时"
-
-        message = f"代办事项「{title}」将在 {time_text} 后到期"
-
-        # 强制弹窗，无论窗口状态如何
         try:
-            dialog = QDialog(None)
-            dialog.setWindowFlags(
-                Qt.WindowStaysOnTopHint | Qt.Dialog
-                | Qt.WindowCloseButtonHint | Qt.WindowTitleHint
-                | Qt.WindowSystemMenuHint
-            )
-            dialog.setWindowTitle("⏰ 代办事项提醒")
-            dialog.setFixedSize(450, 250)
-            layout = QVBoxLayout(dialog)
-            layout.setContentsMargins(25, 25, 25, 25)
-            layout.setSpacing(15)
-
-            # 标题 - 更醒目
-            title_label = BodyLabel("⏰ 待办事项到期提醒", dialog)
-            title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #ff6b6b;")
-            title_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(title_label)
-
-            # 主要内容
-            msg_label = BodyLabel(message, dialog)
-            msg_label.setWordWrap(True)
-            msg_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-            msg_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(msg_label)
-
-            # 描述内容
-            if description:
-                desc_label = BodyLabel(dialog)
-                max_len = 100
-                display_desc = description if len(description) <= max_len else description[:max_len] + "..."
-                desc_label.setText(f"内容: {display_desc}")
-                desc_label.setWordWrap(True)
-                desc_label.setStyleSheet("color: #888888; font-size: 12px; padding: 10px; background-color: rgba(0,0,0,0.05); border-radius: 5px;")
-                layout.addWidget(desc_label)
-
-            layout.addStretch()
-            
-            # 按钮
-            btn_layout = QHBoxLayout()
-            btn_layout.addStretch()
-            ok_btn = PushButton("知道了", dialog)
-            ok_btn.setFixedWidth(120)
-            ok_btn.setFixedHeight(35)
-            ok_btn.setStyleSheet("""
-                PushButton {
-                    background-color: #ff6b6b;
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    font-size: 14px;
-                }
-                PushButton:hover {
-                    background-color: #ff5252;
-                }
-                PushButton:pressed {
-                    background-color: #e74c3c;
-                }
-            """)
-            ok_btn.clicked.connect(dialog.close)
-            btn_layout.addWidget(ok_btn)
-            layout.addLayout(btn_layout)
-
-            self._style_notification_dialog(dialog)
-
-            # 强制置顶：先 show 再激活，确保托盘/失焦场景也能置顶抢到焦点
-            dialog.show()
-            dialog.setWindowState(dialog.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
-            dialog.raise_()
-            dialog.activateWindow()
-            QApplication.setActiveWindow(dialog)
-            
-            # 播放系统提示音
-            try:
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-            except:
-                # 降级方案：使用 Qt 的 beep
-                try:
-                    QApplication.beep()
-                except:
-                    pass
-
-            if logger:
-                logger.info(f"[提醒] 强制弹窗已显示: {title}")
-            
-            # 使用 exec() 模态显示，必须用户点击才能关闭
-            dialog.exec()
+            self._current_popup = TodoReminderPopup(todo, self)
+            self._current_popup.show()
+            self._current_popup.raise_()
         except Exception as e:
             if logger:
-                logger.warning(f"[提醒] 弹窗失败: {e}")
-            
-            # 降级方案：托盘通知
+                logger.warning(f"[提醒] 浮窗创建失败，降级托盘: {e}")
             tray = getattr(getattr(self.core, 'main_window', None), 'tray_icon', None)
             if tray:
                 tray.showMessage(
                     "⏰ 代办事项提醒",
-                    message,
+                    f"「{todo.get('title', '')}」即将到期",
                     QSystemTrayIcon.Warning,
-                    10000
+                    10000,
                 )
-                if logger:
-                    logger.info(f"[提醒] 降级为托盘通知: {title}")
+            self._process_queue()
 
-    @staticmethod
-    def _style_notification_dialog(dialog: QDialog) -> None:
-        bg = "#2d2d2d" if isDarkTheme() else "#ffffff"
-        fg = "#ffffff" if isDarkTheme() else "#000000"
-        dialog.setStyleSheet(f"""
-            QDialog {{
-                background-color: {bg};
-                color: {fg};
-                border: 1px solid #3d3d3d;
-                border-radius: 8px;
-            }}
-        """)
+    def snooze(self, todo_id: int, minutes: int = 10) -> None:
+        """稍后提醒：临时屏蔽一段时间，并允许稍后再次触发"""
+        if todo_id is None:
+            return
+        self._snoozed[todo_id] = datetime.now() + timedelta(minutes=minutes)
+        self.clear_reminded(todo_id)
 
     def clear_reminded(self, todo_id: int) -> None:
         self._reminded_todos = {k for k in self._reminded_todos if k[0] != todo_id}
+        self._expired_logged.discard(todo_id)
 
     def get_remind_before_index(self, remind_before: int) -> int:
         for i, (value, _) in enumerate(self.REMINDER_OPTIONS):
             if value == remind_before:
                 return i
         return 0
+
+
+class TodoReminderPopup(QWidget):
+    """非模态待办提醒浮窗（Toast 风格：不抢焦点、自动消失、可操作）"""
+
+    def __init__(self, todo: Dict, manager, parent=None):
+        super().__init__(parent)
+        self.todo = todo
+        self.manager = manager
+        self._closed = False
+        # 注意：不使用 Qt.Tool。在 Windows 上，无边框 + Tool 标志组合经常不渲染，
+        # 表现为「逻辑已 show 但屏幕上不出现」。改用独立置顶无边框窗口最稳妥。
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setFixedSize(360, 158)
+        self._auto_close_ms = 12000
+        self._build_ui()
+        self._move_to_bottom_right()
+        self._start_auto_close()
+
+    def _build_ui(self):
+        self.setStyleSheet(self._card_style())
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+
+        top = QHBoxLayout()
+        title = StrongBodyLabel("⏰ 待办即将到期", self)
+        top.addWidget(title)
+        top.addStretch()
+        close_btn = PushButton("✕", self)
+        close_btn.setFixedSize(28, 28)
+        close_btn.clicked.connect(self._close_self)
+        top.addWidget(close_btn)
+        layout.addLayout(top)
+
+        name = self.todo.get("title", "未命名")
+        name_label = BodyLabel(f"「{name}」", self)
+        name_label.setWordWrap(True)
+        name_font = name_label.font()
+        name_font.setBold(True)
+        name_label.setFont(name_font)
+        layout.addWidget(name_label)
+
+        remain = self._remaining_text()
+        if remain:
+            layout.addWidget(CaptionLabel(f"剩余：{remain}", self))
+
+        desc = self.todo.get("description", "")
+        if desc:
+            max_len = 60
+            d = desc if len(desc) <= max_len else desc[:max_len] + "…"
+            d_label = CaptionLabel(d, self)
+            d_label.setWordWrap(True)
+            layout.addWidget(d_label)
+
+        layout.addStretch()
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        ignore_btn = PushButton("忽略", self)
+        ignore_btn.clicked.connect(self._close_self)
+        later_btn = PushButton("稍后 10 分钟", self)
+        later_btn.clicked.connect(self._on_snooze)
+        done_btn = PushButton("标记完成", self)
+        done_btn.clicked.connect(self._on_done)
+        btn_row.addWidget(ignore_btn)
+        btn_row.addWidget(later_btn)
+        btn_row.addWidget(done_btn)
+        layout.addLayout(btn_row)
+
+    def _card_style(self) -> str:
+        if isDarkTheme():
+            return (
+                "QWidget { background-color: #2d2d2d; color: #eaeaea;"
+                " border: 1px solid #3d3d3d; border-radius: 12px; }"
+                " PushButton { background-color: #3a3a3a; color: #eaeaea;"
+                " border: none; border-radius: 6px; }"
+                " PushButton:hover { background-color: #454545; }"
+            )
+        return (
+            "QWidget { background-color: #ffffff; color: #1f1f1f;"
+            " border: 1px solid #e0e0e0; border-radius: 12px; }"
+            " PushButton { background-color: #f0f0f0; color: #1f1f1f;"
+            " border: none; border-radius: 6px; }"
+            " PushButton:hover { background-color: #e4e4e4; }"
+        )
+
+    def _remaining_text(self) -> str:
+        due = self.todo.get("due_date", "")
+        tm = self.todo.get("due_time", "23:59")
+        if not due:
+            return ""
+        try:
+            dl = datetime.strptime(f"{due} {tm}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            try:
+                dl = datetime.strptime(f"{due} 23:59", "%Y-%m-%d %H:%M")
+            except ValueError:
+                return ""
+        secs = (dl - datetime.now()).total_seconds()
+        if secs <= 0:
+            return "已到期"
+        mins = secs / 60
+        if mins < 1:
+            return f"约 {max(1, int(secs))} 秒"
+        if mins < 60:
+            return f"约 {int(mins)} 分钟"
+        hrs = int(mins / 60)
+        rm = int(mins % 60)
+        if hrs < 24:
+            return f"{hrs} 小时 {rm} 分" if rm else f"{hrs} 小时"
+        days = int(hrs / 24)
+        rh = hrs % 24
+        return f"{days} 天 {rh} 小时" if rh else f"{days} 天"
+
+    def _move_to_bottom_right(self) -> None:
+        try:
+            geo = QApplication.primaryScreen().availableGeometry()
+        except Exception:
+            geo = QApplication.desktop().availableGeometry()
+        margin = 16
+        x = geo.right() - self.width() - margin
+        y = geo.bottom() - self.height() - margin
+        self.move(x, y)
+
+    def _start_auto_close(self) -> None:
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._close_self)
+        self._timer.start(self._auto_close_ms)
+
+    def enterEvent(self, event):
+        if hasattr(self, "_timer"):
+            self._timer.stop()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if hasattr(self, "_timer"):
+            self._timer.start(self._auto_close_ms)
+        super().leaveEvent(event)
+
+    def _on_done(self):
+        if self.manager and self.manager.on_complete_callback:
+            self.manager.on_complete_callback(self.todo.get("id"))
+        self._close_self()
+
+    def _on_snooze(self):
+        if self.manager:
+            self.manager.snooze(self.todo.get("id"))
+        self._close_self()
+
+    def _close_self(self):
+        if self._closed:
+            return
+        self._closed = True
+        if hasattr(self, "_timer"):
+            self._timer.stop()
+        self.hide()
+        self.deleteLater()
+        if self.manager and self.manager._current_popup is self:
+            self.manager._current_popup = None
+            self.manager._process_queue()
 
 
 class TodoWidget(QWidget):
@@ -471,6 +570,7 @@ class TodoWidget(QWidget):
         self.service = TodoService()
         self.todos: List[Dict[str, Any]] = []
         self._reminder_manager = TodoReminderManager(core, self.service, self)
+        self._reminder_manager.on_complete_callback = self._on_reminder_complete
 
         self._setup_ui()
         self._load_todos()
@@ -1106,7 +1206,26 @@ class TodoWidget(QWidget):
             self._update_stats()
         
         self._reminder_manager.check_and_notify(self.todos)
-    
+
+    def _on_reminder_complete(self, todo_id):
+        """提醒浮窗点击「标记完成」后的回调：完成并刷新列表"""
+        if not todo_id:
+            return
+        for todo in self.todos:
+            if todo.get("id") == todo_id:
+                todo["completed"] = True
+                todo["completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                todo["status"] = "已完成"
+                self.service.toggle_completed(todo_id)
+                self._reminder_manager.clear_reminded(todo_id)
+                self._display_todos()
+                self._update_stats()
+                if self.core and hasattr(self.core, 'logger'):
+                    self.core.logger.log_operation(
+                        "UPDATE", f"提醒中标记完成: {todo.get('title', '未命名')}"
+                    )
+                break
+
     def _mark_all_uncompleted(self):
         completed_count = sum(1 for todo in self.todos if todo.get("completed", False))
         
