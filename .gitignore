@@ -20,6 +20,8 @@ config/time_lock_data.json
 cert/
 .golutra/
 .codegraph/
+.tmprun*/
+.workbuddy/
 
 
 # 分发/打包
