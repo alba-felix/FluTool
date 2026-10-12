@@ -107,14 +107,14 @@ class WordEditDialog(MessageBoxBase):
             InfoBar.warning(
                 title="无法保存", content="英文不能为空",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return False
         if not self.chinese_input.text().strip():
             InfoBar.warning(
                 title="无法保存", content="中文不能为空",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return False
         return True
@@ -153,7 +153,7 @@ class CategoryDialog(MessageBoxBase):
             InfoBar.warning(
                 title="无法保存", content="分类名称不能为空",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return False
         return True
@@ -614,7 +614,7 @@ class VocabularyWidget(QWidget):
             InfoBar.warning(
                 title="提示", content="没有可学习的单词",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return
         self._study_words = self._displayed_words.copy()
@@ -724,7 +724,7 @@ class VocabularyWidget(QWidget):
         InfoBar.success(
             title="删除成功", content=f"已删除 {success} 个单词",
             orient=Qt.Horizontal, isClosable=True,
-            position=InfoBarPosition.TOP, duration=2000, parent=self,
+            position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
         )
 
     # ============ 内联编辑 ============
@@ -766,13 +766,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="修改成功", content="已更新",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=1500, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=1500, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="修改失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             self._display_words()
         finally:
@@ -791,13 +791,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="添加成功", content=f"分类 '{name}' 已添加",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="添加失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
 
     def _edit_category(self):
@@ -806,7 +806,7 @@ class VocabularyWidget(QWidget):
             InfoBar.warning(
                 title="提示", content="请先选择一个分类",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return
         current_name = self.category_combo.currentText()
@@ -820,13 +820,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="修改成功", content=f"分类已重命名为 '{name}'",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="修改失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
 
     def _delete_category(self):
@@ -835,7 +835,7 @@ class VocabularyWidget(QWidget):
             InfoBar.warning(
                 title="提示", content="请先选择一个分类",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return
         name = self.category_combo.currentText()
@@ -851,13 +851,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="删除成功", content=f"分类 '{name}' 已删除",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="删除失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
 
     # ============ 单词操作 ============
@@ -883,13 +883,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="添加成功", content=f"单词 '{data['english']}' 已添加",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="添加失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
 
     def _get_selected_word_ids(self) -> List[int]:
@@ -911,7 +911,7 @@ class VocabularyWidget(QWidget):
             InfoBar.warning(
                 title="提示", content="请先选择要删除的单词",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
             return
         box = MessageBox("确认删除", f"确定要删除选中的 {len(ids)} 个单词吗？", self)
@@ -927,7 +927,7 @@ class VocabularyWidget(QWidget):
         InfoBar.success(
             title="删除成功", content=f"已删除 {success} 个单词",
             orient=Qt.Horizontal, isClosable=True,
-            position=InfoBarPosition.TOP, duration=2000, parent=self,
+            position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
         )
 
     def _save_changes(self):
@@ -935,7 +935,7 @@ class VocabularyWidget(QWidget):
         InfoBar.success(
             title="保存成功", content="所有修改已保存",
             orient=Qt.Horizontal, isClosable=True,
-            position=InfoBarPosition.TOP, duration=2000, parent=self,
+            position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
         )
 
     # ============ 导入/导出 ============
@@ -956,7 +956,7 @@ class VocabularyWidget(QWidget):
                 InfoBar.warning(
                     title="导入失败", content="文件中没有找到单词数据",
                     orient=Qt.Horizontal, isClosable=True,
-                    position=InfoBarPosition.TOP, duration=2000, parent=self,
+                    position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
                 )
                 return
 
@@ -985,13 +985,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="导入成功", content=f"成功导入 {added} 个单词",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="导入失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
 
     def _export_words(self):
@@ -1021,13 +1021,13 @@ class VocabularyWidget(QWidget):
             InfoBar.success(
                 title="导出成功", content=f"已导出 {len(words)} 个单词",
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
         except Exception as e:
             InfoBar.error(
                 title="导出失败", content=str(e),
                 orient=Qt.Horizontal, isClosable=True,
-                position=InfoBarPosition.TOP, duration=2000, parent=self,
+                position=InfoBarPosition.TOP_RIGHT, duration=2000, parent=self,
             )
 
 
