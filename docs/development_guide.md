@@ -175,15 +175,15 @@ pyinstaller --noconfirm --onedir --windowed ^
 推荐命令：
 
 ```bash
-pytest -q --basetemp=.pytest_tmp
+pytest -q
 ```
 
 说明：
 
-- Windows 下使用 `--basetemp=.pytest_tmp` 可避开默认 Temp 权限问题。
+- 临时目录由 `pytest.ini` 的 `addopts = --basetemp=.pytest_cache/tmp` 固定，避开 Windows 默认 Temp 权限问题，也避免手动改 `--basetemp` 产生多个残留目录。
 - 测试放在 `tests/`。
 - 优先覆盖核心模块、仓库、service、插件扫描、打包元信息。
-- 测试后可清理 `.pytest_tmp*`、`tests/__pycache__`、`tests/*.log`。
+- 测试后可清理 `.pytest_cache/tmp`、`tests/__pycache__`、`tests/*.log`。
 
 ## 8. 开发约定
 

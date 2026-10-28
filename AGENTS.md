@@ -21,7 +21,7 @@
 7. 路径使用 `core.utils.get_resource_path()` / `get_app_data_path()`，不要硬编码本机路径。
 8. 数据库连接必须启用外键约束，相关逻辑集中在连接层。
 9. 关键流程使用 `LogManager` 记录日志，异常日志要保留上下文。
-9. 每次改动后，都要运行测试位于 `tests/`。比如:pytest tests/bookmark/ -v( 针对 BookmarkService 的局部链路测试).跑全部用例，防止新代码破坏原有功能,pytest -q --basetemp=.pytest_tmp 以及python语法检查syntax 
+9. 每次改动后，都要运行测试位于 `tests/`。比如:pytest tests/bookmark/ -v( 针对 BookmarkService 的局部链路测试).跑全部用例，防止新代码破坏原有功能,pytest -q（临时目录已由 pytest.ini 统一固定）以及python语法检查syntax 
 10. 必要的注释要保留，比如函数、类、模块等。
 
 ## 按需阅读
@@ -44,8 +44,8 @@ pip install -r requirements.txt
 # 运行应用
 .venv\Scripts\python.exe main.py
 
-# 运行测试，避免 Windows 默认 Temp 权限问题
-pytest -q --basetemp=.pytest_tmp
+# 运行测试，临时目录由 pytest.ini 固定，无需手动传 --basetemp
+pytest -q
 
 # 打包
 build.bat
