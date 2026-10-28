@@ -10,6 +10,7 @@ BUILTIN_PLUGIN_MANIFESTS = [
     {"package": "password", "id": "password", "priority": 3, "module": "plugins.password"},
     {"package": "time_converter", "id": "time_converter", "priority": 4, "module": "plugins.time_converter"},
     {"package": "system_tools", "id": "system_tools", "priority": 5, "module": "plugins.system_tools"},
+    {"package": "quick_close", "id": "quick_close", "priority": 5.6, "module": "plugins.quick_close"},
     {"package": "notebook", "id": "notebook", "priority": 6, "module": "plugins.notebook"},
     {"package": "notes", "id": "notes", "priority": 7, "module": "plugins.notes"},
     {"package": "ai_assistant", "id": "ai_assistant", "priority": 8, "module": "plugins.ai_assistant"},
