@@ -7,6 +7,7 @@
         "AutoSave": true,
         "AutoStart": false,
         "EfficiencyMode": false,
+        "FloatingBall": true,
         "MinimizeToTray": true
     },
     "QFluentWidgets": {

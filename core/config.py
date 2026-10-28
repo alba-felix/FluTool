@@ -8,6 +8,7 @@ class AppConfig(QConfig):
     efficiency_mode = ConfigItem("General", "EfficiencyMode", False, BoolValidator())
     auto_start = ConfigItem("General", "AutoStart", False, BoolValidator())
     minimize_to_tray = ConfigItem("General", "MinimizeToTray", True, BoolValidator())
+    floating_ball = ConfigItem("General", "FloatingBall", True, BoolValidator())
     
     window_width = RangeConfigItem("Window", "Width", 1000, RangeValidator(600, 2000))
     window_height = RangeConfigItem("Window", "Height", 700, RangeValidator(400, 1500))

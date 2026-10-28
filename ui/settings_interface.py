@@ -159,6 +159,15 @@ class SettingsInterface(ScrollArea):
         self.minimizeToTrayCard.switchButton.onText = "开"
         self.minimizeToTrayCard.switchButton.offText = "关"
         self.windowGroup.addSettingCard(self.minimizeToTrayCard)
+        self.floatingBallCard = SwitchSettingCard(
+            FIF.GLOBE,
+            "桌面悬浮球",
+            "在桌面显示悬浮球，点击可唤醒主窗口",
+            configItem=self.core.config.floating_ball
+        )
+        self.floatingBallCard.switchButton.onText = "开"
+        self.floatingBallCard.switchButton.offText = "关"
+        self.windowGroup.addSettingCard(self.floatingBallCard)
         self.vBoxLayout.addWidget(self.windowGroup)
 
     def _create_data_group(self) -> None:

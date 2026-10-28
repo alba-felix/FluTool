@@ -262,6 +262,21 @@ def main():
         logo_path = get_resource_path("logo.ico")
         if logo_path.exists():
             window.setWindowIcon(QIcon(str(logo_path)))
+
+        # 桌面悬浮球：按配置创建，设置开关实时切换（同进程引用，无跨窗口通信）
+        from ui.floating_ball import FloatingBall
+        floating_ball = FloatingBall(window) if core.config.floating_ball.value else None
+
+        def _toggle_floating_ball(enabled):
+            nonlocal floating_ball
+            if enabled and floating_ball is None:
+                floating_ball = FloatingBall(window)
+            elif not enabled and floating_ball is not None:
+                floating_ball.hide()
+                floating_ball.deleteLater()
+                floating_ball = None
+
+        core.config.floating_ball.valueChanged.connect(_toggle_floating_ball)
     except Exception as e:
         traceback.print_exc()
         return show_error_and_exit("界面加载失败", f"无法创建主窗口:\n{e}")
