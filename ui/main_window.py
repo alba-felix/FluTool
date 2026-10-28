@@ -16,7 +16,7 @@ from .more_menu import MoreMenu
 from .settings_interface import SettingsInterface
 from .global_search_dialog import GlobalSearchDialog
 from .plugin_docs_interface import PluginDocsInterface
-from .about_interfaces import AboutInterface, CheckUpdateInterface, FeedbackInterface
+from .about_interfaces import AboutInterface, CheckUpdateInterface, ChangelogInterface, FeedbackInterface
 from .plugin_host import PluginHost
 
 
@@ -1065,6 +1065,7 @@ class MainWindow(PushFluentWindow):
 		menu_items = [
 			{"icon": FIF.INFO, "title": "关于", "desc": "查看应用信息、作者、许可证等", "action": self._show_about},
 			{"icon": FIF.UPDATE, "title": "检查更新", "desc": "检查是否有新版本可用", "action": self._show_check_update},
+			{"icon": FIF.HISTORY, "title": "更新日志", "desc": "查看各版本的更新记录", "action": self._show_changelog},
 			{"icon": FIF.DOCUMENT, "title": "使用文档", "desc": "查看功能说明和使用指南", "action": self._show_plugin_docs},
 			{"icon": FIF.FEEDBACK, "title": "问题反馈", "desc": "报告 Bug 或提出建议", "action": self._show_feedback},
 			{"icon": FIF.CODE, "title": "源代码", "desc": "访问 GitHub 仓库", "action": self._show_source_code},
@@ -1073,39 +1074,6 @@ class MainWindow(PushFluentWindow):
 		for item in menu_items:
 			card = self._create_menu_card(item["icon"], item["title"], item["desc"], item.get("action"))
 			content_layout.addWidget(card)
-
-		# 更新日志
-		changelog_title = StrongBodyLabel("v0.2.2 更新日志")
-		content_layout.addWidget(changelog_title)
-
-		changelog_items = [
-			("重构", "Repository 搜索逻辑统一，移除冗余实现"),
-			("重构", "app_launcher 模块拆分，3020 行拆为 9 个文件"),
-			("修复", "Notes EventBus 桥接内核，支持跨模块事件通信"),
-			("修复", "github_trending 网络异常未捕获导致崩溃"),
-			("修复", "PluginManager 支持子模块 Plugin 类加载"),
-			("修复", "应用启动器添加应用时去重检查"),
-		]
-
-		for tag, desc in changelog_items:
-			row = QWidget()
-			row_layout = QHBoxLayout(row)
-			row_layout.setContentsMargins(8, 4, 8, 4)
-			row_layout.setSpacing(8)
-
-			tag_colors = {"重构": "#0078d4", "修复": "#16a34a"}
-			tag_label = CaptionLabel(tag)
-			tag_label.setFixedWidth(36)
-			tag_label.setAlignment(Qt.AlignCenter)
-			color = tag_colors.get(tag, "#666666")
-			tag_label.setStyleSheet(f"color: {color}; font-weight: 600;")
-			row_layout.addWidget(tag_label)
-
-			desc_label = CaptionLabel(desc)
-			desc_label.setWordWrap(True)
-			row_layout.addWidget(desc_label, 1)
-
-			content_layout.addWidget(row)
 		
 		content_layout.addStretch()
 		
@@ -1131,6 +1099,15 @@ class MainWindow(PushFluentWindow):
 			self._check_update_interface.backClicked.connect(self._on_interface_back)
 			self.addSubInterface(self._check_update_interface, FIF.UPDATE, "检查更新")
 		self.switchTo(self._check_update_interface)
+	
+	def _show_changelog(self) -> None:
+		"""显示更新日志界面"""
+		if not hasattr(self, '_changelog_interface'):
+			self._changelog_interface = ChangelogInterface(self)
+			self._changelog_interface.setObjectName("changelog")
+			self._changelog_interface.backClicked.connect(self._on_interface_back)
+			self.addSubInterface(self._changelog_interface, FIF.HISTORY, "更新日志")
+		self.switchTo(self._changelog_interface)
 	
 	def _show_feedback(self) -> None:
 		"""显示问题反馈界面"""

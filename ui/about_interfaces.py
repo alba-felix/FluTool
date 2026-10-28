@@ -391,3 +391,176 @@ class FeedbackInterface(ScrollArea):
                     background-color: #f5f5f5;
                 }
             """)
+
+
+# 更新日志数据：版本 -> [(标签, 描述), ...]，新版本在列表前部追加
+CHANGELOG_ENTRIES = [
+    ("v0.2.2", [
+        ("新功能", "新增 JSON 工具插件，支持格式化、校验与语法高亮"),
+        ("新功能", "新增硬件工具插件，并注册插件索引与导航图标"),
+        ("新功能", "新增端口监听检测工具"),
+        ("新功能", "新增 SKILL 管理器，支持技能查看与管理"),
+        ("新功能", "图片转换器支持尺寸选择与批量转换"),
+        ("新功能", "翻译插件新增有道密钥自管理对话框"),
+        ("新功能", "生词本新增默认分类，联动筛选下拉框"),
+        ("新功能", "剪贴板图片图库新增清空按钮"),
+        ("新功能", "导航栏与标题栏按钮增加悬浮提示"),
+        ("优化", "插件加载与初始化流程优化，启动更轻快"),
+        ("优化", "待办提醒支持稍后提醒与弹窗排队"),
+        ("重构", "Repository 搜索逻辑统一，移除冗余实现"),
+        ("重构", "app_launcher 模块拆分，3020 行拆为 9 个文件"),
+        ("重构", "dev_tools 与 text_tools 子工具拆分独立文件夹"),
+        ("重构", "笔记插件服务分层重构，优化代码结构"),
+        ("修复", "笔记编辑框输入法候选窗下移，不再遮挡标题与标签"),
+        ("修复", "打包后笔记插件不可用，plugin_index 缺少 notes 条目"),
+        ("修复", "PluginManager 支持子模块 Plugin 类加载"),
+        ("修复", "Notes EventBus 桥接内核，支持跨模块事件通信"),
+        ("修复", "github_trending 网络异常未捕获导致崩溃"),
+        ("修复", "应用启动器添加应用时去重检查"),
+    ]),
+    ("v0.2.1", [
+        ("新功能", "新增笔记管理插件，支持富文本编辑与知识卡片"),
+        ("新功能", "新增单词背诵插件与生词本"),
+        ("新功能", "新增 AI 助手插件，支持 DeepSeek、硅基流动与 Ollama Cloud"),
+        ("新功能", "新增翻译插件与 MCP 服务器管理插件"),
+        ("新功能", "新增全局搜索，覆盖全部适用插件"),
+        ("新功能", "新增快速复制、脚本管理器、文件夹树等实用插件"),
+        ("新功能", "新增开机自启与最小化到系统托盘"),
+        ("新功能", "应用启动器支持应用编辑、收藏与排序"),
+        ("新功能", "开发工具新增 SVG 查看器与 DeepSeek 对话处理工具"),
+        ("优化", "日志系统升级为 loguru，支持插件独立日志文件"),
+        ("优化", "侧边栏改为可滚动导航，适配更多插件"),
+        ("重构", "重构 DatabaseManager，引入 Repository 模式"),
+        ("重构", "用 RoundMenu 替换项目内原生 QMenu"),
+        ("重构", "重构运行时目录结构与数据管理流程"),
+        ("重构", "JSON 数据迁移到 SQLite 数据库"),
+        ("修复", "修复书签链接打开失败、剪贴板插件语法错误等问题"),
+    ]),
+    ("v0.1.0", [
+        ("新功能", "首个版本，搭建微内核 + 插件化框架"),
+        ("新功能", "首批插件：书签、命令面板、密码管理"),
+        ("新功能", "Fluent Design 界面，支持深色与浅色主题"),
+        ("新功能", "基于 SQLite 的本地数据存储"),
+    ]),
+]
+
+# 标签配色
+_TAG_COLORS = {
+    "新功能": "#9333ea",
+    "优化": "#ea580c",
+    "重构": "#0078d4",
+    "修复": "#16a34a",
+}
+
+
+class ChangelogInterface(ScrollArea):
+    """更新日志界面"""
+    
+    backClicked = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("changelogInterface")
+        self._setup_ui()
+        self._apply_style()
+        qconfig.themeChanged.connect(self._apply_style)
+    
+    def _setup_ui(self):
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.NoFrame)
+        
+        content_widget = QWidget()
+        content_widget.setObjectName("contentWidget")
+        
+        layout = QVBoxLayout(content_widget)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+        
+        header_layout = QHBoxLayout()
+        
+        back_btn = TransparentToolButton(FIF.LEFT_ARROW, content_widget)
+        back_btn.setFixedSize(32, 32)
+        back_btn.setIconSize(QSize(14, 14))
+        back_btn.setToolTip("返回首页")
+        back_btn.clicked.connect(self.backClicked.emit)
+        header_layout.addWidget(back_btn)
+        
+        header_layout.addSpacing(8)
+        
+        title_label = SubtitleLabel("更新日志")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        
+        # 当前版本号取自日志首条（最新版本），避免多处硬编码
+        if CHANGELOG_ENTRIES:
+            version_label = CaptionLabel(f"当前版本 {CHANGELOG_ENTRIES[0][0]}")
+            header_layout.addWidget(version_label)
+        
+        layout.addLayout(header_layout)
+        
+        for version, items in CHANGELOG_ENTRIES:
+            layout.addWidget(self._create_version_card(content_widget, version, items))
+        
+        layout.addStretch()
+        self.setWidget(content_widget)
+    
+    def _create_version_card(self, parent, version: str, items) -> CardWidget:
+        """创建单个版本的更新日志卡片"""
+        card = CardWidget(parent)
+        card.setBorderRadius(8)
+        
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 16, 20, 16)
+        card_layout.setSpacing(10)
+        
+        version_label = StrongBodyLabel(version)
+        card_layout.addWidget(version_label)
+        
+        for tag, desc in items:
+            row = QWidget(card)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 2, 0, 2)
+            row_layout.setSpacing(8)
+            
+            tag_label = CaptionLabel(tag)
+            tag_label.setFixedWidth(36)
+            tag_label.setAlignment(Qt.AlignCenter)
+            tag_label.setStyleSheet(
+                f"color: {_TAG_COLORS.get(tag, '#666666')}; font-weight: 600;"
+            )
+            row_layout.addWidget(tag_label)
+            
+            desc_label = CaptionLabel(desc)
+            desc_label.setWordWrap(True)
+            row_layout.addWidget(desc_label, 1)
+            
+            card_layout.addWidget(row)
+        
+        return card
+    
+    def _apply_style(self):
+        if isDarkTheme():
+            self.setStyleSheet("""
+                QScrollArea {
+                    background-color: #1a1a1a;
+                    border: none;
+                }
+            """)
+            self.widget().setStyleSheet("""
+                QWidget#contentWidget {
+                    background-color: #1a1a1a;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QScrollArea {
+                    background-color: #f5f5f5;
+                    border: none;
+                }
+            """)
+            self.widget().setStyleSheet("""
+                QWidget#contentWidget {
+                    background-color: #f5f5f5;
+                }
+            """)
